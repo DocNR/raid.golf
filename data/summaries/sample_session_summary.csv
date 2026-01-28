@@ -1,0 +1,2 @@
+Date,Location,Club,TotalShots,A,B,C,A%,Avg_A_Carry,Avg_A_BallSpeed,Avg_A_Spin,Avg_A_Descent,KPI_Version,kpi_version,SourceFile
+2026-01-01,Example Range,7i,3,2,0,1,66.7,158.3,108.9,4720,46.8,v2.0,v2.0,data/session_logs/sample_session_log.csv
