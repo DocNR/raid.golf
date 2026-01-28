@@ -29,7 +29,6 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 ### Added
 - Adopted structured folders (`docs/`, `data/`, `tools/`) for canonical, raw, and working artifacts
-- Added `.clinerule` with AI agent guardrails
 - Added `.clinerules` to enforce RAID Phase 0 constraints for AI-assisted development
 - Added Phase 0 PRD (`docs/PRD_Phase_0_MVP.md`) as the authoritative MVP requirements
 - Added schema-first implementation brief (`docs/schema_brief/*`) documenting Phase 0 invariants
