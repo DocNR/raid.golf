@@ -51,6 +51,43 @@
               "descent_max": 43.0
             }
           }
+        },
+        "v2.1": {
+          "kpi_version": "v2.1",
+          "created_at": "2026-01-28T05:03:44.407020+00:00",
+          "method": "percentile_baseline",
+          "source_session": "data/session_logs/fixture_mlm2pro_shotexport_anonymized.csv",
+          "club": "7i",
+          "n_shots_total": 61,
+          "n_shots_used": 59,
+          "filters_applied": [
+            "footer_rows"
+          ],
+          "percentile_method": "linear_interpolation_p0_70_p0_50",
+          "thresholds": {
+            "a": {
+              "ball_speed_min": 108.92,
+              "smash_min": 1.32,
+              "descent_min": 48.42,
+              "spin_min": 4854.0
+            },
+            "b": {
+              "ball_speed_min": 106.6,
+              "ball_speed_max": 108.92,
+              "smash_min": 1.29,
+              "smash_max": 1.32,
+              "descent_min": 46.3,
+              "descent_max": 48.42,
+              "spin_min": 4669.0,
+              "spin_max": 4854.0
+            },
+            "c": {
+              "ball_speed_max": 106.6,
+              "smash_max": 1.29,
+              "descent_max": 46.3,
+              "spin_max": 4669.0
+            }
+          }
         }
       }
     }
