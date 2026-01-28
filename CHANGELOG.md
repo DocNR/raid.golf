@@ -30,6 +30,8 @@ This project versions **behavior and rules**, not files.
 ### Added
 - Adopted structured folders (`docs/`, `data/`, `tools/`) for canonical, raw, and working artifacts
 - Added `.clinerule` with AI agent guardrails
+- Added `.clinerules` to enforce RAID Phase 0 constraints for AI-assisted development
+- Added `docs/reference_test_matrix.md` to map high-risk Phase 0 invariants to test scenarios
 - Added `data/session_logs/README.md` to enforce raw-export rules
 - Added KPI version propagation to session summaries (`kpi_version`) from `tools/kpis.json`
 - Documented versioning contract across practice system docs, KPIs, spreadsheets, and derived summaries
