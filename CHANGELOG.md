@@ -31,6 +31,9 @@ This project versions **behavior and rules**, not files.
 - Adopted structured folders (`docs/`, `data/`, `tools/`) for canonical, raw, and working artifacts
 - Added `.clinerule` with AI agent guardrails
 - Added `.clinerules` to enforce RAID Phase 0 constraints for AI-assisted development
+- Added Phase 0 PRD (`docs/PRD_Phase_0_MVP.md`) as the authoritative MVP requirements
+- Added schema-first implementation brief (`docs/schema_brief/*`) documenting Phase 0 invariants
+- Added KPI philosophy and classification guide (`docs/kpi_philosophy_and_classification.md`)
 - Added `docs/reference_test_matrix.md` to map high-risk Phase 0 invariants to test scenarios
 - Added `data/session_logs/README.md` to enforce raw-export rules
 - Added KPI version propagation to session summaries (`kpi_version`) from `tools/kpis.json`
