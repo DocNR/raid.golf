@@ -33,6 +33,8 @@ This project versions **behavior and rules**, not files.
 - Added `data/session_logs/README.md` to enforce raw-export rules
 - Added KPI version propagation to session summaries (`kpi_version`) from `tools/kpis.json`
 - Documented versioning contract across practice system docs, KPIs, spreadsheets, and derived summaries
+- Added forward-only KPI generator with provenance/versioning for KPIs
+- Confirmed no behavior changes to `tools/scripts/analyze_session.py`
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks

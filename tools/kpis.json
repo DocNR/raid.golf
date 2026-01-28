@@ -19,6 +19,39 @@
         "smash_max": 1.22,
         "spin_max": 4100.0,
         "descent_max": 43.0
+      },
+      "versions": {
+        "v2.0": {
+          "kpi_version": "v2.0",
+          "created_at": "manual",
+          "method": "manual_locked",
+          "source_session": "manual",
+          "club": "7i",
+          "n_shots_total": null,
+          "n_shots_used": null,
+          "filters_applied": [
+            "manual"
+          ],
+          "thresholds": {
+            "a": {
+              "smash_min": 1.25,
+              "ball_speed_min": 104.0,
+              "spin_min": 4300.0,
+              "descent_min": 45.0
+            },
+            "b": {
+              "smash_min": 1.22,
+              "smash_max": 1.24,
+              "spin_min": 4200.0,
+              "descent_min": 44.0
+            },
+            "c": {
+              "smash_max": 1.22,
+              "spin_max": 4100.0,
+              "descent_max": 43.0
+            }
+          }
+        }
       }
     }
   }
