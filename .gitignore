@@ -13,6 +13,7 @@ __pycache__/
 # Local exports (keep anonymized examples)
 data/session_logs/*.csv
 !data/session_logs/sample_session_log.csv
+!data/session_logs/fixture_mlm2pro_shotexport_anonymized.csv
 
 # Derived summaries (keep anonymized examples)
 data/summaries/*.csv
