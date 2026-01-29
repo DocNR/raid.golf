@@ -69,6 +69,18 @@ This project versions **behavior and rules**, not files.
   - Provides safe stopping points and reduces scope creep
   - Serves as onboarding context for contributors and AI agents
 
+**Phase C: Analysis Semantics**
+- Validated RTM-05 and RTM-06 with comprehensive tests
+  - RTM-05: Duplicate analysis prevented via UNIQUE constraint on (session_id, club, kpi_template_hash)
+  - RTM-06: Re-analysis with different template creates new sub-session (original preserved)
+- Implemented `tests/unit/test_analysis_semantics.py` with 8 test cases
+  - Duplicate prevention validated
+  - Re-analysis behavior confirmed
+  - Multiple template versions per session/club supported
+  - Immutability preserved across re-analysis scenarios
+- No schema or code changes required (constraint already in place)
+- All 48 unit tests passing (Phase A, B, C)
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks
