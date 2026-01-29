@@ -310,3 +310,61 @@ class Repository:
                 (session_id,)
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def list_subsessions_by_club(
+        self,
+        club: str,
+        min_validity: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        List sub-sessions for a specific club.
+
+        RTM-10: Filtering is explicit via min_validity parameter.
+        All results include validity_status.
+
+        Args:
+            club: Club identifier
+            min_validity: Optional minimum validity threshold.
+                None -> include all statuses
+                'valid_low_sample_warning' -> include warning + valid
+                'valid' -> include valid only
+
+        Returns:
+            List of sub-session dicts
+        """
+        validity_order = {
+            "invalid_insufficient_data": 0,
+            "valid_low_sample_warning": 1,
+            "valid": 2,
+        }
+
+        with self._get_connection() as conn:
+            if min_validity is None:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM club_subsessions
+                    WHERE club = ?
+                    ORDER BY analyzed_at
+                    """,
+                    (club,),
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
+            if min_validity not in validity_order:
+                raise ValueError(
+                    "min_validity must be one of: "
+                    "invalid_insufficient_data, valid_low_sample_warning, valid"
+                )
+
+            min_rank = validity_order[min_validity]
+            allowed_statuses = [
+                status for status, rank in validity_order.items() if rank >= min_rank
+            ]
+            placeholders = ",".join("?" for _ in allowed_statuses)
+            query = (
+                "SELECT * FROM club_subsessions "
+                "WHERE club = ? AND validity_status IN (" + placeholders + ") "
+                "ORDER BY analyzed_at"
+            )
+            cursor = conn.execute(query, (club, *allowed_statuses))
+            return [dict(row) for row in cursor.fetchall()]

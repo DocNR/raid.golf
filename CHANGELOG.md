@@ -81,6 +81,20 @@ This project versions **behavior and rules**, not files.
 - No schema or code changes required (constraint already in place)
 - All 48 unit tests passing (Phase A, B, C)
 
+**Phase D: Validity & Transparency**
+- Implemented validity computation with fixed Phase 0 thresholds
+  - invalid: shot_count < 5
+  - warning: 5 ≤ shot_count < 15
+  - valid: shot_count ≥ 15
+- Added `raid/validity.py` for validity status + A% computation
+- Added `tests/unit/test_validity_transparency.py` covering RTM-07 to RTM-10
+  - Boundary tests at 4, 5, 14, 15 shots
+  - A% NULL enforcement when invalid
+  - Low/invalid persistence guarantees
+  - Explicit filtering semantics for validity visibility
+- Added explicit repository filter: `list_subsessions_by_club(min_validity=...)`
+- All 60 unit tests passing (Phase A–D)
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks

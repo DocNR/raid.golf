@@ -147,7 +147,7 @@ None. Schema constraint was already in place and working correctly.
 
 ---
 
-## Phase D — Validity & Transparency
+## Phase D — Validity & Transparency ✅ **COMPLETE**
 
 ### Purpose
 
@@ -171,6 +171,19 @@ Implement data quality indicators based on sample size thresholds and ensure tha
 - Invalid and low-sample sub-sessions are stored (not excluded)
 - Query results include explicit validity status fields
 - Filters are explicit and reflected in output (no silent exclusion)
+
+### Completion Status
+
+**Completed:** 2026-01-29  
+**Commit:** `03981cc` - Phase D: RTM-07/08/09/10 validity + transparency
+
+- ✅ Validity thresholds enforced at boundary values (4, 5, 14, 15 shots)
+- ✅ A% is NULL for invalid sub-sessions (DB constraint enforced)
+- ✅ Low/invalid sub-sessions persist and remain queryable
+- ✅ Explicit filtering semantics added to repository queries
+- ✅ Added `raid/validity.py` for validity + A% computation
+- ✅ Added `tests/unit/test_validity_transparency.py` covering RTM-07 through RTM-10
+- ✅ All 60 tests passing (Phase A–D)
 
 ### Done When
 

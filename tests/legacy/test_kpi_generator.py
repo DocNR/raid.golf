@@ -6,7 +6,7 @@ from tools.kpi.generate_kpis import compute_thresholds, iter_valid_rows, load_kp
 
 class TestKpiGenerator(unittest.TestCase):
     def setUp(self) -> None:
-        self.repo_root = Path(__file__).resolve().parents[1]
+        self.repo_root = Path(__file__).resolve().parents[2]
         self.kpis_path = self.repo_root / "tools" / "kpis.json"
         self.sample_csv = self.repo_root / "data" / "session_logs" / "sample_session_log.csv"
 
