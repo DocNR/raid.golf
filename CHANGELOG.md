@@ -63,6 +63,11 @@ This project versions **behavior and rules**, not files.
   - RTM-03: KPI templates immutable forever
   - RTM-04: Hash not recomputed on read (proven via monkeypatch/spy tests)
 - Identity and storage layers now stable
+- Added `docs/implementation_phases.md` as a non-authoritative execution roadmap
+  - Maps Phase 0 work into six sequential phases (A–F)
+  - Each phase groups related RTMs with clear entry/exit criteria and STOP conditions
+  - Provides safe stopping points and reduces scope creep
+  - Serves as onboarding context for contributors and AI agents
 
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
