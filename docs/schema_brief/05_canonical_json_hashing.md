@@ -64,41 +64,44 @@ This section defines the exact rules for producing canonical JSON from KPI templ
 
 **Solution:** Numeric values must be normalized to a **single canonical form**.
 
-**Requirement:** Numbers must be represented deterministically and cross-platform consistently. The specific mechanism is implementation-defined, but the following approaches are acceptable:
+#### 5.2.2.1 Numeric Normalization Rule (Phase 0)
 
-**Option A: Fixed-Precision Decimal String**
-- Convert all numbers to decimal strings with consistent precision
-- Example: `108.92` → `"108.92"` (string)
-- Integers: `100` → `"100.0"` or `"100"` (pick one, be consistent)
+**Phase 0 uses a deterministic, language-independent numeric normalization rule** to ensure cross-platform hash consistency (Python ↔ Swift).
 
-**Option B: Scaled Integer Representation**
-- Multiply by power of 10 to eliminate decimals
-- Store as integer
-- Example: `108.92` → `10892` (with implicit scale factor of 100)
+**Canonical Numeric Serialization Rules:**
 
-**Option C: Standard Float-to-String**
-- Use platform's canonical float-to-string conversion
-- Must be byte-identical across Python and Swift
-- Test with reference cases before deployment
+1. **Parse numbers as decimals** — Do not rely on binary floating-point representation
+2. **Serialize as JSON numbers** — Not as quoted strings
+3. **Formatting rules:**
+   - **No scientific notation** — Always use decimal representation
+   - **Strip trailing zeros after decimal point** — `108.920` → `108.92`
+   - **Strip decimal point if result is an integer** — `1.0` → `1`
+   - **Always include leading zero for |x| < 1** — `.5` → `0.5`
+   - **Normalize negative zero** — `-0` → `0`
 
-**Critical Constraint:** Whatever mechanism is chosen:
+**Reference Examples:**
 
-1. Must produce **identical output** in Python 3.10+ and Swift 5.5+
-2. Must produce **identical output** across machines (endianness, locale)
-3. Must be **fully specified** in implementation documentation
+| Input | Canonical Output |
+|-------|-----------------|
+| `108.9200` | `108.92` |
+| `106.60` | `106.6` |
+| `1.0` | `1` |
+| `1` | `1` |
+| `100.0` | `100` |
+| `0.001` | `0.001` |
+| `.5` | `0.5` |
+| `-0.0` | `0` |
 
-**Validation:** Before using any canonicalization implementation in production, test with these reference cases:
+**Implementation Guidance:**
 
-```json
-[
-  {"value": 108.92, "canonical": "?"},  // Define expected output
-  {"value": 1.0, "canonical": "?"},
-  {"value": 100, "canonical": "?"},
-  {"value": 0.001, "canonical": "?"}
-]
-```
+- Use the `decimal.Decimal` type (Python) or equivalent high-precision decimal library
+- Avoid platform-default `float` or `Double` representation
+- Do NOT rely on `repr()`, `str()`, or language-default JSON serialization
+- Serialize decimals using the rules above before JSON encoding
 
-Record the canonical forms in implementation docs to ensure consistency.
+**Cross-Platform Requirement:**
+
+This rule is **binding for RTM-13 and RTM-14** — Python and Swift implementations must produce byte-identical canonical JSON for identical logical inputs.
 
 ### 5.2.3 Whitespace Elimination
 

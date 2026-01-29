@@ -64,6 +64,14 @@ Implementation (Code)
 
 The following are **intentionally excluded** from this Schema-First Brief:
 
+### 1.3.0 Legacy KPI Formats
+
+**Not Covered:**
+- The existing `tools/kpis.json` format used in pre-Phase-0 prototypes
+- Dual schema support or compatibility layers
+
+**Rationale:** Phase 0 uses the PRD-defined KPI template schema exclusively (Section 3.C.1 of PRD). The template schema is designed for content-addressing and immutability. Legacy formats that do not conform to this structure are out of scope for RAID Phase 0.
+
 ### 1.3.1 Implementation Details
 
 **Not Covered:**

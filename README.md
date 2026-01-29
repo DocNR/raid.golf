@@ -15,6 +15,48 @@ This project defines *how* practice is conducted, *what* data counts, and *how* 
 
 ---
 
+## Phase 0 Architecture
+
+RAID Phase 0 establishes a **local-first, immutable data architecture** that prioritizes integrity over convenience.
+
+### Key Design Principles
+
+- **SQLite is authoritative** — All persisted data lives in SQLite; JSON is export-only
+- **Content-addressed templates** — KPI templates identified by SHA-256 hash of canonical JSON
+- **Immutable after creation** — Sessions, sub-sessions, and templates cannot be modified
+- **No raw shot storage** — Phase 0 stores only analysis results (sessions and sub-sessions)
+- **Decimal-based canonicalization** — Cross-platform determinism via explicit Decimal formatting
+
+### Data Model
+
+```
+Session (immutable)
+  ├─ session_id, session_date, source_file
+  └─ Club Sub-Sessions (immutable)
+      ├─ club, shot_count, a_count, b_count, c_count
+      ├─ kpi_template_hash (reference to template used)
+      └─ validity_status (data quality indicator)
+
+KPI Template (immutable forever)
+  ├─ template_hash (SHA-256, primary key)
+  ├─ canonical_json (content)
+  └─ schema_version, club, created_at
+```
+
+### Data Sources
+
+- **Primary:** Rapsodo MLM2Pro CSV exports (mixed-club sessions supported)
+- **Planned:** TrackMan CSV support
+- **Not Supported:** Target Range exports (different intent/success criteria)
+
+### What Phase 0 Does NOT Store
+
+- Individual shot data (raw shots are analyzed then discarded)
+- Swing mechanics or launch monitor metadata beyond classification metrics
+- Projections or derived summaries (regenerable from authoritative data)
+
+---
+
 ## Forking & Local Setup
 
 1. Fork this repo on GitHub.

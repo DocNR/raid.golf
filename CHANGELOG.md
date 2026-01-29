@@ -39,6 +39,31 @@ This project versions **behavior and rules**, not files.
 - Documented versioning contract across practice system docs, KPIs, spreadsheets, and derived summaries
 - Added forward-only KPI generator with provenance/versioning for KPIs
 - Confirmed no behavior changes to `tools/scripts/analyze_session.py`
+
+**Phase A–B: Canonical Identity + Schema-Level Immutability**
+- Implemented deterministic canonical JSON transformation (`raid/canonical.py`)
+  - Alphabetically sorted keys at all nesting levels
+  - Decimal-based numeric normalization (no binary floats)
+  - `NumericToken` wrapper ensures correct JSON emission (strings quoted, numbers unquoted)
+  - Compact UTF-8 format without BOM
+- Implemented SHA-256 content-addressed hashing (`raid/hashing.py`)
+  - Golden hashes frozen for test fixtures (Phase A proof)
+  - Cross-platform deterministic via Decimal
+- Implemented SQLite schema with immutability enforcement (`raid/schema.sql`)
+  - Three authoritative tables: `sessions`, `kpi_templates`, `club_subsessions`
+  - Immutability enforced via BEFORE UPDATE triggers that ABORT
+  - Foreign keys enabled per connection with RESTRICT on deletes
+- Implemented repository layer (`raid/repository.py`)
+  - Insert and read operations for all authoritative entities
+  - Read path does NOT call `canonicalize()` or `compute_template_hash()` (RTM-04)
+  - Hardened schema validation (fails loudly on partial schema)
+- Validated RTM-01 through RTM-04 with comprehensive tests
+  - RTM-01: Sessions immutable after creation
+  - RTM-02: Club sub-sessions immutable after creation
+  - RTM-03: KPI templates immutable forever
+  - RTM-04: Hash not recomputed on read (proven via monkeypatch/spy tests)
+- Identity and storage layers now stable
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks
