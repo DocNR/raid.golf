@@ -368,3 +368,90 @@ class Repository:
             )
             cursor = conn.execute(query, (club, *allowed_statuses))
             return [dict(row) for row in cursor.fetchall()]
+    
+    # ================================================================
+    # PROJECTION CACHE OPERATIONS (OPTIONAL, DERIVED DATA)
+    # ================================================================
+    
+    def upsert_projection(
+        self,
+        subsession_id: int,
+        projection_json: str,
+        generated_at: str
+    ) -> None:
+        """
+        Store or update a cached projection.
+        
+        RTM-16: Projections are derived data and may be deleted at any time.
+        This is an optional cache for performance only.
+        
+        Args:
+            subsession_id: Sub-session ID (FK to club_subsessions)
+            projection_json: Serialized projection JSON
+            generated_at: Timestamp when projection was generated
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO projections (subsession_id, projection_json, generated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(subsession_id) DO UPDATE SET
+                    projection_json = excluded.projection_json,
+                    generated_at = excluded.generated_at
+                """,
+                (subsession_id, projection_json, generated_at)
+            )
+            conn.commit()
+    
+    def get_projection(self, subsession_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a cached projection.
+        
+        Args:
+            subsession_id: Sub-session ID
+        
+        Returns:
+            Dict with projection_id, subsession_id, projection_json, generated_at,
+            or None if not cached
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM projections WHERE subsession_id = ?",
+                (subsession_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def delete_projection(self, subsession_id: int) -> bool:
+        """
+        Delete a cached projection.
+        
+        RTM-16: Projections are derived and can be safely deleted.
+        
+        Args:
+            subsession_id: Sub-session ID
+        
+        Returns:
+            True if a projection was deleted, False if none existed
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM projections WHERE subsession_id = ?",
+                (subsession_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_all_projections(self) -> int:
+        """
+        Delete all cached projections.
+        
+        RTM-16: Safe operation - projections are regenerable.
+        
+        Returns:
+            Number of projections deleted
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM projections")
+            conn.commit()
+            return cursor.rowcount
