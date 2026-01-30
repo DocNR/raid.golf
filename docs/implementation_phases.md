@@ -202,7 +202,7 @@ Implement data quality indicators based on sample size thresholds and ensure tha
 
 ---
 
-## Phase E — Derived Data Boundary
+## Phase E — Derived Data Boundary ✅ **COMPLETE**
 
 ### Purpose
 
@@ -210,8 +210,8 @@ Establish clear boundaries between authoritative data (SQLite) and derived proje
 
 ### RTMs Covered
 
-- **RTM-15:** Projection regeneration + no import
-- **RTM-16:** Derived data isolation
+- **RTM-15:** Projection regeneration + no import ✅
+- **RTM-16:** Derived data isolation ✅
 
 ### Key Guarantees
 
@@ -221,20 +221,27 @@ Establish clear boundaries between authoritative data (SQLite) and derived proje
 - No foreign key relationships point from authoritative tables to projection/cache tables
 - Derived data is clearly segregated (e.g., separate schema, explicit naming conventions)
 
-### Done When
+### Completion Status
 
-- Projection generation logic is implemented and tested
-- Regeneration after deletion yields identical results
-- Import of projections is rejected with clear error message
-- Schema validation confirms no FK dependencies from authoritative to derived tables
-- Tests validate regeneration and import rejection
+**Completed:** 2026-01-29  
+**Commit:** `15799ef` - Phase E: RTM-15/16 derived projections boundary
 
-### STOP Conditions
+- ✅ Projection generation from authoritative data implemented
+- ✅ Deterministic serialization (sorted keys, compact JSON)
+- ✅ Import attempts fail with `ProjectionImportError`
+- ✅ Schema validation confirms no FK from authoritative → projections
+- ✅ Regeneration produces identical analytical results (only `generated_at` differs)
+- ✅ Deletion of all projections does not affect authoritative reads
+- ✅ All 67 tests passing (Phase A–E)
 
-- Performance requirements conflict with regeneration approach
-- Ambiguity about what constitutes "derived" vs. "authoritative" data
-- Schema changes required to enforce isolation
-- Edge cases where cached projections cannot be safely regenerated
+**Implementation Files:**
+- `raid/projections.py` - Projection generation, serialization, and import prohibition
+- `raid/repository.py` - Optional projection cache methods (upsert, get, delete)
+- `tests/unit/test_derived_boundary.py` - Comprehensive RTM-15/16 test suite
+
+### STOP Conditions Encountered
+
+None. Existing schema design was already correct; no changes required.
 
 ---
 

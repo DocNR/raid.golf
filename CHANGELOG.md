@@ -95,6 +95,23 @@ This project versions **behavior and rules**, not files.
 - Added explicit repository filter: `list_subsessions_by_club(min_validity=...)`
 - All 60 unit tests passing (Phase A–D)
 
+**Phase E: Derived Data Boundary**
+- Implemented projection generation and serialization (`raid/projections.py`)
+  - Projections are regenerable JSON exports derived from authoritative SQLite data
+  - Deterministic serialization (sorted keys, compact format)
+  - `ProjectionImportError` raised when import is attempted
+- Added projection cache methods to repository (`raid/repository.py`)
+  - `upsert_projection()`, `get_projection()`, `delete_projection()`, `delete_all_projections()`
+  - Optional cache for performance only (projections table)
+- Added comprehensive boundary tests (`tests/unit/test_derived_boundary.py`) for RTM-15 and RTM-16
+  - RTM-15: Projection regeneration produces identical analytical results (only `generated_at` differs)
+  - RTM-15: Import attempts fail with explicit error and do not modify authoritative data
+  - RTM-16: No FK dependencies from authoritative tables to projections
+  - RTM-16: Authoritative reads work after all projection rows deleted
+  - RTM-16: Projection deletion does not affect authoritative data integrity
+- All 67 unit tests passing (Phase A–E)
+- Schema unchanged (existing `projections` table design already correct)
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks
