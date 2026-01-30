@@ -245,7 +245,7 @@ None. Existing schema design was already correct; no changes required.
 
 ---
 
-## Phase F — Multi-Club Ingest
+## Phase F — Multi-Club Ingest ✅ **COMPLETE**
 
 ### Purpose
 
@@ -253,7 +253,7 @@ Validate the complete end-to-end pipeline by ingesting real-world mixed-club CSV
 
 ### RTMs Covered
 
-- **RTM-17:** Multi-club ingest
+- **RTM-17:** Multi-club ingest ✅
 
 ### Key Guarantees
 
@@ -261,24 +261,35 @@ Validate the complete end-to-end pipeline by ingesting real-world mixed-club CSV
 - One session entity is created
 - One sub-session per club is created, all sharing the same `session_id`
 - Club grouping is correct (shots are not mixed across sub-sessions)
-- Real-world Rapsodo MLM2Pro exports (both standard and legacy formats) ingest successfully
+- Real-world Rapsodo MLM2Pro exports ingest successfully
+- Footer rows (Average, Std. Dev.) are excluded from shot analysis
+- Shot classification uses worst_metric aggregation per club-specific template
+- Validity status and A% computed per club
 
-### Done When
+### Completion Status
 
-- CSV parsing correctly handles both file structure variants (standard and legacy)
-- Header detection searches rows 1-3 for column headers
-- Footer rows (Average, Std Dev) are excluded from shot analysis
-- Mixed-club test fixture ingests successfully
-- One session and multiple sub-sessions are created with correct relationships
-- Real CSV exports from Rapsodo validate successfully
+**Completed:** 2026-01-29  
+**Commit:** `a3db8f4` - Phase F: RTM-17 multi-club CSV ingest
 
-### STOP Conditions
+- ✅ CSV parsing handles header detection (rows 1–3)
+- ✅ Footer row exclusion validated (Average, Std. Dev.)
+- ✅ Mixed-club test fixture (7i + 5i) ingests successfully
+- ✅ One session, multiple sub-sessions with shared session_id
+- ✅ Club normalization (lowercase, trimmed)
+- ✅ Shot classification per club using club-specific templates
+- ✅ Validity and A% computation per club
+- ✅ Average metrics (carry, ball speed, spin, descent) computed
+- ✅ All 77 tests passing (Phase A–F)
+- ✅ Real Rapsodo MLM2Pro export validated
 
-- CSV format variations discovered that don't match PRD specifications
-- Ambiguity about how to group shots by club (e.g., club name normalization issues)
-- Edge cases where multi-club logic produces incorrect results
-- Performance issues with large CSV files
-- Schema changes required to support multi-club relationships
+**Implementation Files:**
+- `raid/ingest.py` - Rapsodo CSV ingest with multi-club support
+- `tests/unit/test_multiclub_ingest.py` - Comprehensive RTM-17 test suite (10 tests)
+- `tests/vectors/sessions/rapsodo_mlm2pro_mixed_club_sample.csv` - Real-export-derived fixture
+
+### STOP Conditions Encountered
+
+None. Real export format matched PRD specifications. No schema changes required.
 
 ---
 

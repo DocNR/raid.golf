@@ -112,6 +112,32 @@ This project versions **behavior and rules**, not files.
 - All 67 unit tests passing (Phase A–E)
 - Schema unchanged (existing `projections` table design already correct)
 
+**Phase F: Multi-Club CSV Ingest**
+- Implemented Rapsodo MLM2Pro CSV ingest (`raid/ingest.py`)
+  - Multi-club session support: one session, multiple club sub-sessions
+  - Header detection (searches rows 1–3 for required columns)
+  - Footer row exclusion (Average, Std. Dev. rows skipped)
+  - Club normalization (lowercase, trimmed)
+  - Shot classification using worst_metric aggregation
+  - Validity computation and A% calculation per club
+  - Average metrics (carry, ball speed, spin, descent) computed per club
+- Added real-export-derived test fixture (`tests/vectors/sessions/rapsodo_mlm2pro_mixed_club_sample.csv`)
+  - 7i (6 shots) and 5i (9 shots) from real MLM2Pro export
+  - Footer rows added to prove skip logic
+  - Exact schema/formatting preserved from real export
+- Added comprehensive RTM-17 tests (`tests/unit/test_multiclub_ingest.py`)
+  - One session created for mixed-club CSV
+  - One sub-session per club, all sharing same session_id
+  - Shot counts exclude footer rows
+  - A/B/C classification per club with club-specific templates
+  - Validity status and A% computed correctly
+  - Club name normalization validated
+  - Template hash references correct and immutable
+  - Average metrics computed for each club
+- All 77 unit tests passing (Phase A–F)
+- **Phase 0 MVP complete**: All RTM-01 through RTM-17 validated
+- No schema changes required
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks
