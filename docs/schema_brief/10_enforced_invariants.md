@@ -8,6 +8,8 @@
 
 This section consolidates all mandatory rules from the preceding sections into a single "Constitution" of non-negotiable invariants. These rules MUST be enforced by all implementations.
 
+**Kernel Governance:** For the broader architectural framework that extends beyond Phase 0 (shots, rounds, competitions, economic incentives), see the canonical Kernel Contract at `docs/private/kernel/KERNEL_CONTRACT.md`. The invariants below represent Phase 0's implementation of kernel principles.
+
 ---
 
 ## 10.2 Data Immutability (MUST)

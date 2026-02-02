@@ -57,6 +57,22 @@ KPI Template (immutable forever)
 
 ---
 
+## Kernel & Governance
+
+RAID is built on a protected **integrity kernel** that guarantees:
+- Immutable facts (sessions, sub-sessions, templates)
+- Content-addressed templates (SHA-256 identity)
+- Deterministic re-analysis semantics
+- Strict derived-data boundaries
+
+The kernel is domain-agnostic and designed to scale beyond practice analytics into on-course scoring, competitions, and economic incentives without breaking trust guarantees.
+
+**Agent/Contributor Constraints:** See `.clinerules/kernel.md` for hard STOP conditions that protect kernel invariants from accidental mutation.
+
+**Governance & Roadmap:** Long-term product roadmap and detailed kernel governance documentation live in `docs/private/` and are intentionally not tracked in version control.
+
+---
+
 ## Forking & Local Setup
 
 1. Fork this repo on GitHub.
