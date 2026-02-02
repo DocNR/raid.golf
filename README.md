@@ -22,10 +22,10 @@ RAID Phase 0 establishes a **local-first, immutable data architecture** that pri
 ### Key Design Principles
 
 - **SQLite is authoritative** — All persisted data lives in SQLite; JSON is export-only
-- **Content-addressed templates** — KPI templates identified by SHA-256 hash of canonical JSON
+- **Content-addressed templates** — KPI templates identified by SHA-256 hash of RFC 8785 canonical JSON
 - **Immutable after creation** — Sessions, sub-sessions, and templates cannot be modified
 - **No raw shot storage** — Phase 0 stores only analysis results (sessions and sub-sessions)
-- **Decimal-based canonicalization** — Cross-platform determinism via explicit Decimal formatting
+- **RFC 8785 JCS canonicalization** — Cross-platform determinism via industry-standard JSON canonicalization
 
 ### Data Model
 
@@ -61,11 +61,14 @@ KPI Template (immutable forever)
 
 RAID is built on a protected **integrity kernel** that guarantees:
 - Immutable facts (sessions, sub-sessions, templates)
-- Content-addressed templates (SHA-256 identity)
+- Content-addressed templates (RFC 8785 JCS + SHA-256 identity)
 - Deterministic re-analysis semantics
 - Strict derived-data boundaries
 
 The kernel is domain-agnostic and designed to scale beyond practice analytics into on-course scoring, competitions, and economic incentives without breaking trust guarantees.
+
+**Current Kernel Contract:** `docs/private/kernel/KERNEL_CONTRACT_v2.md` (v2.0, frozen 2026-02-02)  
+**Template Hashing Spec:** `docs/specs/jcs_hashing.md` (RFC 8785 JCS + SHA-256)
 
 **Agent/Contributor Constraints:** See `.clinerules/kernel.md` for hard STOP conditions that protect kernel invariants from accidental mutation.
 
