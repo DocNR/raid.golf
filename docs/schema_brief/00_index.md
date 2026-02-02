@@ -1,10 +1,11 @@
 # Schema-First Implementation Brief: RAID Phase 0 (MVP)
 
 **Project Codename:** RAID  
-**Document Version:** 1.0  
-**Date:** 2026-01-28  
+**Document Version:** 1.1 (Kernel v2.0)  
+**Date:** 2026-02-02  
 **Status:** Active  
-**Authoritative Source:** [PRD_Phase_0_MVP.md](../PRD_Phase_0_MVP.md)
+**Authoritative Source:** [PRD_Phase_0_MVP.md](../PRD_Phase_0_MVP.md)  
+**Kernel Contract:** [KERNEL_CONTRACT_v2.md](../private/kernel/KERNEL_CONTRACT_v2.md) (v2.0 - RFC 8785 JCS)
 
 ---
 
@@ -40,7 +41,7 @@ This brief is organized as a modular documentation set for maintainability:
    Hard invariants governing what can and cannot mutate
 
 5. **[Canonical JSON & Hashing Contract](05_canonical_json_hashing.md)**  
-   Deterministic serialization and content-addressing rules
+   Deterministic serialization and content-addressing rules (RFC 8785 JCS as of v2.0)
 
 6. **[Session & Sub-Session Invariants](06_session_invariants.md)**  
    Cardinality constraints, validity status, data retention rules
@@ -118,6 +119,7 @@ Any contradiction between this brief and the PRD must be resolved in favor of th
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-28 | Initial Schema-First Implementation Brief |
+| 1.1 | 2026-02-02 | Updated for Kernel v2.0 (RFC 8785 JCS canonicalization) |
 
 ---
 

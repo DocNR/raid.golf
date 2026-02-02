@@ -27,6 +27,31 @@ This project versions **behavior and rules**, not files.
 ---
 
 ## [Unreleased]
+
+**Kernel v2.0: RFC 8785 JCS Template Canonicalization (BREAKING)**
+- **BREAKING CHANGE**: Template identity now uses RFC 8785 JSON Canonicalization Scheme (JCS)
+  - Formula: `template_hash = SHA-256(UTF-8(JCS(template_json)))`
+  - Replaces custom Decimal-based canonicalization (v1.0)
+  - Enables true cross-platform interoperability (Python ↔ Swift ↔ JavaScript)
+- Added RFC 8785 JCS implementation via `canonicaljson==2.0.0` library
+- Added interop artifacts for cross-platform verification:
+  - `tests/vectors/jcs_vectors.json` — 12 RFC 8785 compliance test vectors
+  - `docs/specs/jcs_hashing.md` — Normative spec for non-Python implementers
+- Added kernel governance documentation:
+  - `docs/private/kernel/KERNEL_FREEZE_v2.md` — Kernel v2.0 freeze declaration
+  - `docs/private/kernel/KERNEL_CONTRACT_v2.md` — Authoritative kernel contract (v1 preserved)
+  - `docs/private/kernel/changes/2026-02-02_rationale_rfc8785_jcs.md` — Change rationale
+- Updated schema brief documentation for RFC 8785:
+  - `docs/schema_brief/00_index.md` — Points to Kernel v2.0
+  - `docs/schema_brief/05_canonical_json_hashing.md` — RFC 8785 specification
+- Regenerated all golden template hashes under JCS
+- Replaced v1 Decimal-specific tests with JCS compliance tests
+- **Migration**: No production data exists; no migration required
+- **Note**: v1.0 template hashes are incompatible with v2.0 (breaking change)
+
+### Fixed
+- Fixed DeprecationWarning in `raid/projections.py` (replaced `datetime.utcnow()` with timezone-aware UTC)
+
 ### Added
 - Adopted structured folders (`docs/`, `data/`, `tools/`) for canonical, raw, and working artifacts
 - Added `.clinerules` to enforce RAID Phase 0 constraints for AI-assisted development

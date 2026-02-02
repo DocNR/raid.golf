@@ -3,8 +3,12 @@ Unit tests for canonical JSON transformation (RTM-11, RTM-12, RTM-13).
 
 These tests validate that the canonicalization process produces deterministic,
 cross-platform compatible JSON suitable for content-addressing.
+
+Version: 2.0 (Kernel v2.0 - RFC 8785 JCS)
 """
+import json
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -107,82 +111,82 @@ class TestWhitespaceElimination:
         assert canonical == encoded.decode('utf-8')
 
 
-class TestNumericNormalization:
-    """RTM-13: Numeric values must be normalized deterministically."""
+class TestJCSCompliance:
+    """
+    RFC 8785 JCS compliance tests (Kernel v2.0).
+    
+    These tests validate that canonicalize() produces RFC 8785-compliant
+    canonical JSON by comparing against golden test vectors.
+    """
 
-    def test_strip_trailing_zeros(self):
-        """108.920 should normalize to 108.92"""
-        input_dict = {"value": Decimal("108.920")}
-        canonical = canonicalize(input_dict)
-        
-        assert "108.92" in canonical
-        assert "108.920" not in canonical
+    @pytest.fixture
+    def jcs_vectors(self):
+        """Load JCS test vectors from tests/vectors/jcs_vectors.json."""
+        vectors_path = Path(__file__).parent.parent / "vectors" / "jcs_vectors.json"
+        with open(vectors_path, 'r') as f:
+            data = json.load(f)
+        return data['vectors']
 
-    def test_strip_decimal_for_integers(self):
-        """1.0 should normalize to 1"""
-        input_dict = {"value": Decimal("1.0")}
-        canonical = canonicalize(input_dict)
+    @pytest.mark.parametrize("vector_name", [
+        "simple_key_ordering",
+        "nested_key_ordering",
+        "whitespace_elimination",
+        "integer_vs_decimal",
+        "zero_normalization",
+        "negative_numbers",
+        "unicode_strings",
+        "array_order_preserved",
+        "nested_arrays_and_objects",
+        "empty_structures",
+        "boolean_and_null",
+        "decimal_precision",
+    ])
+    def test_jcs_vector_compliance(self, jcs_vectors, vector_name):
+        """
+        Test that canonicalize() produces RFC 8785 JCS canonical output.
         
-        import json
-        parsed = json.loads(canonical)
+        Each test vector includes:
+        - input: JSON object
+        - canonical: Expected RFC 8785 canonical string
+        - sha256: Expected hash (validated in test_hashing.py)
+        """
+        # Find the vector
+        vector = next(v for v in jcs_vectors if v['name'] == vector_name)
         
-        # Should be serialized as integer 1, not 1.0
-        assert parsed["value"] == 1
-        assert "1.0" not in canonical or '"1.0"' in canonical  # If present, must be in string
+        # Canonicalize
+        actual_canonical = canonicalize(vector['input'])
+        expected_canonical = vector['canonical']
+        
+        # Assert exact match
+        assert actual_canonical == expected_canonical, \
+            f"JCS vector '{vector_name}' failed:\n" \
+            f"Expected: {expected_canonical}\n" \
+            f"Actual:   {actual_canonical}"
 
-    def test_preserve_fractional_parts(self):
-        """106.6 should stay 106.6, not become 106.60 or 106"""
-        input_dict = {"value": Decimal("106.6")}
-        canonical = canonicalize(input_dict)
+    def test_non_json_native_types_rejected(self):
+        """
+        Non-JSON-native types (e.g., Decimal) must raise TypeError.
         
-        assert "106.6" in canonical
-
-    def test_small_decimal_normalization(self):
-        """0.001 should preserve leading zero and precision"""
-        input_dict = {"value": Decimal("0.001")}
-        canonical = canonicalize(input_dict)
+        Templates must use JSON-native types (int, float, str, bool, null, list, dict).
+        The canonicaljson library enforces this constraint.
+        """
+        from decimal import Decimal
         
-        assert "0.001" in canonical
-        # Verify it doesn't start with period (must have leading zero)
-        import json
-        parsed = json.loads(canonical)
-        assert parsed["value"] == 0.001
-
-    def test_negative_zero_normalization(self):
-        """-0.0 should normalize to 0"""
-        input_dict = {"value": Decimal("-0.0")}
-        canonical = canonicalize(input_dict)
-        
-        import json
-        parsed = json.loads(canonical)
-        assert parsed["value"] == 0
-        assert "-0" not in canonical
-
-    def test_no_scientific_notation(self):
-        """Large numbers should not use scientific notation"""
-        input_dict = {"value": Decimal("10000")}
-        canonical = canonicalize(input_dict)
-        
-        assert "10000" in canonical
-        assert "1e" not in canonical.lower()
-        assert "1E" not in canonical
+        with pytest.raises(TypeError, match="Decimal.*not JSON serializable"):
+            canonicalize({"value": Decimal("1.0")})
 
     def test_fixture_c_numeric_edge_cases(self, fixture_c: Dict[str, Any]):
         """
         Fixture C contains: 1.0, 1, 100, 0.001
-        All must be normalized correctly.
+        All must be normalized correctly per RFC 8785.
         """
         canonical = canonicalize(fixture_c)
-        
-        import json
         parsed = json.loads(canonical)
         
         # Both 1.0 and 1 should normalize to integer 1
-        # Find the metric values
         spin_rate_a_min = parsed["metrics"]["spin_rate"]["a_min"]
         spin_rate_b_min = parsed["metrics"]["spin_rate"]["b_min"]
         
-        # These are both logically 1, should be same after normalization
         assert spin_rate_a_min == 1
         assert spin_rate_b_min == 1
         
@@ -193,64 +197,6 @@ class TestNumericNormalization:
         # 100 should be integer
         descent_b_min = parsed["metrics"]["descent_angle"]["b_min"]
         assert descent_b_min == 100
-
-    def test_binary_float_problem_cases(self):
-        """
-        Test values that expose binary float representation issues.
-        
-        0.1 and 0.3 are not exactly representable in binary float.
-        These must be handled via Decimal to ensure cross-platform determinism.
-        """
-        test_cases = {
-            "point_one": Decimal("0.1"),
-            "point_three": Decimal("0.3"),
-            "sum": Decimal("0.1") + Decimal("0.2"),  # Should be exactly 0.3
-        }
-        
-        canonical = canonicalize(test_cases)
-        
-        # Verify canonical form
-        assert "0.1" in canonical
-        assert "0.3" in canonical
-        
-        # Verify parse back
-        import json
-        parsed = json.loads(canonical)
-        
-        # These must be exact
-        assert parsed["point_one"] == 0.1
-        assert parsed["point_three"] == 0.3
-        assert parsed["sum"] == 0.3
-
-    def test_scientific_notation_never_emitted(self):
-        """
-        Large and small numbers must never use scientific notation.
-        """
-        test_cases = {
-            "big": Decimal("1000000000"),  # 1e9
-            "tiny": Decimal("0.0000000001"),  # 1e-10
-        }
-        
-        canonical = canonicalize(test_cases)
-        
-        # Should contain full representations (not scientific notation)
-        assert "1000000000" in canonical, \
-            f"Large number not in fixed-point format: {canonical}"
-        assert "0.0000000001" in canonical, \
-            f"Small number not in fixed-point format: {canonical}"
-        
-        # Must not contain scientific notation patterns like '1e9' or '1E-10'
-        # Check for 'e' or 'E' followed by digits (scientific notation pattern)
-        import re
-        sci_pattern = re.compile(r'\d[eE][+-]?\d')
-        assert not sci_pattern.search(canonical), \
-            f"Scientific notation detected in: {canonical}"
-        
-        # Verify parse back
-        import json
-        parsed = json.loads(canonical)
-        assert parsed["big"] == 1000000000
-        assert parsed["tiny"] == 0.0000000001
 
 
 class TestQuotingRegression:

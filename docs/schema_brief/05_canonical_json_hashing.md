@@ -2,21 +2,40 @@
 
 [← Back to Index](00_index.md)
 
+**Version:** 2.0 (Kernel v2.0 - RFC 8785 JCS)  
+**Date:** 2026-02-02  
+**Standard:** [RFC 8785 JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
+
 ---
 
 ## 5.1 Overview
 
-KPI template identity is defined by the **SHA-256 hash of canonical JSON**. For this to work reliably across platforms and implementations, canonicalization must be **completely deterministic**.
+KPI template identity is defined by the **SHA-256 hash of RFC 8785 JCS canonical JSON**. 
 
-This section defines the exact rules for producing canonical JSON from KPI templates.
+**Normative formula:**
+
+```
+template_hash = SHA-256( UTF-8( JCS( template_json ) ) )
+```
+
+Where JCS = RFC 8785 JSON Canonicalization Scheme.
+
+This section defines the exact rules for producing canonical JSON from KPI templates per RFC 8785.
 
 ---
 
-## 5.2 Canonicalization Requirements
+## 5.2 Canonicalization Requirements (RFC 8785)
+
+As of Kernel v2.0, RAID uses **RFC 8785 JSON Canonicalization Scheme (JCS)** for template canonicalization.
+
+For complete specification, see:
+- **Normative spec:** [docs/specs/jcs_hashing.md](../specs/jcs_hashing.md)
+- **RFC 8785:** https://www.rfc-editor.org/rfc/rfc8785
+- **Kernel Contract v2:** [docs/private/kernel/KERNEL_CONTRACT_v2.md](../private/kernel/KERNEL_CONTRACT_v2.md)
 
 ### 5.2.1 Key Ordering
 
-**Rule:** All object keys must be sorted **alphabetically** at **every nesting level**.
+**Rule:** All object keys must be sorted **lexicographically** (Unicode code point order) at **every nesting level**.
 
 ```json
 // WRONG — keys not sorted
@@ -56,52 +75,30 @@ This section defines the exact rules for producing canonical JSON from KPI templ
 }
 ```
 
-### 5.2.2 Numeric Normalization
+### 5.2.2 Numeric Serialization (RFC 8785)
 
-**Problem:** JSON allows multiple representations of the same number:
-- `1.0` vs `1` vs `1.00`
-- `1e2` vs `100.0` vs `100`
+**Rule:** Numbers are serialized per RFC 8785 §3.2.2.3:
 
-**Solution:** Numeric values must be normalized to a **single canonical form**.
+- Integers without decimal point: `5` not `5.0`
+- Decimals with minimal precision: `1.5` not `1.50`
+- No scientific notation in canonical form
+- No leading zeros (except `0.x`)
 
-#### 5.2.2.1 Numeric Normalization Rule (Phase 0)
+**I-JSON Constraints (enforced):**
+- No NaN or Infinity values
+- No non-standard number formats (hex, octal, etc.)
 
-**Phase 0 uses a deterministic, language-independent numeric normalization rule** to ensure cross-platform hash consistency (Python ↔ Swift).
-
-**Canonical Numeric Serialization Rules:**
-
-1. **Parse numbers as decimals** — Do not rely on binary floating-point representation
-2. **Serialize as JSON numbers** — Not as quoted strings
-3. **Formatting rules:**
-   - **No scientific notation** — Always use decimal representation
-   - **Strip trailing zeros after decimal point** — `108.920` → `108.92`
-   - **Strip decimal point if result is an integer** — `1.0` → `1`
-   - **Always include leading zero for |x| < 1** — `.5` → `0.5`
-   - **Normalize negative zero** — `-0` → `0`
-
-**Reference Examples:**
-
-| Input | Canonical Output |
-|-------|-----------------|
-| `108.9200` | `108.92` |
-| `106.60` | `106.6` |
-| `1.0` | `1` |
-| `1` | `1` |
-| `100.0` | `100` |
-| `0.001` | `0.001` |
-| `.5` | `0.5` |
-| `-0.0` | `0` |
-
-**Implementation Guidance:**
-
-- Use the `decimal.Decimal` type (Python) or equivalent high-precision decimal library
-- Avoid platform-default `float` or `Double` representation
-- Do NOT rely on `repr()`, `str()`, or language-default JSON serialization
-- Serialize decimals using the rules above before JSON encoding
-
+**Implementation:**
+- Python: `canonicaljson` library (pinned at v2.0.0)
+- Swift/JS: Use RFC 8785-compliant libraries
+- Test vectors: `tests/vectors/jcs_vectors.json`
 **Cross-Platform Requirement:**
 
-This rule is **binding for RTM-13 and RTM-14** — Python and Swift implementations must produce byte-identical canonical JSON for identical logical inputs.
+RFC 8785 JCS is **binding for all implementations** — Python, Swift, and JavaScript implementations must produce byte-identical canonical JSON for identical logical inputs.
+
+**Verification:**
+- Golden test vectors: `tests/vectors/jcs_vectors.json`
+- Template hashes: `tests/vectors/expected/template_hashes.json`
 
 ### 5.2.3 Whitespace Elimination
 

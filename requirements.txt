@@ -1,0 +1,6 @@
+# RAID Golf — Python Dependencies
+# Kernel v2.0 (RFC 8785 JCS Canonicalization)
+
+# RFC 8785 JSON Canonicalization Scheme
+# Pinned for deterministic template hashing
+canonicaljson==2.0.0

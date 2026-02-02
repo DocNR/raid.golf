@@ -1,8 +1,9 @@
 {
-  "_comment": "Golden hashes computed by canonical Python implementation",
-  "_note": "These values are frozen after Phase A implementation and must never change",
-  "_frozen_date": "2026-01-28",
+  "_comment": "Golden hashes computed by RFC 8785 JCS canonical implementation",
+  "_note": "These values are frozen after Kernel v2.0 implementation and must never change",
+  "_frozen_date": "2026-02-02",
+  "_kernel_version": "2.0",
   "fixture_a": "96bf2f0d9540211669916f580aaec0ac26d1a14e8d2fdd35cee2172595f86698",
   "fixture_b": "b23b186c3af4fc21bb78dd6645f8b040e947e561f4a131cb5c0de02708ffbcbb",
-  "fixture_c": "753fa40faec05b00eaa1aecf5c539d72987d49f3f0a50fe60459f64a519a12f2"
+  "fixture_c": "1fc0d89d5a530069631b13ffdd9d21622d5cf2b2f0291cca743f1646351643e1"
 }

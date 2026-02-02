@@ -22,47 +22,53 @@ The Reference Test Matrix (RTM) remains the source of truth for what must be tes
 
 ---
 
-## Phase A — Canonical Identity ✅ **COMPLETE**
+## Phase A — Canonical Identity ✅ **COMPLETE** (Kernel v2.0)
 
 ### Purpose
 
-Establish deterministic, cross-platform template identity through canonical JSON hashing. Without this foundation, no other phase can reliably reference or persist KPI templates.
+Establish deterministic, cross-platform template identity through RFC 8785 JCS canonical JSON hashing. Without this foundation, no other phase can reliably reference or persist KPI templates.
 
 ### RTMs Covered
 
 - **RTM-11:** Canonical key ordering ✅
 - **RTM-12:** Compact JSON + UTF-8 ✅
 - **RTM-13:** Numeric normalization ✅
-- **RTM-14:** Hash determinism (Python ↔ Swift) ✅
+- **RTM-14:** Hash determinism (Python ↔ Swift ↔ JavaScript) ✅
 
 ### Key Guarantees
 
-- Template JSON is canonicalized with deterministic key ordering at all nesting levels
-- Numeric values are normalized consistently (no ambiguity between `1`, `1.0`, `1.00`)
+- Template JSON is canonicalized using **RFC 8785 JSON Canonicalization Scheme (JCS)**
+- Deterministic key ordering at all nesting levels (lexicographic)
+- Numeric values normalized per RFC 8785 (integers without decimal, minimal precision)
 - JSON is compact (no whitespace) and UTF-8 encoded without BOM
-- SHA-256 hashes are identical across Python and Swift for the same template content
+- SHA-256 hashes are identical across Python, Swift, and JavaScript for the same template content
 - Golden hash values are computed once and frozen as expected values in tests
 
 ### Completion Status
 
-**Completed:** 2026-01-28  
-**Commits:** Multiple (canonicalization, hashing, test fixtures)
+**Completed:** 2026-02-02 (Kernel v2.0)  
+**Commits:** Multiple (v1.0: 2026-01-28, v2.0: 2026-02-02)
 
-- ✅ All three test fixtures (A, B, C) canonicalize correctly
-- ✅ Golden hashes computed, frozen in `tests/vectors/expected/template_hashes.json`
-- ✅ Python canonicalization tests pass (27 tests)
-- ✅ Python hashing tests pass (13 tests)
-- ✅ Decimal-based numeric normalization ensures cross-platform determinism
+**Kernel v2.0 (RFC 8785 JCS):**
+- ✅ Replaced custom Decimal-based canonicalization with RFC 8785 JCS
+- ✅ Uses `canonicaljson==2.0.0` library for RFC 8785 compliance
+- ✅ All test fixtures (A, B, C) canonicalize correctly under JCS
+- ✅ Golden hashes regenerated under JCS in `tests/vectors/expected/template_hashes.json`
+- ✅ Added 12 JCS compliance test vectors in `tests/vectors/jcs_vectors.json`
+- ✅ Python canonicalization tests pass (24 tests)
+- ✅ Python hashing tests pass (12 tests)
+- ✅ Cross-platform interoperability enabled via RFC 8785 standard
 
 **Implementation Files:**
-- `raid/canonical.py` - Canonical JSON transformation
+- `raid/canonical.py` - RFC 8785 JCS canonical transformation
 - `raid/hashing.py` - SHA-256 content-addressed hashing
-- `tests/unit/test_canonicalization.py` - Canonicalization test suite
+- `tests/unit/test_canonicalization.py` - JCS compliance test suite
 - `tests/unit/test_hashing.py` - Hashing test suite
+- `docs/specs/jcs_hashing.md` - Normative spec for non-Python implementers
 
 ### STOP Conditions Encountered
 
-None. Decimal-based normalization provided platform-independent numeric handling.
+None. RFC 8785 JCS provides industry-standard cross-platform determinism.
 
 ---
 

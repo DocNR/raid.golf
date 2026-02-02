@@ -5,7 +5,7 @@ Projections are derived, regenerable exports of sub-session analysis results.
 They CANNOT be imported as authoritative data (RTM-15, RTM-16).
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Dict, Any
 
 if TYPE_CHECKING:
@@ -84,7 +84,7 @@ def generate_projection_for_subsession(
         "avg_descent": subsession["avg_descent"],
         "kpi_template_hash": subsession["kpi_template_hash"],
         "analyzed_at": subsession["analyzed_at"],
-        "generated_at": datetime.utcnow().isoformat() + 'Z',
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     
     return projection
