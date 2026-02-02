@@ -6,7 +6,7 @@ Critical: Read operations MUST NOT call canonicalize() or compute_template_hash(
 The stored template_hash is authoritative (RTM-04).
 """
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -100,7 +100,7 @@ class Repository:
             session_id of inserted row
         """
         if ingested_at is None:
-            ingested_at = datetime.utcnow().isoformat() + 'Z'
+            ingested_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
         
         with self._get_connection() as conn:
             cursor = conn.execute(
@@ -162,7 +162,7 @@ class Repository:
             template_hash (for convenience)
         """
         if created_at is None:
-            created_at = datetime.utcnow().isoformat() + 'Z'
+            created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
         
         with self._get_connection() as conn:
             conn.execute(
@@ -214,6 +214,19 @@ class Repository:
             )
             return [dict(row) for row in cursor.fetchall()]
     
+    def list_template_clubs(self) -> List[str]:
+        """
+        List all distinct clubs that have templates.
+        
+        Returns:
+            List of club identifiers (sorted alphabetically)
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT DISTINCT club FROM kpi_templates ORDER BY club"
+            )
+            return [row[0] for row in cursor.fetchall()]
+    
     # ================================================================
     # CLUB SUB-SESSION OPERATIONS
     # ================================================================
@@ -258,7 +271,7 @@ class Repository:
             subsession_id of inserted row
         """
         if analyzed_at is None:
-            analyzed_at = datetime.utcnow().isoformat() + 'Z'
+            analyzed_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
         
         with self._get_connection() as conn:
             cursor = conn.execute(
@@ -297,10 +310,10 @@ class Repository:
     def list_subsessions_by_session(self, session_id: int) -> List[Dict[str, Any]]:
         """
         List all sub-sessions for a session.
-        
+
         Args:
             session_id: Parent session ID
-        
+
         Returns:
             List of sub-session dicts
         """
@@ -308,6 +321,19 @@ class Repository:
             cursor = conn.execute(
                 "SELECT * FROM club_subsessions WHERE session_id = ? ORDER BY club",
                 (session_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        """
+        List all sessions ordered by session_date (newest first), with session_id as tiebreaker.
+        
+        Returns:
+            List of session dicts
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM sessions ORDER BY session_date DESC, session_id DESC"
             )
             return [dict(row) for row in cursor.fetchall()]
 

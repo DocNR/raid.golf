@@ -24,4 +24,4 @@ data/templates/*.xlsx
 !data/templates/Strike_Quality_Gapping_KPI_Log.xlsx
 
 # Private planning docs
-docs/private/
+docs/private/test_cli.db

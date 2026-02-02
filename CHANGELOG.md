@@ -138,6 +138,44 @@ This project versions **behavior and rules**, not files.
 - **Phase 0 MVP complete**: All RTM-01 through RTM-17 validated
 - No schema changes required
 
+**Phase 0.1: CLI + Results & Trends**
+- Added command-line interface (`raid/cli.py`)
+  - `templates load` - Load KPI templates from tools/kpis.json
+  - `templates list` - List all stored templates
+  - `ingest <csv>` - Ingest Rapsodo CSV files
+  - `sessions` - List all sessions
+  - `show <id>` - Show session details (clubs, A/B/C counts, averages)
+  - `trend <club>` - Show A% trend over time for a club
+  - `export <id>` - Export session projections as JSON
+- Added template loader (`raid/templates_loader.py`)
+  - Loads KPI templates from tools/kpis.json into database
+  - Content-addressed hashing (templates hashed once at insert)
+  - Idempotent (no-op if template already exists)
+  - Kernel-safe (insert-only, no mutations)
+- Added trend analysis (`raid/trends.py`)
+  - Computes A% trends using subsession aggregates only
+  - Shot-weighted average A% computation
+  - Explicit validity filtering (min_validity parameter)
+  - Optional rolling window (last N sessions)
+  - Derived projections (regenerable from authoritative data)
+- Extended repository with read-only methods
+  - `list_sessions()` - List all sessions (newest first)
+  - `list_template_clubs()` - List distinct clubs with templates
+- Removed hardcoded "7i" assumptions from CLI
+  - Template loading and listing now query database for all clubs
+  - Ingest automatically uses templates for all clubs in database
+- Added smoke test script (`scripts/smoke_phase01.sh`)
+  - End-to-end CLI workflow validation
+  - Tests template load idempotency
+  - Tests duplicate ingest behavior (creates new session)
+- Added CLI help regression test (`tests/unit/test_cli_help.py`)
+  - Prevents argparse % escaping crashes
+  - Validates all help commands render without errors
+- No schema changes
+- No modifications to Phase 0 kernel invariants
+- SQLite remains authoritative, JSON is export-only
+- All trends are query-only derived projections
+
 ### Planned
 - Validation of 5-iron and 6-iron KPIs
 - Potential minor clarifications to pressure blocks

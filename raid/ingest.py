@@ -6,7 +6,7 @@ Handles multi-club session ingest with footer row exclusion and shot classificat
 import csv
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -37,10 +37,22 @@ def ingest_rapsodo_csv(
         session_id of created session
     """
     if session_date is None:
-        session_date = datetime.utcnow().isoformat() + 'Z'
+        session_date = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
     
     # Parse CSV
     shots_by_club = _parse_rapsodo_csv(csv_path)
+    
+    # Check for missing templates (fail fast)
+    clubs_in_csv = set(shots_by_club.keys())
+    clubs_with_templates = set(template_hash_by_club.keys())
+    missing_clubs = clubs_in_csv - clubs_with_templates
+    
+    if missing_clubs:
+        missing_list = ", ".join(sorted(missing_clubs))
+        raise ValueError(
+            f"Missing templates for clubs in CSV: {missing_list}. "
+            f"Run 'raid templates load' to load templates for all clubs."
+        )
     
     # Create session
     source_file = Path(csv_path).name

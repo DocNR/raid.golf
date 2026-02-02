@@ -78,10 +78,66 @@ The kernel is domain-agnostic and designed to scale beyond practice analytics in
 1. Fork this repo on GitHub.
 2. Clone your fork locally.
 3. Keep your personal exports and summaries private (see **Data Privacy** below).
-4. Run the analyzer against your session exports:
+
+---
+
+## CLI Usage (Phase 0.1+)
+
+RAID now includes a command-line interface for managing sessions and analyzing trends.
+
+### Quick Start
 
 ```bash
-python tools/scripts/analyze_session.py data/session_logs/<your_export>.csv --device rapsodo
+# Load KPI templates into the database (first time only)
+python3 -m raid.cli templates load
+
+# Ingest a Rapsodo session
+python3 -m raid.cli ingest data/session_logs/your_export.csv
+
+# List all sessions
+python3 -m raid.cli sessions
+
+# Show details for a specific session
+python3 -m raid.cli show 1
+
+# View A% trend for a club
+python3 -m raid.cli trend 7i
+
+# Export session data as JSON
+python3 -m raid.cli export 1 --format json
+```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `templates load` | Load KPI templates from `tools/kpis.json` |
+| `templates list` | List all stored templates |
+| `ingest <csv>` | Ingest a Rapsodo CSV file |
+| `sessions` | List all sessions |
+| `show <id>` | Show session details (clubs, A/B/C counts, averages) |
+| `trend <club>` | Show A% trend over time for a club |
+| `export <id>` | Export session projections as JSON |
+
+### Trend Options
+
+```bash
+# Show trend with only fully valid sessions
+python3 -m raid.cli trend 7i --min-validity valid
+
+# Show last 10 sessions only (rolling window)
+python3 -m raid.cli trend 7i --window 10
+
+# Combine filters
+python3 -m raid.cli trend 7i --min-validity valid --window 5
+```
+
+### Database Location
+
+By default, the CLI uses `./raid.db` in the current directory. You can specify a different location:
+
+```bash
+python3 -m raid.cli --db /path/to/custom.db sessions
 ```
 
 ---
