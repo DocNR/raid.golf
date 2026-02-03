@@ -1,0 +1,63 @@
+{
+  "artifact_type": "template_skeleton",
+  "club_class": "short_irons",
+  "clubs": ["9i", "PW"],
+  "judgment_metrics": [
+    {
+      "metric": "smash_factor",
+      "role": "judgmental",
+      "direction": "higher_is_better",
+      "rationale": "Core strike quality indicator; directly reflects center contact"
+    },
+    {
+      "metric": "ball_speed",
+      "role": "judgmental",
+      "direction": "higher_is_better",
+      "rationale": "Energy transfer efficiency; correlates with smash but adds speed context"
+    },
+    {
+      "metric": "spin_rate",
+      "role": "judgmental",
+      "direction": "higher_is_better",
+      "rationale": "Critical for stopping power and trajectory control; low spin indicates thin/topped contact"
+    },
+    {
+      "metric": "descent_angle",
+      "role": "judgmental",
+      "direction": "higher_is_better",
+      "rationale": "Steep descent required for green-holding; shallow descent indicates poor launch or spin"
+    }
+  ],
+  "diagnostic_metrics": [
+    {
+      "metric": "carry_distance",
+      "role": "diagnostic",
+      "rationale": "Used for gapping validation and trend monitoring; not grade-driving because distance control intent varies"
+    },
+    {
+      "metric": "launch_angle",
+      "role": "diagnostic",
+      "rationale": "Informational for trajectory assessment; not grade-driving because acceptable range is wide"
+    }
+  ],
+  "excluded_metrics": [
+    {
+      "metric": "club_speed",
+      "rationale": "Speed is outcome, not strike quality; can vary intentionally"
+    },
+    {
+      "metric": "attack_angle",
+      "rationale": "Swing characteristic, not strike quality; out of Phase 0 scope"
+    },
+    {
+      "metric": "face_angle",
+      "rationale": "Directional control, not strike quality; out of Phase 0 scope"
+    },
+    {
+      "metric": "club_path",
+      "rationale": "Swing characteristic, not strike quality; out of Phase 0 scope"
+    }
+  ],
+  "c_definition": "C-shot indicates poor contact quality: thin/fat strike (low smash), insufficient spin for stopping power, or shallow descent angle. These shots lack the precision required for scoring clubs.",
+  "notes": "Short irons prioritize precision and stopping power over distance. All four judgment metrics are critical because any single deficiency compromises green-holding ability. Spin is especially critical in this class."
+}
