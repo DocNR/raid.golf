@@ -177,6 +177,31 @@ Stop adjusting thresholds if **any** of the following are true:
 
 ---
 
+## Phase 0 Schema Limitation: B/C Threshold Gap
+
+**This is a schema limitation, not a template bug.**
+
+The Strike Quality Practice Session Plan includes threshold "gaps" (e.g., B ≥ 44° but C < 43°) that cannot be represented in the Phase 0 template schema.
+
+**Practice Plan (prose):**
+- Descent C-shot: < 43°
+- Spin C-shot: < 4,100 rpm
+
+**Phase 0 Template Schema:**
+- Descent C-shot: < `b_min` (44.0°)
+- Spin C-shot: < `b_min` (4,200 rpm)
+
+In Phase 0, there is no way to encode a separate C threshold. The grading model is:
+- **A:** value meets `a_min` (or `a_max` for lower-is-better)
+- **B:** value meets `b_min` (or `b_max`) but not A
+- **C:** value fails `b_min` (or `b_max`)
+
+This makes Phase 0 templates **slightly stricter** than the documented Practice Plan thresholds. This is acceptable and expected. Future schema versions may support explicit C thresholds if needed.
+
+**Key Takeaway:** The B/C gap is a documentation alignment issue, not a template error. Templates are correct per the Phase 0 schema.
+
+---
+
 ## Skeleton Artifacts
 
 The following skeleton JSONs define metric intent and structure for each club class. These are **design-only artifacts** and are not ingestable templates.

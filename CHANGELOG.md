@@ -28,6 +28,12 @@ This project versions **behavior and rules**, not files.
 
 ## [Unreleased]
 
+### Added
+- Phase 0.2 real-data validation of the 7-iron v2 template (Kernel v2)
+  - Added validation script: `scripts/validate_7i_v2.py`
+  - Added validation report: `data/summaries/phase02_validation_report.md`
+  - Documented Phase 0 schema limitation for B/C threshold gaps in template design docs
+
 **Kernel v2.0: RFC 8785 JCS Template Canonicalization (BREAKING)**
 - **BREAKING CHANGE**: Template identity now uses RFC 8785 JSON Canonicalization Scheme (JCS)
   - Formula: `template_hash = SHA-256(UTF-8(JCS(template_json)))`
