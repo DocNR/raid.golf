@@ -23,12 +23,48 @@ This project versions **behavior and rules**, not files.
 - 7-iron is the only validated club at this version
 - All other clubs are provisional pending data
 - This version establishes the canonical practice framework
-
 ---
 
 ## [Unreleased]
 
 ### Added
+
+---
+
+## [iOS Phase 2.4] - 2026-02-06
+
+### Added - iOS Repository Layer (RTM-04 Compliance)
+
+**Kernel/Protocols.swift**
+- `Canonicalizing` protocol for canonical JSON transformation
+- `Hashing` protocol for SHA-256 hashing
+- Production implementations: `RAIDCanonicalizer`, `RAIDHasher`
+- Enables behavioral testing via dependency injection (no global DEBUG counters)
+
+**Kernel/Repository.swift**
+- `DatabaseQueue.createRAIDDatabase()` factory with explicit FK enforcement
+- `TemplateRepository`: Insert (computes hash once), Fetch (never recomputes)
+  - Repository owns canonicalization + hashing (callers provide raw JSON `Data`)
+  - Read path returns stored hash directly (RTM-04: never calls canonicalize/hash)
+- `SessionRepository`: Insert/fetch sessions
+- `ShotRepository`: Batch insert/fetch shots
+
+**RAIDTests/KernelTests.swift**
+- `testInsertTemplateComputesHashOnce`: Verifies exactly 1 canonicalize + 1 hash call during insert
+- `testFetchTemplateNeverRecomputesHash`: Verifies 0 calls during fetch (RTM-04 compliance)
+- Test spies: `SpyCanonicalizer`, `SpyHasher` count calls without polluting production code
+
+### Changed
+- Repository interfaces are now **FROZEN** — treat method signatures as semi-public kernel API
+
+### Test Results
+- ✅ All 31 tests passing (29 existing + 2 repository tests)
+- ✅ Swift hashes match Python hashes exactly
+- ✅ RTM-04 verified: Read path never calls canonicalize/hash
+
+---
+
+## [iOS Phase 2.3 + 2.3b] - 2026-02-06
 **iOS Port — Phase 2.3 + 2.3b: Schema, Immutability, and Shot Persistence (2026-02-06)**
 - **Phase 2.3b: Shots Table**
 - Added `shots` table as separate migration (`v2_add_shots`)

@@ -6,54 +6,261 @@
 // Purpose:
 // - Insert path: canonicalize → hash → store (hash computed once)
 // - Read path: return stored hash directly (never recompute)
-// - Enforce "no re-hash on read" mechanically via API design
+// - Enforce "no re-hash on read" via dependency injection + behavioral tests
 //
 // Invariants:
 // - template_hash is required column
 // - No save(updatedTemplate) method exists
 // - Canonicalize/hash only callable from insert path
+// - Repository owns hash computation (callers provide raw JSON bytes)
 //
-// Test: Prove read path never calls canonicalize/hash (spy/mock or compile-time enforcement)
+// RTM-04: Read path MUST NOT call canonicalize or hash functions
 
 import Foundation
 import GRDB
 
-/// Data access layer for RAID kernel
-class Repository {
-    // TODO: Phase 2.4 - Implement data access layer
-    // See: docs/schema_brief/04_identity_and_immutability.md
-    // Reference: raid/repository.py
+// MARK: - Database Factory
+
+extension DatabaseQueue {
+    /// Create database with explicit FK enforcement
+    /// Phase 2.4 acceptance requirement: FK enforcement must be explicit
+    static func createRAIDDatabase(at path: String) throws -> DatabaseQueue {
+        var config = Configuration()
+        config.foreignKeysEnabled = true  // Explicit (not relying on defaults)
+        let dbQueue = try DatabaseQueue(path: path, configuration: config)
+        try Schema.install(in: dbQueue)
+        return dbQueue
+    }
+}
+
+// MARK: - Template Record
+
+struct TemplateRecord {
+    let hash: String
+    let schemaVersion: String
+    let club: String
+    let canonicalJSON: String
+    let createdAt: String
+}
+
+// MARK: - Template Repository
+
+class TemplateRepository {
+    private let dbQueue: DatabaseQueue
+    private let canonicalizer: Canonicalizing
+    private let hasher: Hashing
     
+    init(dbQueue: DatabaseQueue,
+         canonicalizer: Canonicalizing = RAIDCanonicalizer(),
+         hasher: Hashing = RAIDHasher()) {
+        self.dbQueue = dbQueue
+        self.canonicalizer = canonicalizer
+        self.hasher = hasher
+    }
+    
+    // MARK: - Insert Path (hash computed once)
+    
+    /// Insert a new KPI template
+    /// Repository owns canonicalization and hashing (computed once at insert)
+    /// - Parameter rawJSON: Raw JSON bytes (UTF-8)
+    /// - Returns: Template record with computed hash
+    /// - Throws: Database error or canonicalization error
+    func insertTemplate(rawJSON: Data) throws -> TemplateRecord {
+        // 1. Canonicalize (kernel v2 rules, preserve -0.0)
+        let canonicalData = try canonicalizer.canonicalize(rawJSON)
+        
+        // 2. Hash canonical bytes
+        let hash = hasher.sha256Hex(canonicalData)
+        
+        // 3. Parse to extract metadata
+        guard let jsonObject = try? JSONSerialization.jsonObject(with: rawJSON) as? [String: Any],
+              let schemaVersion = jsonObject["schema_version"] as? String,
+              let club = jsonObject["club"] as? String else {
+            throw NSError(domain: "TemplateRepository", code: 1,
+                         userInfo: [NSLocalizedDescriptionKey: "Template missing required fields: schema_version, club"])
+        }
+        
+        let canonicalString = String(data: canonicalData, encoding: .utf8)!
+        let createdAt = ISO8601DateFormatter().string(from: Date())
+        
+        // 4. Store in database
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: [hash, schemaVersion, club, canonicalString, createdAt]
+            )
+        }
+        
+        return TemplateRecord(
+            hash: hash,
+            schemaVersion: schemaVersion,
+            club: club,
+            canonicalJSON: canonicalString,
+            createdAt: createdAt
+        )
+    }
+    
+    // MARK: - Read Path (returns stored hash, never recomputes)
+    
+    /// Fetch a template by its stored hash
+    /// RTM-04: This method MUST NOT call canonicalize or hash functions
+    /// - Parameter hash: The template hash (already computed)
+    /// - Returns: Template record, or nil if not found
+    /// - Throws: Database error
+    func fetchTemplate(byHash hash: String) throws -> TemplateRecord? {
+        return try dbQueue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT * FROM kpi_templates WHERE template_hash = ?",
+                arguments: [hash]) else {
+                return nil
+            }
+            
+            return TemplateRecord(
+                hash: row["template_hash"],
+                schemaVersion: row["schema_version"],
+                club: row["club"],
+                canonicalJSON: row["canonical_json"],
+                createdAt: row["created_at"]
+            )
+        }
+    }
+}
+
+// MARK: - Session Record
+
+struct SessionRecord {
+    let sessionId: Int64
+    let sessionDate: String
+    let sourceFile: String
+    let deviceType: String?
+    let location: String?
+    let ingestedAt: String
+}
+
+// MARK: - Session Repository
+
+class SessionRepository {
     private let dbQueue: DatabaseQueue
     
     init(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
     }
     
-    // MARK: - Insert Path (hash computed once)
-    
-    /// Insert a new KPI template (computes hash once)
-    /// - Parameter templateJSON: Raw JSON object (not yet canonicalized)
-    /// - Returns: The computed template hash
-    /// - Throws: Database error or canonicalization error
-    func insertTemplate(_ templateJSON: [String: Any]) throws -> String {
-        // TODO: Implement
-        // 1. Canonicalize JSON
-        // 2. Compute hash
-        // 3. Store template with hash
-        fatalError("Not implemented - Phase 2.4")
+    /// Insert a new session
+    func insertSession(sessionDate: String,
+                      sourceFile: String,
+                      deviceType: String? = nil,
+                      location: String? = nil) throws -> SessionRecord {
+        let ingestedAt = ISO8601DateFormatter().string(from: Date())
+        
+        let sessionId = try dbQueue.write { db -> Int64 in
+            try db.execute(
+                sql: """
+                INSERT INTO sessions (session_date, source_file, device_type, location, ingested_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: [sessionDate, sourceFile, deviceType, location, ingestedAt]
+            )
+            return db.lastInsertedRowID
+        }
+        
+        return SessionRecord(
+            sessionId: sessionId,
+            sessionDate: sessionDate,
+            sourceFile: sourceFile,
+            deviceType: deviceType,
+            location: location,
+            ingestedAt: ingestedAt
+        )
     }
     
-    // MARK: - Read Path (returns stored hash, never recomputes)
+    /// Fetch a session by ID
+    func fetchSession(byId sessionId: Int64) throws -> SessionRecord? {
+        return try dbQueue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT * FROM sessions WHERE session_id = ?",
+                arguments: [sessionId]) else {
+                return nil
+            }
+            
+            return SessionRecord(
+                sessionId: row["session_id"],
+                sessionDate: row["session_date"],
+                sourceFile: row["source_file"],
+                deviceType: row["device_type"],
+                location: row["location"],
+                ingestedAt: row["ingested_at"]
+            )
+        }
+    }
+}
+
+// MARK: - Shot Record
+
+struct ShotRecord {
+    let shotId: Int64
+    let sessionId: Int64
+    let sourceRowIndex: Int
+    let sourceFormat: String
+    let importedAt: String
+    let rawJSON: String
+    let club: String
+    let carry: Double?
+    let ballSpeed: Double?
+    // ... other metrics as needed
+}
+
+// MARK: - Shot Repository
+
+class ShotRepository {
+    private let dbQueue: DatabaseQueue
     
-    /// Fetch a template by its stored hash
-    /// - Parameter hash: The template hash (already computed)
-    /// - Returns: Template JSON and stored hash
-    /// - Throws: Database error
-    func fetchTemplate(byHash hash: String) throws -> (json: [String: Any], storedHash: String) {
-        // TODO: Implement
-        // MUST NOT call canonicalize or hash functions
-        // Returns stored hash directly
-        fatalError("Not implemented - Phase 2.4")
+    init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+    
+    /// Insert shots in batch
+    func insertShots(_ shots: [(rowIndex: Int, club: String, rawJSON: String, carry: Double?, ballSpeed: Double?)],
+                    sessionId: Int64,
+                    sourceFormat: String) throws {
+        let importedAt = ISO8601DateFormatter().string(from: Date())
+        
+        try dbQueue.write { db in
+            for shot in shots {
+                try db.execute(
+                    sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [sessionId, shot.rowIndex, sourceFormat, importedAt, shot.rawJSON, shot.club, shot.carry, shot.ballSpeed]
+                )
+            }
+        }
+    }
+    
+    /// Fetch shots for a session
+    func fetchShots(forSession sessionId: Int64) throws -> [ShotRecord] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db,
+                sql: "SELECT * FROM shots WHERE session_id = ? ORDER BY source_row_index",
+                arguments: [sessionId])
+            
+            return rows.map { row in
+                ShotRecord(
+                    shotId: row["shot_id"],
+                    sessionId: row["session_id"],
+                    sourceRowIndex: row["source_row_index"],
+                    sourceFormat: row["source_format"],
+                    importedAt: row["imported_at"],
+                    rawJSON: row["raw_json"],
+                    club: row["club"],
+                    carry: row["carry"],
+                    ballSpeed: row["ball_speed"]
+                )
+            }
+        }
     }
 }

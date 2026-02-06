@@ -951,17 +951,134 @@ final class KernelTests: XCTestCase {
         }
     }
     
-    // MARK: - Phase 2.4: Repository Tests (TODO)
+    // MARK: - Phase 2.4: Repository Tests
     
     func testInsertTemplateComputesHashOnce() throws {
-        // TODO: Insert template, verify hash is computed
-        // Re-fetch template, verify hash is returned from storage
-        XCTFail("Not implemented - Phase 2.4")
+        print("\n=== Testing Insert Template Computes Hash Once ===")
+        
+        // Create test database
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+        
+        // Create spy implementations
+        let spyCanon = SpyCanonicalizer()
+        let spyHash = SpyHasher()
+        
+        // Create repository with spies
+        let repo = TemplateRepository(dbQueue: dbQueue, canonicalizer: spyCanon, hasher: spyHash)
+        
+        // Template JSON
+        let templateDict: [String: Any] = [
+            "club": "7i",
+            "schema_version": "1.0",
+            "aggregation_method": "worst_metric",
+            "metrics": [
+                "ball_speed": [
+                    "a_min": 100,
+                    "b_min": 90,
+                    "direction": "higher_is_better"
+                ]
+            ]
+        ]
+        let rawJSON = try JSONSerialization.data(withJSONObject: templateDict, options: [])
+        
+        // Insert template
+        let record = try repo.insertTemplate(rawJSON: rawJSON)
+        
+        // Verify hash was computed exactly once
+        XCTAssertEqual(spyCanon.callCount, 1, "Canonicalize should be called exactly once during insert")
+        XCTAssertEqual(spyHash.callCount, 1, "Hash should be called exactly once during insert")
+        
+        print("✅ Insert called canonicalize: \(spyCanon.callCount) time(s)")
+        print("✅ Insert called hash: \(spyHash.callCount) time(s)")
+        print("✅ Computed hash: \(record.hash)")
+        
+        // Fetch template (should NOT call canonicalize or hash)
+        let fetched = try repo.fetchTemplate(byHash: record.hash)
+        
+        // Verify no additional calls during fetch
+        XCTAssertEqual(spyCanon.callCount, 1, "Fetch should NOT call canonicalize")
+        XCTAssertEqual(spyHash.callCount, 1, "Fetch should NOT call hash")
+        
+        // Verify fetched hash matches inserted hash
+        XCTAssertNotNil(fetched, "Template should be fetchable")
+        XCTAssertEqual(fetched?.hash, record.hash, "Fetched hash must match inserted hash")
+        
+        print("✅ Fetch did NOT call canonicalize or hash (counters unchanged)")
+        print("✅ Fetched hash matches inserted hash: \(record.hash)")
     }
     
     func testFetchTemplateNeverRecomputesHash() throws {
-        // TODO: Use spy/mock to prove fetchTemplate never calls canonicalize/hash
-        XCTFail("Not implemented - Phase 2.4")
+        print("\n=== Testing Fetch Template Never Recomputes Hash ===")
+        
+        // Create test database
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+        
+        // Create spy implementations
+        let spyCanon = SpyCanonicalizer()
+        let spyHash = SpyHasher()
+        
+        // Create repository with spies
+        let repo = TemplateRepository(dbQueue: dbQueue, canonicalizer: spyCanon, hasher: spyHash)
+        
+        // Template JSON
+        let templateDict: [String: Any] = [
+            "club": "7i",
+            "schema_version": "1.0",
+            "aggregation_method": "worst_metric",
+            "metrics": [
+                "ball_speed": [
+                    "a_min": 100,
+                    "b_min": 90,
+                    "direction": "higher_is_better"
+                ]
+            ]
+        ]
+        let rawJSON = try JSONSerialization.data(withJSONObject: templateDict, options: [])
+        
+        // Insert template
+        let record = try repo.insertTemplate(rawJSON: rawJSON)
+        XCTAssertEqual(spyCanon.callCount, 1, "Insert should call canonicalize once")
+        XCTAssertEqual(spyHash.callCount, 1, "Insert should call hash once")
+        
+        print("✅ After insert: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
+        
+        // Fetch multiple times
+        for i in 1...3 {
+            let fetched = try repo.fetchTemplate(byHash: record.hash)
+            XCTAssertNotNil(fetched, "Template should be fetchable (attempt \(i))")
+            XCTAssertEqual(fetched?.hash, record.hash, "Hash should match (attempt \(i))")
+            
+            // Verify counters unchanged
+            XCTAssertEqual(spyCanon.callCount, 1, "Fetch \(i) should NOT call canonicalize")
+            XCTAssertEqual(spyHash.callCount, 1, "Fetch \(i) should NOT call hash")
+        }
+        
+        print("✅ After 3 fetches: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
+        print("✅ Fetch path never calls canonicalize or hash (RTM-04 verified)")
+    }
+}
+
+// MARK: - Test Spies
+
+/// Spy canonicalizer that counts calls
+class SpyCanonicalizer: Canonicalizing {
+    var callCount = 0
+    
+    func canonicalize(_ raw: Data) throws -> Data {
+        callCount += 1
+        // Delegate to real implementation
+        return try RAIDCanonicalizer().canonicalize(raw)
+    }
+}
+
+/// Spy hasher that counts calls
+class SpyHasher: Hashing {
+    var callCount = 0
+    
+    func sha256Hex(_ canonical: Data) -> String {
+        callCount += 1
+        // Delegate to real implementation
+        return RAIDHasher().sha256Hex(canonical)
     }
 }
 
