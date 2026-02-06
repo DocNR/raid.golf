@@ -29,6 +29,18 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 
 ### Added
+**iOS Port — Phase 2.3: Schema + Immutability (2026-02-06)**
+- Implemented SQLite schema in Swift (Schema.swift) with GRDB
+  - sessions, kpi_templates, club_subsessions tables with full CHECK constraints
+  - Immutability triggers: BEFORE UPDATE and BEFORE DELETE → ABORT on all 3 authoritative tables
+  - Foreign keys enforced per connection (PRAGMA foreign_keys = ON)
+- Added 10 immutability tests in KernelTests.swift (all passing):
+  - Sessions: UPDATE rejected, DELETE rejected, all fields protected (RTM-01)
+  - Templates: UPDATE rejected, DELETE rejected (RTM-03)
+  - Subsessions: UPDATE rejected, DELETE rejected, template swap rejected (RTM-02)
+- Schema matches Python `raid/schema.sql` structure (parity achieved)
+- Phase 2.4 repository tests remain as TODO placeholders (2 expected failures)
+
 **iOS Port — Phase 2.2: Template Hash Fixtures (2026-02-05)**
 - Implemented `RAIDHashing.computeTemplateHash()` in Swift using CryptoKit SHA-256
 - Cross-platform template identity verified: all 3 Swift hashes match Python golden fixtures exactly
