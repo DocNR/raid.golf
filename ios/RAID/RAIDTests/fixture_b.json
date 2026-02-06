@@ -1,0 +1,1 @@
+{"club":"7i","schema_version":"1.0","metrics":{"smash_factor":{"direction":"higher_is_better","b_min":1.29,"a_min":1.32},"ball_speed":{"b_min":106.6,"direction":"higher_is_better","a_min":108.92}},"aggregation_method":"worst_metric"}

@@ -29,6 +29,16 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 
 ### Added
+**iOS Port — Phase 2.2: Template Hash Fixtures (2026-02-05)**
+- Implemented `RAIDHashing.computeTemplateHash()` in Swift using CryptoKit SHA-256
+- Cross-platform template identity verified: all 3 Swift hashes match Python golden fixtures exactly
+  - fixture_a: `96bf2f0d9540211669916f580aaec0ac26d1a14e8d2fdd35cee2172595f86698`
+  - fixture_b: `b23b186c3af4fc21bb78dd6645f8b040e947e561f4a131cb5c0de02708ffbcbb`
+  - fixture_c: `1fc0d89d5a530069631b13ffdd9d21622d5cf2b2f0291cca743f1646351643e1`
+- Added template hash fixture tests (3/3 passing)
+- Template hashing uses RAID canonical JSON v1 (Phase 2.1 dependency)
+- Kernel parity achieved: Swift and Python produce identical template hashes
+
 **iOS Port — Phase 2.1: Canonical JSON Implementation (2026-02-05)**
 - Implemented `RAIDCanonical` struct matching Python `canonicaljson` behavior
   - UTF-16 lexicographic key ordering (matches RFC 8785 and Python default)

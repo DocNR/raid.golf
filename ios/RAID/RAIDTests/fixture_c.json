@@ -1,0 +1,1 @@
+{"schema_version":"1.0","club":"7i","metrics":{"spin_rate":{"a_min":1.0,"b_min":1,"direction":"higher_is_better"},"descent_angle":{"a_min":0.001,"b_min":100,"direction":"higher_is_better"}},"aggregation_method":"worst_metric"}

@@ -351,22 +351,84 @@ final class KernelTests: XCTestCase {
         XCTAssertEqual(actualHash, vector.sha256, "SHA-256 hash mismatch for \(vector.name)")
     }
     
-    // MARK: - Phase 2.2: SHA-256 Hashing Tests (TODO after Phase 2.1 passes)
+    // MARK: - Phase 2.2: Template Hash Fixtures
     
     func testTemplateHashFixtureA() throws {
-        // TODO: Load tests/vectors/templates/fixture_a.json
-        // Compare hash against tests/vectors/expected/template_hashes.json
-        XCTFail("Not implemented - Phase 2.2")
+        try verifyTemplateHashFixture("fixture_a")
     }
     
     func testTemplateHashFixtureB() throws {
-        // TODO: Test fixture_b.json hash
-        XCTFail("Not implemented - Phase 2.2")
+        try verifyTemplateHashFixture("fixture_b")
     }
     
     func testTemplateHashFixtureC() throws {
-        // TODO: Test fixture_c.json hash
-        XCTFail("Not implemented - Phase 2.2")
+        try verifyTemplateHashFixture("fixture_c")
+    }
+    
+    /// Verify template hash matches golden value
+    private func verifyTemplateHashFixture(_ fixtureName: String) throws {
+        print("\n=== Testing Template Hash: \(fixtureName) ===")
+        
+        // Load template JSON
+        let template = try loadTemplateFixture(fixtureName)
+        
+        // Compute hash
+        let actualHash = try RAIDHashing.computeTemplateHash(template)
+        
+        // Load expected hash
+        let expectedHash = try loadExpectedHash(fixtureName)
+        
+        // Get canonical JSON for diagnostics
+        let canonical = try RAIDCanonical.canonicalize(template)
+        
+        // Compare
+        if actualHash != expectedHash {
+            print("❌ HASH MISMATCH")
+            print("Fixture: \(fixtureName)")
+            print("Expected: \(expectedHash)")
+            print("Actual:   \(actualHash)")
+            print("Canonical JSON: \(canonical)")
+            XCTFail("[\(fixtureName)] Template hash mismatch. Expected: \(expectedHash), Actual: \(actualHash)")
+        } else {
+            print("✅ PASS - Hash: \(actualHash)")
+            print("Canonical: \(canonical)")
+        }
+    }
+    
+    /// Load template fixture from test bundle
+    private func loadTemplateFixture(_ name: String) throws -> [String: Any] {
+        guard let url = Bundle(for: type(of: self)).url(forResource: name, withExtension: "json") else {
+            throw NSError(domain: "KernelTests", code: 1, 
+                         userInfo: [NSLocalizedDescriptionKey: "\(name).json not found in test bundle. Ensure tests/vectors/templates/\(name).json is added as a resource to RAIDTests target."])
+        }
+        let data = try Data(contentsOf: url)
+        guard let template = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "KernelTests", code: 2,
+                         userInfo: [NSLocalizedDescriptionKey: "\(name).json is not a valid JSON object"])
+        }
+        return template
+    }
+    
+    /// Load expected hash from golden values file
+    private func loadExpectedHash(_ fixtureName: String) throws -> String {
+        guard let url = Bundle(for: type(of: self)).url(forResource: "template_hashes", withExtension: "json") else {
+            throw NSError(domain: "KernelTests", code: 1,
+                         userInfo: [NSLocalizedDescriptionKey: "template_hashes.json not found in test bundle. Ensure tests/vectors/expected/template_hashes.json is added as a resource to RAIDTests target."])
+        }
+        let data = try Data(contentsOf: url)
+        
+        // Parse as dictionary (skip metadata fields starting with _)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "KernelTests", code: 2,
+                         userInfo: [NSLocalizedDescriptionKey: "template_hashes.json is not a valid JSON object"])
+        }
+        
+        guard let hash = json[fixtureName] as? String else {
+            throw NSError(domain: "KernelTests", code: 3,
+                         userInfo: [NSLocalizedDescriptionKey: "No hash found for '\(fixtureName)' in template_hashes.json"])
+        }
+        
+        return hash
     }
     
     // MARK: - Phase 2.3: Schema Immutability Tests (TODO)

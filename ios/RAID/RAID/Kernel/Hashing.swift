@@ -14,16 +14,38 @@ import Foundation
 import CryptoKit
 
 /// SHA-256 content-addressed hashing for templates
-struct Hashing {
-    // TODO: Phase 2.2 - Implement SHA-256 hashing
-    // See: docs/specs/jcs_hashing.md
-    // Reference: raid/hashing.py
+struct RAIDHashing {
     
-    /// Compute SHA-256 hash of canonicalized JSON
-    /// - Parameter canonicalJSON: UTF-8 bytes of JCS-canonicalized JSON
-    /// - Returns: Hex-encoded SHA-256 hash (lowercase)
-    static func hash(_ canonicalJSON: Data) -> String {
-        // TODO: Implement using CryptoKit.SHA256
-        fatalError("Not implemented - Phase 2.2")
+    /// Compute SHA-256 hash of canonicalized template JSON
+    ///
+    /// Formula: hash = SHA-256(UTF-8(canonicalize(template)))
+    ///
+    /// The hash is computed ONCE during template creation and stored.
+    /// Read operations must NOT call this function (RTM-04).
+    ///
+    /// - Parameter template: Template dictionary to hash
+    /// - Returns: 64-character lowercase hex SHA-256 hash
+    /// - Throws: RAIDCanonical.Error if template contains invalid values
+    static func computeTemplateHash(_ template: [String: Any]) throws -> String {
+        // Canonicalize using RAID Canonical JSON v1
+        let canonical = try RAIDCanonical.canonicalize(template)
+        
+        // Convert to UTF-8 bytes
+        let data = Data(canonical.utf8)
+        
+        // Compute SHA-256
+        let digest = SHA256.hash(data: data)
+        
+        // Return lowercase hex string
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Hash pre-canonicalized JSON bytes (for testing)
+    ///
+    /// - Parameter data: UTF-8 encoded canonical JSON
+    /// - Returns: 64-character lowercase hex SHA-256 hash
+    static func hashBytes(_ data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
