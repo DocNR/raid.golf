@@ -29,6 +29,31 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 
 ### Added
+**iOS Port — Phase 2.1: Canonical JSON Implementation (2026-02-05)**
+- Implemented `RAIDCanonical` struct matching Python `canonicaljson` behavior
+  - UTF-16 lexicographic key ordering (matches RFC 8785 and Python default)
+  - Deterministic number handling (int vs decimal, negative zero preservation)
+  - CFBoolean detection for true JSON booleans vs numeric 0/1
+  - Compact JSON output (no whitespace), UTF-8 without BOM
+- Added comprehensive JCS vector test coverage (12/12 passing)
+  - All vectors validated byte-for-byte against Python reference
+  - SHA-256 hash verification for each vector
+  - Special test harness handling for negative zero edge case
+  - Test vectors loaded from bundle resource (`jcs_vectors.json`)
+- **Note**: This implementation matches Python `canonicaljson` library, not strict RFC 8785
+  - Preserves negative zero (`-0.0`) instead of normalizing to `0`
+  - Intentional deviation to maintain frozen kernel hashes
+  - See backlog item for potential Kernel v3 migration to strict RFC 8785
+
+**iOS Port — Phase 1: Project Setup (2026-02-05)**
+- Created iOS project (SwiftUI) at `ios/RAID/`
+- Added GRDB 6.x via Swift Package Manager
+- Created folder structure: Kernel/, Models/, Ingest/, Views/
+- Created XCTest target (RAIDTests) with kernel test harness
+- All placeholder files compile successfully
+- App runs and displays "Phase 1 Setup Complete" UI
+- Test vectors at `../tests/vectors/` accessible from Swift tests
+
 - Phase 0.2 real-data validation of the 7-iron v2 template (Kernel v2)
   - Added validation script: `scripts/validate_7i_v2.py`
   - Added validation report: `data/summaries/phase02_validation_report.md`

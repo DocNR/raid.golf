@@ -1,0 +1,663 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		EFB69B842F35690B0032E6A0 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EFB69B832F35690B0032E6A0 /* GRDB */; };
+		EFB69B922F356A060032E6A0 /* .gitkeep in Resources */ = {isa = PBXBuildFile; fileRef = EFB69B902F356A060032E6A0 /* .gitkeep */; };
+		EFB69B932F356A060032E6A0 /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8A2F356A060032E6A0 /* Schema.swift */; };
+		EFB69B942F356A060032E6A0 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8E2F356A060032E6A0 /* Session.swift */; };
+		EFB69B952F356A060032E6A0 /* RapsodoIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */; };
+		EFB69B962F356A060032E6A0 /* Hashing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B882F356A060032E6A0 /* Hashing.swift */; };
+		EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */; };
+		EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B872F356A060032E6A0 /* Canonical.swift */; };
+		EFB69B992F356A060032E6A0 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B892F356A060032E6A0 /* Repository.swift */; };
+		EFB69B9A2F356A060032E6A0 /* KPITemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		EFB69B382F3562C30032E6A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EFB69B222F3562C10032E6A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EFB69B292F3562C10032E6A0;
+			remoteInfo = RAID;
+		};
+		EFB69B422F3562C30032E6A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EFB69B222F3562C10032E6A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EFB69B292F3562C10032E6A0;
+			remoteInfo = RAID;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		EFB69B2A2F3562C10032E6A0 /* RAID.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAID.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EFB69B372F3562C30032E6A0 /* RAIDTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RAIDTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EFB69B412F3562C30032E6A0 /* RAIDUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RAIDUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RapsodoIngest.swift; sourceTree = "<group>"; };
+		EFB69B872F356A060032E6A0 /* Canonical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Canonical.swift; sourceTree = "<group>"; };
+		EFB69B882F356A060032E6A0 /* Hashing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hashing.swift; sourceTree = "<group>"; };
+		EFB69B892F356A060032E6A0 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
+		EFB69B8A2F356A060032E6A0 /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
+		EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClubSubsession.swift; sourceTree = "<group>"; };
+		EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KPITemplate.swift; sourceTree = "<group>"; };
+		EFB69B8E2F356A060032E6A0 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		EFB69B902F356A060032E6A0 /* .gitkeep */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitkeep; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		EFB69B2C2F3562C10032E6A0 /* RAID */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RAID;
+			sourceTree = "<group>";
+		};
+		EFB69B3A2F3562C30032E6A0 /* RAIDTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RAIDTests;
+			sourceTree = "<group>";
+		};
+		EFB69B442F3562C30032E6A0 /* RAIDUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RAIDUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EFB69B272F3562C10032E6A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EFB69B842F35690B0032E6A0 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B342F3562C30032E6A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B3E2F3562C30032E6A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		EFB69B212F3562C10032E6A0 = {
+			isa = PBXGroup;
+			children = (
+				EFB69B862F356A060032E6A0 /* Ingest */,
+				EFB69B8B2F356A060032E6A0 /* Kernel */,
+				EFB69B8F2F356A060032E6A0 /* Models */,
+				EFB69B912F356A060032E6A0 /* Views */,
+				EFB69B2C2F3562C10032E6A0 /* RAID */,
+				EFB69B3A2F3562C30032E6A0 /* RAIDTests */,
+				EFB69B442F3562C30032E6A0 /* RAIDUITests */,
+				EFB69B2B2F3562C10032E6A0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		EFB69B2B2F3562C10032E6A0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EFB69B2A2F3562C10032E6A0 /* RAID.app */,
+				EFB69B372F3562C30032E6A0 /* RAIDTests.xctest */,
+				EFB69B412F3562C30032E6A0 /* RAIDUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EFB69B862F356A060032E6A0 /* Ingest */ = {
+			isa = PBXGroup;
+			children = (
+				EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */,
+			);
+			name = Ingest;
+			path = RAID/Ingest;
+			sourceTree = "<group>";
+		};
+		EFB69B8B2F356A060032E6A0 /* Kernel */ = {
+			isa = PBXGroup;
+			children = (
+				EFB69B872F356A060032E6A0 /* Canonical.swift */,
+				EFB69B882F356A060032E6A0 /* Hashing.swift */,
+				EFB69B892F356A060032E6A0 /* Repository.swift */,
+				EFB69B8A2F356A060032E6A0 /* Schema.swift */,
+			);
+			name = Kernel;
+			path = RAID/Kernel;
+			sourceTree = "<group>";
+		};
+		EFB69B8F2F356A060032E6A0 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */,
+				EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */,
+				EFB69B8E2F356A060032E6A0 /* Session.swift */,
+			);
+			name = Models;
+			path = RAID/Models;
+			sourceTree = "<group>";
+		};
+		EFB69B912F356A060032E6A0 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				EFB69B902F356A060032E6A0 /* .gitkeep */,
+			);
+			name = Views;
+			path = RAID/Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EFB69B292F3562C10032E6A0 /* RAID */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EFB69B4B2F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAID" */;
+			buildPhases = (
+				EFB69B262F3562C10032E6A0 /* Sources */,
+				EFB69B272F3562C10032E6A0 /* Frameworks */,
+				EFB69B282F3562C10032E6A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EFB69B2C2F3562C10032E6A0 /* RAID */,
+			);
+			name = RAID;
+			packageProductDependencies = (
+				EFB69B832F35690B0032E6A0 /* GRDB */,
+			);
+			productName = RAID;
+			productReference = EFB69B2A2F3562C10032E6A0 /* RAID.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EFB69B362F3562C30032E6A0 /* RAIDTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EFB69B4E2F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAIDTests" */;
+			buildPhases = (
+				EFB69B332F3562C30032E6A0 /* Sources */,
+				EFB69B342F3562C30032E6A0 /* Frameworks */,
+				EFB69B352F3562C30032E6A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EFB69B392F3562C30032E6A0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EFB69B3A2F3562C30032E6A0 /* RAIDTests */,
+			);
+			name = RAIDTests;
+			packageProductDependencies = (
+			);
+			productName = RAIDTests;
+			productReference = EFB69B372F3562C30032E6A0 /* RAIDTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		EFB69B402F3562C30032E6A0 /* RAIDUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EFB69B512F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAIDUITests" */;
+			buildPhases = (
+				EFB69B3D2F3562C30032E6A0 /* Sources */,
+				EFB69B3E2F3562C30032E6A0 /* Frameworks */,
+				EFB69B3F2F3562C30032E6A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EFB69B432F3562C30032E6A0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EFB69B442F3562C30032E6A0 /* RAIDUITests */,
+			);
+			name = RAIDUITests;
+			packageProductDependencies = (
+			);
+			productName = RAIDUITests;
+			productReference = EFB69B412F3562C30032E6A0 /* RAIDUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EFB69B222F3562C10032E6A0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					EFB69B292F3562C10032E6A0 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					EFB69B362F3562C30032E6A0 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = EFB69B292F3562C10032E6A0;
+					};
+					EFB69B402F3562C30032E6A0 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = EFB69B292F3562C10032E6A0;
+					};
+				};
+			};
+			buildConfigurationList = EFB69B252F3562C10032E6A0 /* Build configuration list for PBXProject "RAID" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = EFB69B212F3562C10032E6A0;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = EFB69B2B2F3562C10032E6A0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				EFB69B292F3562C10032E6A0 /* RAID */,
+				EFB69B362F3562C30032E6A0 /* RAIDTests */,
+				EFB69B402F3562C30032E6A0 /* RAIDUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EFB69B282F3562C10032E6A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EFB69B922F356A060032E6A0 /* .gitkeep in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B352F3562C30032E6A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B3F2F3562C30032E6A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		EFB69B262F3562C10032E6A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EFB69B932F356A060032E6A0 /* Schema.swift in Sources */,
+				EFB69B942F356A060032E6A0 /* Session.swift in Sources */,
+				EFB69B952F356A060032E6A0 /* RapsodoIngest.swift in Sources */,
+				EFB69B962F356A060032E6A0 /* Hashing.swift in Sources */,
+				EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */,
+				EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */,
+				EFB69B992F356A060032E6A0 /* Repository.swift in Sources */,
+				EFB69B9A2F356A060032E6A0 /* KPITemplate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B332F3562C30032E6A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EFB69B3D2F3562C30032E6A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EFB69B392F3562C30032E6A0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EFB69B292F3562C10032E6A0 /* RAID */;
+			targetProxy = EFB69B382F3562C30032E6A0 /* PBXContainerItemProxy */;
+		};
+		EFB69B432F3562C30032E6A0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EFB69B292F3562C10032E6A0 /* RAID */;
+			targetProxy = EFB69B422F3562C30032E6A0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		EFB69B492F3562C30032E6A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		EFB69B4A2F3562C30032E6A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 944AF56S27;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		EFB69B4C2F3562C30032E6A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAID;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EFB69B4D2F3562C30032E6A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAID;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EFB69B4F2F3562C30032E6A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAIDTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RAID.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RAID";
+			};
+			name = Debug;
+		};
+		EFB69B502F3562C30032E6A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAIDTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RAID.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RAID";
+			};
+			name = Release;
+		};
+		EFB69B522F3562C30032E6A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAIDUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = RAID;
+			};
+			name = Debug;
+		};
+		EFB69B532F3562C30032E6A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 944AF56S27;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.RAIDUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = RAID;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		EFB69B252F3562C10032E6A0 /* Build configuration list for PBXProject "RAID" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFB69B492F3562C30032E6A0 /* Debug */,
+				EFB69B4A2F3562C30032E6A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EFB69B4B2F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAID" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFB69B4C2F3562C30032E6A0 /* Debug */,
+				EFB69B4D2F3562C30032E6A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EFB69B4E2F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAIDTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFB69B4F2F3562C30032E6A0 /* Debug */,
+				EFB69B502F3562C30032E6A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EFB69B512F3562C30032E6A0 /* Build configuration list for PBXNativeTarget "RAIDUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFB69B522F3562C30032E6A0 /* Debug */,
+				EFB69B532F3562C30032E6A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EFB69B832F35690B0032E6A0 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = EFB69B222F3562C10032E6A0 /* Project object */;
+}

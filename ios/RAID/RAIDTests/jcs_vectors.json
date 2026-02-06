@@ -1,0 +1,153 @@
+{
+  "_comment": "RFC 8785 JCS canonicalization test vectors for cross-platform verification",
+  "_note": "Each vector includes input JSON, expected canonical string, and expected SHA-256 hash",
+  "_frozen_date": "2026-02-02",
+  "_kernel_version": "2.0",
+  "vectors": [
+    {
+      "name": "simple_key_ordering",
+      "description": "Basic key ordering test",
+      "input": {
+        "z": 1,
+        "a": 2
+      },
+      "canonical": "{\"a\":2,\"z\":1}",
+      "sha256": "c2985c5ba6f7d2a55e768f92490ca09388e95bc4cccb9fdf11b15f4d42f93e73"
+    },
+    {
+      "name": "nested_key_ordering",
+      "description": "Nested objects with unsorted keys",
+      "input": {
+        "z": {
+          "y": 1,
+          "x": 2
+        },
+        "a": {
+          "c": 3,
+          "b": 4
+        }
+      },
+      "canonical": "{\"a\":{\"b\":4,\"c\":3},\"z\":{\"x\":2,\"y\":1}}",
+      "sha256": "73a365d113f2ec1a88ed9cf0e41da4fdc2ab76168d073aa1c49e8dd1ec71fc62"
+    },
+    {
+      "name": "whitespace_elimination",
+      "description": "Whitespace should be removed",
+      "input": {
+        "key": "value",
+        "number": 42
+      },
+      "canonical": "{\"key\":\"value\",\"number\":42}",
+      "sha256": "e5a9517a730b3884a3ba516fbd15a0645bcf6298fbf96cd7240953db910d760f"
+    },
+    {
+      "name": "integer_vs_decimal",
+      "description": "Integer 5 should not have decimal point",
+      "input": {
+        "int": 5,
+        "decimal": 5.5
+      },
+      "canonical": "{\"decimal\":5.5,\"int\":5}",
+      "sha256": "7fb9c6f389a27da4379a183758e58b5562721d04c49325ee204de69686a24655"
+    },
+    {
+      "name": "zero_normalization",
+      "description": "Zero should be normalized",
+      "input": {
+        "zero": 0,
+        "negative_zero": -0.0
+      },
+      "canonical": "{\"negative_zero\":-0.0,\"zero\":0}",
+      "sha256": "4a598f8ebc79ec351ec7ebc473ad91a42113375030e8f5736bf7a5d783729eb0"
+    },
+    {
+      "name": "negative_numbers",
+      "description": "Negative numbers should be preserved",
+      "input": {
+        "neg_int": -5,
+        "neg_decimal": -5.5
+      },
+      "canonical": "{\"neg_decimal\":-5.5,\"neg_int\":-5}",
+      "sha256": "0b0ab7d6fef5a672a1d18e913a4d982ba5209ae459b02195f99a0cc2489e3327"
+    },
+    {
+      "name": "unicode_strings",
+      "description": "Unicode characters in strings",
+      "input": {
+        "unicode": "Test™ 中文",
+        "emoji": "🎯"
+      },
+      "canonical": "{\"emoji\":\"🎯\",\"unicode\":\"Test™ 中文\"}",
+      "sha256": "9fba46c452d33a7326bf880f66266deae81c9575dbd44c9b949f04fb25eefbcb"
+    },
+    {
+      "name": "array_order_preserved",
+      "description": "Array elements maintain original order",
+      "input": {
+        "array": [
+          3,
+          1,
+          2
+        ],
+        "sorted": [
+          1,
+          2,
+          3
+        ]
+      },
+      "canonical": "{\"array\":[3,1,2],\"sorted\":[1,2,3]}",
+      "sha256": "4870f7f0fd60547d32f02b7881d13858bc68921c9dabb7b2e608d3e6ca930336"
+    },
+    {
+      "name": "nested_arrays_and_objects",
+      "description": "Complex nesting",
+      "input": {
+        "data": [
+          {
+            "z": 1,
+            "a": 2
+          },
+          {
+            "y": 3,
+            "x": 4
+          }
+        ]
+      },
+      "canonical": "{\"data\":[{\"a\":2,\"z\":1},{\"x\":4,\"y\":3}]}",
+      "sha256": "f35bdc1a1d279bbdcb425ab5a85c8bfb9f22c510050fc078f04a4e5a5b0a9184"
+    },
+    {
+      "name": "empty_structures",
+      "description": "Empty objects and arrays",
+      "input": {
+        "empty_obj": {},
+        "empty_arr": [],
+        "value": 1
+      },
+      "canonical": "{\"empty_arr\":[],\"empty_obj\":{},\"value\":1}",
+      "sha256": "16f3a44be67d2fe575b66224c12b5b00b613ca85a85c2af2d32ede228a4b6d13"
+    },
+    {
+      "name": "boolean_and_null",
+      "description": "Boolean and null values",
+      "input": {
+        "true_val": true,
+        "false_val": false,
+        "null_val": null
+      },
+      "canonical": "{\"false_val\":false,\"null_val\":null,\"true_val\":true}",
+      "sha256": "126e05bf8fcb71e94926cf35e5b35190d43f17ccd2c47530d215c4bb4d4b665d"
+    },
+    {
+      "name": "decimal_precision",
+      "description": "Decimal numbers with various precisions",
+      "input": {
+        "a": 1.5,
+        "b": 1.5,
+        "c": 1.5
+      },
+      "canonical": "{\"a\":1.5,\"b\":1.5,\"c\":1.5}",
+      "sha256": "2b209cd1de9f7ac2650c428e13ef3f802a319bbb746c5632965392562ef5f6d6"
+    }
+  ]
+}
