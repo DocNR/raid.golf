@@ -43,6 +43,13 @@ struct TemplateRecord {
     let createdAt: String
 }
 
+// MARK: - Template Repository Errors
+
+enum TemplateRepositoryError: Error {
+    case missingRequiredFields(String)
+    case utf8EncodingFailed
+}
+
 // MARK: - Template Repository
 
 class TemplateRepository {
@@ -64,7 +71,7 @@ class TemplateRepository {
     /// Repository owns canonicalization and hashing (computed once at insert)
     /// - Parameter rawJSON: Raw JSON bytes (UTF-8)
     /// - Returns: Template record with computed hash
-    /// - Throws: Database error or canonicalization error
+    /// - Throws: TemplateRepositoryError or database error
     func insertTemplate(rawJSON: Data) throws -> TemplateRecord {
         // 1. Canonicalize (kernel v2 rules, preserve -0.0)
         let canonicalData = try canonicalizer.canonicalize(rawJSON)
@@ -76,21 +83,24 @@ class TemplateRepository {
         guard let jsonObject = try? JSONSerialization.jsonObject(with: rawJSON) as? [String: Any],
               let schemaVersion = jsonObject["schema_version"] as? String,
               let club = jsonObject["club"] as? String else {
-            throw NSError(domain: "TemplateRepository", code: 1,
-                         userInfo: [NSLocalizedDescriptionKey: "Template missing required fields: schema_version, club"])
+            throw TemplateRepositoryError.missingRequiredFields("schema_version, club")
         }
         
-        let canonicalString = String(data: canonicalData, encoding: .utf8)!
-        let createdAt = ISO8601DateFormatter().string(from: Date())
+        // 4. Convert canonical data to UTF-8 string (no forced unwrap)
+        guard let canonicalString = String(data: canonicalData, encoding: .utf8) else {
+            throw TemplateRepositoryError.utf8EncodingFailed
+        }
         
-        // 4. Store in database
+        let now = ISO8601DateFormatter().string(from: Date())
+        
+        // 5. Store in database with imported_at
         try dbQueue.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                arguments: [hash, schemaVersion, club, canonicalString, createdAt]
+                arguments: [hash, schemaVersion, club, canonicalString, now, now]
             )
         }
         
@@ -99,7 +109,7 @@ class TemplateRepository {
             schemaVersion: schemaVersion,
             club: club,
             canonicalJSON: canonicalString,
-            createdAt: createdAt
+            createdAt: now
         )
     }
     
@@ -115,6 +125,36 @@ class TemplateRepository {
             guard let row = try Row.fetchOne(db,
                 sql: "SELECT * FROM kpi_templates WHERE template_hash = ?",
                 arguments: [hash]) else {
+                return nil
+            }
+            
+            return TemplateRecord(
+                hash: row["template_hash"],
+                schemaVersion: row["schema_version"],
+                club: row["club"],
+                canonicalJSON: row["canonical_json"],
+                createdAt: row["created_at"]
+            )
+        }
+    }
+    
+    /// Fetch the latest template for a given club
+    /// RTM-04: This method MUST NOT call canonicalize or hash functions
+    /// Uses deterministic ordering: imported_at DESC (with created_at fallback), then rowid DESC
+    /// - Parameter club: Club identifier (e.g., "7i", "PW")
+    /// - Returns: Latest template record for club, or nil if none exists
+    /// - Throws: Database error
+    func fetchLatestTemplate(forClub club: String) throws -> TemplateRecord? {
+        return try dbQueue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: """
+                SELECT template_hash, schema_version, club, canonical_json, created_at
+                FROM kpi_templates
+                WHERE club = ?
+                ORDER BY COALESCE(imported_at, created_at) DESC, rowid DESC
+                LIMIT 1
+                """,
+                arguments: [club]) else {
                 return nil
             }
             
@@ -210,7 +250,9 @@ struct ShotRecord {
     let club: String
     let carry: Double?
     let ballSpeed: Double?
-    // ... other metrics as needed
+    let smashFactor: Double?
+    let spinRate: Double?
+    let descentAngle: Double?
 }
 
 // MARK: - Shot Repository
@@ -245,7 +287,13 @@ class ShotRepository {
     func fetchShots(forSession sessionId: Int64) throws -> [ShotRecord] {
         return try dbQueue.read { db in
             let rows = try Row.fetchAll(db,
-                sql: "SELECT * FROM shots WHERE session_id = ? ORDER BY source_row_index",
+                sql: """
+                SELECT shot_id, session_id, source_row_index, source_format, imported_at, raw_json, 
+                       club, carry, ball_speed, smash_factor, spin_rate, descent_angle
+                FROM shots 
+                WHERE session_id = ? 
+                ORDER BY source_row_index
+                """,
                 arguments: [sessionId])
             
             return rows.map { row in
@@ -258,7 +306,10 @@ class ShotRepository {
                     rawJSON: row["raw_json"],
                     club: row["club"],
                     carry: row["carry"],
-                    ballSpeed: row["ball_speed"]
+                    ballSpeed: row["ball_speed"],
+                    smashFactor: row["smash_factor"],
+                    spinRate: row["spin_rate"],
+                    descentAngle: row["descent_angle"]
                 )
             }
         }
