@@ -20,6 +20,7 @@
 
 import XCTest
 import CryptoKit
+import GRDB
 @testable import RAID
 
 final class KernelTests: XCTestCase {
@@ -431,24 +432,523 @@ final class KernelTests: XCTestCase {
         return hash
     }
     
-    // MARK: - Phase 2.3: Schema Immutability Tests (TODO)
+    // MARK: - Phase 2.3: Schema Immutability Tests
     
-    func testSessionsTableImmutable() throws {
-        // TODO: Create in-memory database
+    /// Create in-memory database with schema installed
+    private func createTestDatabase() throws -> DatabaseQueue {
+        let dbQueue = try DatabaseQueue()
+        try Schema.install(in: dbQueue)
+        return dbQueue
+    }
+    
+    // MARK: Sessions Immutability (RTM-01)
+    
+    func testSessionUpdateRejected() throws {
+        print("\n=== Testing Session UPDATE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
         // Insert a session
-        // Attempt UPDATE → must fail with trigger error
-        // Attempt DELETE → must fail with trigger error
-        XCTFail("Not implemented - Phase 2.3")
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, device_type, location, ingested_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "Rapsodo", "Range A", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+        }
+        
+        // Attempt to update source_file - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE sessions SET source_file = ? WHERE session_id = ?",
+                              arguments: ["modified.csv", sessionId])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ UPDATE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"), 
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify original value unchanged
+        let sourceFile = try dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT source_file FROM sessions WHERE session_id = ?", arguments: [sessionId])
+        }
+        XCTAssertEqual(sourceFile, "test.csv", "Original value should be unchanged")
     }
     
-    func testKPITemplatesTableImmutable() throws {
-        // TODO: Test kpi_templates immutability
-        XCTFail("Not implemented - Phase 2.3")
+    func testSessionDeleteRejected() throws {
+        print("\n=== Testing Session DELETE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert a session
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, device_type, location, ingested_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "Rapsodo", "Range A", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+        }
+        
+        // Attempt to delete - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM sessions WHERE session_id = ?", arguments: [sessionId])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ DELETE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"),
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify row still exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sessions WHERE session_id = ?", arguments: [sessionId])
+        }
+        XCTAssertEqual(count, 1, "Row should still exist")
     }
     
-    func testClubSubsessionsTableImmutable() throws {
-        // TODO: Test club_subsessions immutability
-        XCTFail("Not implemented - Phase 2.3")
+    func testSessionAllFieldsProtected() throws {
+        print("\n=== Testing All Session Fields Protected ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert a session
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, device_type, location, ingested_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "Rapsodo", "Range A", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+        }
+        
+        // Test each field
+        let fieldsToTest: [(String, String)] = [
+            ("session_date", "2026-02-07T12:00:00Z"),
+            ("device_type", "TrackMan"),
+            ("location", "Indoor")
+        ]
+        
+        for (field, newValue) in fieldsToTest {
+            do {
+                try dbQueue.write { db in
+                    try db.execute(sql: "UPDATE sessions SET \(field) = ? WHERE session_id = ?",
+                                  arguments: [newValue, sessionId])
+                }
+                XCTFail("UPDATE of \(field) should have been rejected")
+            } catch let error as DatabaseError {
+                print("✅ Field '\(field)' protected: \(error.message ?? "")")
+            }
+        }
+    }
+    
+    // MARK: Templates Immutability (RTM-03)
+    
+    func testTemplateUpdateRejected() throws {
+        print("\n=== Testing Template UPDATE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert a template
+        let templateHash = "a" + String(repeating: "0", count: 63) // Valid 64-char hex
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-06T12:00:00Z"])
+        }
+        
+        // Attempt to update canonical_json - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE kpi_templates SET canonical_json = ? WHERE template_hash = ?",
+                              arguments: ["{\"modified\":true}", templateHash])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ UPDATE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"),
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify original value unchanged
+        let canonicalJson = try dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT canonical_json FROM kpi_templates WHERE template_hash = ?", 
+                               arguments: [templateHash])
+        }
+        XCTAssertEqual(canonicalJson, "{\"club\":\"7i\"}", "Original value should be unchanged")
+    }
+    
+    func testTemplateDeleteRejected() throws {
+        print("\n=== Testing Template DELETE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert a template
+        let templateHash = "b" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-06T12:00:00Z"])
+        }
+        
+        // Attempt to delete - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM kpi_templates WHERE template_hash = ?", arguments: [templateHash])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ DELETE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"),
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify row still exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM kpi_templates WHERE template_hash = ?", 
+                            arguments: [templateHash])
+        }
+        XCTAssertEqual(count, 1, "Row should still exist")
+    }
+    
+    // MARK: Subsessions Immutability (RTM-02)
+    
+    func testSubsessionUpdateRejected() throws {
+        print("\n=== Testing Subsession UPDATE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and template
+        var sessionId: Int64 = 0
+        let templateHash = "c" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-06T12:00:00Z"])
+        }
+        
+        // Insert subsession
+        var subsessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO club_subsessions (session_id, club, kpi_template_hash, shot_count, 
+                                             validity_status, a_count, b_count, c_count, 
+                                             a_percentage, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, "7i", templateHash, 20, "valid", 10, 8, 2, 50.0, "2026-02-06T12:00:00Z"])
+            subsessionId = db.lastInsertedRowID
+        }
+        
+        // Attempt to update a_count - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE club_subsessions SET a_count = ? WHERE subsession_id = ?",
+                              arguments: [15, subsessionId])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ UPDATE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"),
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify original value unchanged
+        let aCount = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT a_count FROM club_subsessions WHERE subsession_id = ?", 
+                            arguments: [subsessionId])
+        }
+        XCTAssertEqual(aCount, 10, "Original value should be unchanged")
+    }
+    
+    func testSubsessionDeleteRejected() throws {
+        print("\n=== Testing Subsession DELETE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and template
+        var sessionId: Int64 = 0
+        let templateHash = "d" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-06T12:00:00Z"])
+        }
+        
+        // Insert subsession
+        var subsessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO club_subsessions (session_id, club, kpi_template_hash, shot_count,
+                                             validity_status, a_count, b_count, c_count,
+                                             a_percentage, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, "7i", templateHash, 20, "valid", 10, 8, 2, 50.0, "2026-02-06T12:00:00Z"])
+            subsessionId = db.lastInsertedRowID
+        }
+        
+        // Attempt to delete - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM club_subsessions WHERE subsession_id = ?", 
+                              arguments: [subsessionId])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ DELETE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"),
+                         "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify row still exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM club_subsessions WHERE subsession_id = ?",
+                            arguments: [subsessionId])
+        }
+        XCTAssertEqual(count, 1, "Row should still exist")
+    }
+    
+    func testSubsessionTemplateSwapRejected() throws {
+        print("\n=== Testing Subsession Template Swap Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and two templates
+        var sessionId: Int64 = 0
+        let templateHash1 = "e" + String(repeating: "0", count: 63)
+        let templateHash2 = "f" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash1, "1.0", "7i", "{\"version\":\"1\"}", "2026-02-06T12:00:00Z"])
+            
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash2, "2.0", "7i", "{\"version\":\"2\"}", "2026-02-06T12:00:00Z"])
+        }
+        
+        // Insert subsession with template1
+        var subsessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO club_subsessions (session_id, club, kpi_template_hash, shot_count,
+                                             validity_status, a_count, b_count, c_count,
+                                             a_percentage, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, "7i", templateHash1, 20, "valid", 10, 8, 2, 50.0, "2026-02-06T12:00:00Z"])
+            subsessionId = db.lastInsertedRowID
+        }
+        
+        // Attempt to swap to template2 - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE club_subsessions SET kpi_template_hash = ? WHERE subsession_id = ?",
+                              arguments: [templateHash2, subsessionId])
+            }
+            XCTFail("Template swap should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            print("✅ Template swap rejected: \(error.message ?? "")")
+        }
+        
+        // Verify original template reference unchanged
+        let storedHash = try dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT kpi_template_hash FROM club_subsessions WHERE subsession_id = ?",
+                               arguments: [subsessionId])
+        }
+        XCTAssertEqual(storedHash, templateHash1, "Original template hash should be unchanged")
+    }
+    
+    // MARK: - Phase 2.3b: Shots Table Immutability + FK Tests
+    
+    func testShotInsertSucceeds() throws {
+        print("\n=== Testing Shot Insert with FK ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert a session first
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+        }
+        
+        // Insert a shot
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.2, 99.3])
+        }
+        
+        // Verify shot exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM shots WHERE session_id = ?", arguments: [sessionId])
+        }
+        XCTAssertEqual(count, 1, "Shot should be inserted")
+        print("✅ Shot inserted successfully with FK to session")
+    }
+    
+    func testShotUpdateRejected() throws {
+        print("\n=== Testing Shot UPDATE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and shot
+        var sessionId: Int64 = 0
+        var shotId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.2])
+            shotId = db.lastInsertedRowID
+        }
+        
+        // Attempt to update carry - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE shots SET carry = ? WHERE shot_id = ?", arguments: [150.0, shotId])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ UPDATE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"), "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify original value unchanged
+        let carry = try dbQueue.read { db in
+            try Double.fetchOne(db, sql: "SELECT carry FROM shots WHERE shot_id = ?", arguments: [shotId])
+        }
+        let unwrappedCarry = try XCTUnwrap(carry, "Carry should exist")
+        XCTAssertEqual(unwrappedCarry, 142.2, accuracy: 0.01, "Original value should be unchanged")
+    }
+    
+    func testShotDeleteRejected() throws {
+        print("\n=== Testing Shot DELETE Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and shot
+        var sessionId: Int64 = 0
+        var shotId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i"])
+            shotId = db.lastInsertedRowID
+        }
+        
+        // Attempt to delete - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM shots WHERE shot_id = ?", arguments: [shotId])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            let message = error.message ?? ""
+            print("✅ DELETE rejected: \(message)")
+            XCTAssertTrue(message.lowercased().contains("immutable"), "Error message should contain 'immutable': \(message)")
+        }
+        
+        // Verify row still exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM shots WHERE shot_id = ?", arguments: [shotId])
+        }
+        XCTAssertEqual(count, 1, "Row should still exist")
+    }
+    
+    func testShotFKEnforced() throws {
+        print("\n=== Testing Shot FK Enforcement ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Attempt to insert shot with nonexistent session_id - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [99999, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i"])
+            }
+            XCTFail("INSERT with invalid FK should have been rejected")
+        } catch let error as DatabaseError {
+            print("✅ FK violation rejected: \(error.message ?? "")")
+            // GRDB reports FK violations as SQLITE_CONSTRAINT
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be FK constraint violation")
+        }
+    }
+    
+    func testShotDuplicateRowIndexRejected() throws {
+        print("\n=== Testing Shot Duplicate Row Index Rejection ===")
+        let dbQueue = try createTestDatabase()
+        
+        // Insert session and shot
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-06T12:00:00Z", "test.csv", "2026-02-06T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+            
+            try db.execute(sql: """
+                INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i"])
+        }
+        
+        // Attempt to insert duplicate (same session_id + source_row_index) - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [sessionId, 0, "rapsodo_mlm2pro_shotexport_v1", "2026-02-06T12:00:00Z", "{\"club\":\"7i\"}", "7i"])
+            }
+            XCTFail("Duplicate shot should have been rejected by UNIQUE constraint")
+        } catch let error as DatabaseError {
+            print("✅ Duplicate rejected: \(error.message ?? "")")
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be UNIQUE constraint violation")
+        }
     }
     
     // MARK: - Phase 2.4: Repository Tests (TODO)

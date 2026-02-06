@@ -29,7 +29,34 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 
 ### Added
-**iOS Port — Phase 2.3: Schema + Immutability (2026-02-06)**
+**iOS Port — Phase 2.3 + 2.3b: Schema, Immutability, and Shot Persistence (2026-02-06)**
+- **Phase 2.3b: Shots Table**
+- Added `shots` table as separate migration (`v2_add_shots`)
+  - Shot-level fact table with FK to sessions
+  - Provenance: source_row_index, source_format (versioned), imported_at, raw_json
+  - Normalized columns: 14 MLM2Pro metrics (carry, ball_speed, spin_rate, etc.) as nullable REALs
+  - UNIQUE(session_id, source_row_index) prevents duplicate shot import
+  - Immutability triggers: BEFORE UPDATE/DELETE → ABORT
+- Refactored Schema.swift to use GRDB DatabaseMigrator
+  - `v1_create_schema`: sessions, kpi_templates, club_subsessions, projections
+  - `v2_add_shots`: shots table (separate auditable migration)
+  - Migration names are stable and never renamed (kernel discipline)
+- Added 5 shot immutability/FK tests (all passing):
+  - testShotInsertSucceeds: Insert with FK to session
+  - testShotUpdateRejected: UPDATE blocked by trigger
+  - testShotDeleteRejected: DELETE blocked by trigger
+  - testShotFKEnforced: Invalid session_id rejected
+  - testShotDuplicateRowIndexRejected: UNIQUE constraint enforced
+- All 29 Phase 2.3 + 2.3b tests passing:
+  - 12 JCS canonicalization vectors
+  - 3 template hash fixtures
+  - 10 immutability tests (sessions/templates/subsessions)
+  - 5 shot tests (insert, update/delete rejection, FK enforcement, duplicate rejection)
+- **Note**: 2 Phase 2.4 tests intentionally fail as TODO placeholders:
+  - `testInsertTemplateComputesHashOnce` — Repository insert path (Phase 2.4)
+  - `testFetchTemplateNeverRecomputesHash` — Repository read path (Phase 2.4)
+
+- **Phase 2.3: Schema + Immutability**
 - Implemented SQLite schema in Swift (Schema.swift) with GRDB
   - sessions, kpi_templates, club_subsessions tables with full CHECK constraints
   - Immutability triggers: BEFORE UPDATE and BEFORE DELETE → ABORT on all 3 authoritative tables
