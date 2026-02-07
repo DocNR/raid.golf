@@ -315,3 +315,225 @@ class ShotRepository {
         }
     }
 }
+
+// MARK: - Trends Domain
+
+enum TrendMetric: String, CaseIterable {
+    case carry
+    case ballSpeed
+    case spinRate
+    case descentAngle
+    
+    var columnName: String {
+        switch self {
+        case .carry: return "carry"
+        case .ballSpeed: return "ball_speed"
+        case .spinRate: return "spin_rate"
+        case .descentAngle: return "descent_angle"
+        }
+    }
+    
+    var label: String {
+        switch self {
+        case .carry: return "Carry"
+        case .ballSpeed: return "Ball Speed"
+        case .spinRate: return "Spin"
+        case .descentAngle: return "Descent"
+        }
+    }
+}
+
+enum TrendSeriesType {
+    case allShots
+    case aOnly
+}
+
+struct TrendPoint: Equatable {
+    let sessionDate: String
+    let sessionId: Int64
+    let metric: TrendMetric
+    let meanValue: Double?
+    let nShots: Int
+    let templateHash: String?
+}
+
+// MARK: - Trends Repository (Phase 4B)
+
+class TrendsRepository {
+    private let dbQueue: DatabaseQueue
+    private let templateRepository: TemplateRepository
+    
+    init(dbQueue: DatabaseQueue, templateRepository: TemplateRepository? = nil) {
+        self.dbQueue = dbQueue
+        self.templateRepository = templateRepository ?? TemplateRepository(dbQueue: dbQueue)
+    }
+    
+    /// Fetch deterministic trend points for a club + metric + series.
+    /// Ordering is always: session_date ASC, session_id ASC.
+    func fetchTrendPoints(club: String,
+                          metric: TrendMetric,
+                          seriesType: TrendSeriesType) throws -> [TrendPoint] {
+        switch seriesType {
+        case .allShots:
+            return try fetchAllShotsTrendPoints(club: club, metric: metric)
+        case .aOnly:
+            return try fetchAOnlyTrendPoints(club: club, metric: metric)
+        }
+    }
+    
+    // MARK: allShots (SQL-only)
+    
+    /// SQL-only series using AVG(metric) and COUNT(metric).
+    /// COUNT(metric) aligns with non-null metric values.
+    private func fetchAllShotsTrendPoints(club: String,
+                                          metric: TrendMetric) throws -> [TrendPoint] {
+        let metricColumn = metric.columnName
+        
+        let sql = """
+            SELECT
+                sessions.session_date AS session_date,
+                sessions.session_id AS session_id,
+                AVG(shots.\(metricColumn)) AS mean_value,
+                COUNT(shots.\(metricColumn)) AS n_shots
+            FROM shots
+            INNER JOIN sessions ON sessions.session_id = shots.session_id
+            WHERE shots.club = ?
+            GROUP BY sessions.session_date, sessions.session_id
+            ORDER BY sessions.session_date ASC, sessions.session_id ASC
+            """
+        
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: sql, arguments: [club])
+            return rows.map { row in
+                TrendPoint(
+                    sessionDate: row["session_date"],
+                    sessionId: row["session_id"],
+                    metric: metric,
+                    meanValue: row["mean_value"],
+                    nShots: row["n_shots"],
+                    templateHash: nil
+                )
+            }
+        }
+    }
+    
+    // MARK: aOnly (Swift-computed)
+    
+    /// Phase 4B v1 semantics:
+    /// - Select latest template for club at query time
+    /// - Recompute A/B/C on demand from persisted shots
+    /// - Include template hash on every returned point
+    private func fetchAOnlyTrendPoints(club: String,
+                                       metric: TrendMetric) throws -> [TrendPoint] {
+        guard let templateRecord = try templateRepository.fetchLatestTemplate(forClub: club) else {
+            return []
+        }
+        
+        guard let templateData = templateRecord.canonicalJSON.data(using: .utf8) else {
+            return []
+        }
+        let template = try JSONDecoder().decode(KPITemplate.self, from: templateData)
+        
+        // Session list for this club, deterministic ordering
+        let orderedSessions: [(sessionDate: String, sessionId: Int64)] = try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT sessions.session_date AS session_date, sessions.session_id AS session_id
+                    FROM sessions
+                    INNER JOIN shots ON shots.session_id = sessions.session_id
+                    WHERE shots.club = ?
+                    GROUP BY sessions.session_date, sessions.session_id
+                    ORDER BY sessions.session_date ASC, sessions.session_id ASC
+                    """,
+                arguments: [club]
+            )
+            return rows.map { ($0["session_date"], $0["session_id"]) }
+        }
+        
+        guard !orderedSessions.isEmpty else {
+            return []
+        }
+        
+        let sessionIds = orderedSessions.map { $0.sessionId }
+        let placeholders = Array(repeating: "?", count: sessionIds.count).joined(separator: ",")
+        let sql = """
+            SELECT
+                shots.shot_id,
+                shots.session_id,
+                shots.source_row_index,
+                shots.source_format,
+                shots.imported_at,
+                shots.raw_json,
+                shots.club,
+                shots.carry,
+                shots.ball_speed,
+                shots.smash_factor,
+                shots.spin_rate,
+                shots.descent_angle
+            FROM shots
+            INNER JOIN sessions ON sessions.session_id = shots.session_id
+            WHERE shots.club = ?
+              AND shots.session_id IN (\(placeholders))
+            ORDER BY sessions.session_date ASC, shots.session_id ASC, shots.source_row_index ASC
+            """
+        
+        var shotArgs: [DatabaseValueConvertible] = [club]
+        shotArgs.append(contentsOf: sessionIds)
+        
+        let rows = try dbQueue.read { db in
+            try Row.fetchAll(db, sql: sql, arguments: StatementArguments(shotArgs))
+        }
+        
+        var shotsBySession: [Int64: [ShotRecord]] = [:]
+        for row in rows {
+            let shot = ShotRecord(
+                shotId: row["shot_id"],
+                sessionId: row["session_id"],
+                sourceRowIndex: row["source_row_index"],
+                sourceFormat: row["source_format"],
+                importedAt: row["imported_at"],
+                rawJSON: row["raw_json"],
+                club: row["club"],
+                carry: row["carry"],
+                ballSpeed: row["ball_speed"],
+                smashFactor: row["smash_factor"],
+                spinRate: row["spin_rate"],
+                descentAngle: row["descent_angle"]
+            )
+            shotsBySession[shot.sessionId, default: []].append(shot)
+        }
+        
+        return try orderedSessions.map { session in
+            let shots = shotsBySession[session.sessionId] ?? []
+            let classifications = try ShotClassifier.classify(shots, using: template)
+            let aShotIds = Set(classifications.filter { $0.grade == .a }.map { $0.shotId })
+            
+            let aMetricValues = shots
+                .filter { aShotIds.contains($0.shotId) }
+                .compactMap { shotMetricValue($0, metric: metric) }
+            
+            let mean: Double? = aMetricValues.isEmpty
+                ? nil
+                : aMetricValues.reduce(0.0, +) / Double(aMetricValues.count)
+            
+            return TrendPoint(
+                sessionDate: session.sessionDate,
+                sessionId: session.sessionId,
+                metric: metric,
+                meanValue: mean,
+                nShots: aMetricValues.count,
+                templateHash: templateRecord.hash
+            )
+        }
+    }
+    
+    private func shotMetricValue(_ shot: ShotRecord, metric: TrendMetric) -> Double? {
+        switch metric {
+        case .carry: return shot.carry
+        case .ballSpeed: return shot.ballSpeed
+        case .spinRate: return shot.spinRate
+        case .descentAngle: return shot.descentAngle
+        }
+    }
+}

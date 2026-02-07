@@ -5,32 +5,17 @@
 // Real UI implementation in Phase 4
 
 import SwiftUI
+import GRDB
 
 struct ContentView: View {
+    let dbQueue: DatabaseQueue
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "figure.golf")
-                .imageScale(.large)
-                .font(.system(size: 80))
-                .foregroundStyle(.tint)
-            
-            Text("RAID Golf")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("iOS Port - Phase 1 Setup Complete")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            
-            Text("Next: Phase 2 - Kernel Implementation")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.top)
-        }
-        .padding()
+        TrendsView(dbQueue: dbQueue)
     }
 }
 
 #Preview {
-    ContentView()
+    let dbQueue = try! DatabaseQueue.createRAIDDatabase(at: ":memory:")
+    return ContentView(dbQueue: dbQueue)
 }

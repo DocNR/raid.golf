@@ -298,4 +298,135 @@ final class IngestIntegrationTests: XCTestCase {
         
         print("✅ PASS: Authoritative shot mutation blocked (no silent mutation)")
     }
+
+    // MARK: - Phase 4B: Trends v1
+
+    func testTrendsV1_AllShotsAndAOnly_DeterministicAndStable() throws {
+        print("\n=== Phase 4B Test: Trends v1 (allShots + aOnly) ===")
+
+        // Fresh DB with deterministic setup
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+        let sessionRepo = SessionRepository(dbQueue: dbQueue)
+        let shotRepo = ShotRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let trendsRepo = TrendsRepository(dbQueue: dbQueue, templateRepository: templateRepo)
+
+        // Fixtures from test bundle
+        guard let csvURL = Bundle(for: type(of: self)).url(
+            forResource: "rapsodo_mlm2pro_mixed_club_sample",
+            withExtension: "csv"
+        ) else {
+            XCTFail("CSV fixture not found in test bundle")
+            return
+        }
+
+        guard let templateURL = Bundle(for: type(of: self)).url(
+            forResource: "fixture_a",
+            withExtension: "json"
+        ) else {
+            XCTFail("Template fixture not found in test bundle")
+            return
+        }
+
+        let templateData = try Data(contentsOf: templateURL)
+        let templateRecord = try templateRepo.insertTemplate(rawJSON: templateData)
+
+        guard let fetchedTemplate = try templateRepo.fetchTemplate(byHash: templateRecord.hash) else {
+            XCTFail("Template should be fetchable by hash")
+            return
+        }
+        let canonicalData = Data(fetchedTemplate.canonicalJSON.utf8)
+        let kpiTemplate = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        // Deterministic distinct session_date values (no wall-clock dependency)
+        let sessionDate1 = "2026-02-06T12:00:00Z"
+        let sessionDate2 = "2026-02-07T12:00:00Z"
+
+        _ = try RapsodoIngest.ingest(
+            csvURL: csvURL,
+            sessionRepository: sessionRepo,
+            shotRepository: shotRepo,
+            sessionDate: sessionDate1,
+            deviceType: "Rapsodo MLM2Pro",
+            location: "Test Range A"
+        )
+
+        _ = try RapsodoIngest.ingest(
+            csvURL: csvURL,
+            sessionRepository: sessionRepo,
+            shotRepository: shotRepo,
+            sessionDate: sessionDate2,
+            deviceType: "Rapsodo MLM2Pro",
+            location: "Test Range B"
+        )
+
+        // allShots (SQL-only AVG/COUNT(metric))
+        let allShotsRun1 = try trendsRepo.fetchTrendPoints(
+            club: "7i",
+            metric: .carry,
+            seriesType: .allShots
+        )
+        let allShotsRun2 = try trendsRepo.fetchTrendPoints(
+            club: "7i",
+            metric: .carry,
+            seriesType: .allShots
+        )
+
+        XCTAssertEqual(allShotsRun1.count, 2, "allShots should return one point per session")
+        XCTAssertEqual(allShotsRun1, allShotsRun2, "allShots should be deterministic across repeated runs")
+
+        XCTAssertLessThanOrEqual(allShotsRun1[0].sessionDate, allShotsRun1[1].sessionDate,
+                                 "allShots must be ordered by session_date ASC")
+        if allShotsRun1[0].sessionDate == allShotsRun1[1].sessionDate {
+            XCTAssertLessThan(allShotsRun1[0].sessionId, allShotsRun1[1].sessionId,
+                              "Tie-break must be session_id ASC")
+        }
+
+        // aOnly (Swift-computed with latest template at query time)
+        let aOnlyRun1 = try trendsRepo.fetchTrendPoints(
+            club: "7i",
+            metric: .carry,
+            seriesType: .aOnly
+        )
+        let aOnlyRun2 = try trendsRepo.fetchTrendPoints(
+            club: "7i",
+            metric: .carry,
+            seriesType: .aOnly
+        )
+
+        XCTAssertEqual(aOnlyRun1.count, 2, "aOnly should return one point per session")
+        XCTAssertEqual(aOnlyRun1, aOnlyRun2, "aOnly should be deterministic across repeated runs")
+
+        XCTAssertLessThanOrEqual(aOnlyRun1[0].sessionDate, aOnlyRun1[1].sessionDate,
+                                 "aOnly must be ordered by session_date ASC")
+        if aOnlyRun1[0].sessionDate == aOnlyRun1[1].sessionDate {
+            XCTAssertLessThan(aOnlyRun1[0].sessionId, aOnlyRun1[1].sessionId,
+                              "Tie-break must be session_id ASC")
+        }
+
+        // Required: every A-only point has non-null + stable templateHash
+        XCTAssertTrue(aOnlyRun1.allSatisfy { $0.templateHash != nil },
+                      "Every A-only trend point must include non-null templateHash")
+        XCTAssertTrue(aOnlyRun1.allSatisfy { $0.templateHash == templateRecord.hash },
+                      "A-only templateHash should be stable and match latest template")
+
+        // Required: A-only nShots equals A-with-metric count per session
+        for point in aOnlyRun1 {
+            let sessionShots = try shotRepo.fetchShots(forSession: point.sessionId)
+                .filter { $0.club == "7i" }
+                .sorted { $0.sourceRowIndex < $1.sourceRowIndex }
+
+            let classifications = try ShotClassifier.classify(sessionShots, using: kpiTemplate)
+            let aShotIds = Set(classifications.filter { $0.grade == .a }.map { $0.shotId })
+            let expectedAWithCarryCount = sessionShots
+                .filter { aShotIds.contains($0.shotId) }
+                .compactMap { $0.carry }
+                .count
+
+            XCTAssertEqual(point.nShots, expectedAWithCarryCount,
+                           "A-only nShots must equal A-with-metric count for session \(point.sessionId)")
+        }
+
+        print("✅ PASS: Trends v1 allShots + aOnly deterministic semantics verified")
+    }
 }

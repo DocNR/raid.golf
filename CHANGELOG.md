@@ -29,6 +29,32 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 4B: Trends v1 (tests-first)**
+  - Added `TrendsRepository` and trends domain model in `ios/RAID/RAID/Kernel/Repository.swift`
+    - `TrendPoint` unit is per session
+    - deterministic ordering: `session_date ASC, session_id ASC`
+  - Implemented `allShots` series via SQL-only aggregation:
+    - `AVG(metric)` and `COUNT(metric)` (non-null aligned), grouped by session
+  - Implemented `aOnly` series in Swift (no schema changes):
+    - deterministic template resolution: latest template for club at query time
+    - deterministic shot classification order: `source_row_index ASC`
+    - every A-only trend point includes non-null `templateHash`
+  - Added integration coverage in `ios/RAID/RAIDTests/IngestIntegrationTests.swift`:
+    - two deterministic sessions with fixed `session_date`
+    - validates point count, ordering, repeat-run determinism
+    - validates `aOnly.nShots` equals A-with-metric count
+    - validates non-null, stable `templateHash` on A-only points
+  - Added minimal UI in `ios/RAID/RAID/Views/TrendsView.swift`
+    - default: 7i + carry
+    - list/table presentation for allShots and A-only
+
+### Notes
+
+- **Phase 4B v1 limitation (documented semantics):**
+  - A/B/C grades are recomputed on demand from persisted shots.
+  - A-only trend uses the **latest template at query time**.
+  - Historical A-only trend values may shift if templates change until analysis-context linkage is persisted at ingest.
+
 ---
 
 ## [iOS Phase 4A] - 2026-02-06
