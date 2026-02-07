@@ -29,6 +29,28 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 4C: CSV Import + Sessions List + Empty States**
+  - Template bootstrap: bundled `template_seeds.json` with v2.0 7i template (4 metrics)
+    - Idempotent: PK constraint prevents duplicate inserts
+    - Async: runs via `.task` modifier, non-blocking, non-fatal errors
+    - Seed inserted via `TemplateRepository.insertTemplate(rawJSON:)` (kernel-safe)
+  - Expanded `ShotRepository.insertShots` to store all 14 normalized metric columns
+    - Previously only `carry` and `ball_speed` were stored; classification needs `smash_factor`, `spin_rate`, `descent_angle`
+    - Added `ShotInsertData` struct replacing tuple parameter
+  - Updated `RapsodoIngest` and `ParsedShot` to pass all parsed metrics through to INSERT
+  - Added `SessionRepository.listSessions()`: single grouped SQL query with shot count (no N+1)
+  - Added `SessionRepository.sessionCount()`: for empty-state checks
+  - Added `SessionListItem` struct (session + shotCount)
+  - TabView navigation: Trends tab + Sessions tab in `ContentView`
+  - `SessionsView`: sessions list (newest first, date + source file + shot count)
+    - Import CSV via `fileImporter` with security-scoped URL handling
+    - Import result alert (imported/skipped counts)
+    - Empty state: `ContentUnavailableView` with import button
+  - `TrendsView`: empty state keyed on `sessions.count == 0` (not trend results)
+  - Tests:
+    - `testTemplateBootstrapIsIdempotent`: insert twice, count unchanged
+    - `testSeedTemplateDecodesAsKPITemplate`: insert seed → fetch → decode → verify all 4 metrics
+
 - **iOS Phase 4B: Trends v1 (tests-first)**
   - Added `TrendsRepository` and trends domain model in `ios/RAID/RAID/Kernel/Repository.swift`
     - `TrendPoint` unit is per session

@@ -429,4 +429,107 @@ final class IngestIntegrationTests: XCTestCase {
 
         print("✅ PASS: Trends v1 allShots + aOnly deterministic semantics verified")
     }
+
+    // MARK: - Phase 4C: Template Bootstrap
+
+    func testTemplateBootstrapIsIdempotent() throws {
+        print("\n=== Phase 4C Test: Template Bootstrap Idempotency ===")
+
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+
+        // Simulate bootstrap with seed JSON (same format as template_seeds.json)
+        let seedJSON: [[String: Any]] = [
+            [
+                "schema_version": "1.0",
+                "club": "7i",
+                "aggregation_method": "worst_metric",
+                "metrics": [
+                    "ball_speed": ["direction": "higher_is_better", "a_min": 104.0],
+                    "smash_factor": ["direction": "higher_is_better", "a_min": 1.25, "b_min": 1.22],
+                    "spin_rate": ["direction": "higher_is_better", "a_min": 4300.0, "b_min": 4200.0],
+                    "descent_angle": ["direction": "higher_is_better", "a_min": 45.0, "b_min": 44.0]
+                ]
+            ]
+        ]
+
+        let repo = TemplateRepository(dbQueue: dbQueue)
+
+        // First insert
+        let seedData = try JSONSerialization.data(withJSONObject: seedJSON[0])
+        let record = try repo.insertTemplate(rawJSON: seedData)
+        print("✅ First insert: hash=\(record.hash.prefix(12))…")
+
+        // Count templates after first insert
+        let count1 = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM kpi_templates") ?? 0
+        }
+        XCTAssertEqual(count1, 1, "Should have exactly 1 template after first insert")
+
+        // Second insert (idempotent — should fail silently on PK constraint)
+        do {
+            _ = try repo.insertTemplate(rawJSON: seedData)
+            XCTFail("Second insert should throw (PK constraint)")
+        } catch {
+            // Expected: PK violation
+            print("✅ Second insert correctly rejected (PK constraint)")
+        }
+
+        // Count templates after second insert attempt
+        let count2 = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM kpi_templates") ?? 0
+        }
+        XCTAssertEqual(count2, 1, "Template count should be unchanged after duplicate insert")
+
+        print("✅ PASS: Template bootstrap is idempotent")
+    }
+
+    func testSeedTemplateDecodesAsKPITemplate() throws {
+        print("\n=== Phase 4C Test: Seed Template Decode ===")
+
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+
+        // Same seed as template_seeds.json
+        let seed: [String: Any] = [
+            "schema_version": "1.0",
+            "club": "7i",
+            "aggregation_method": "worst_metric",
+            "metrics": [
+                "ball_speed": ["direction": "higher_is_better", "a_min": 104.0],
+                "smash_factor": ["direction": "higher_is_better", "a_min": 1.25, "b_min": 1.22],
+                "spin_rate": ["direction": "higher_is_better", "a_min": 4300.0, "b_min": 4200.0],
+                "descent_angle": ["direction": "higher_is_better", "a_min": 45.0, "b_min": 44.0]
+            ]
+        ]
+
+        let repo = TemplateRepository(dbQueue: dbQueue)
+        let seedData = try JSONSerialization.data(withJSONObject: seed)
+        _ = try repo.insertTemplate(rawJSON: seedData)
+
+        // Fetch latest template for 7i
+        guard let fetched = try repo.fetchLatestTemplate(forClub: "7i") else {
+            XCTFail("Should fetch latest 7i template after bootstrap")
+            return
+        }
+
+        // Decode canonical JSON to KPITemplate
+        let canonicalData = Data(fetched.canonicalJSON.utf8)
+        let template = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        XCTAssertEqual(template.club, "7i")
+        XCTAssertEqual(template.schemaVersion, "1.0")
+        XCTAssertEqual(template.aggregationMethod, "worst_metric")
+        XCTAssertEqual(template.metrics.count, 4, "Should have 4 metrics")
+        XCTAssertNotNil(template.metrics["ball_speed"])
+        XCTAssertNotNil(template.metrics["smash_factor"])
+        XCTAssertNotNil(template.metrics["spin_rate"])
+        XCTAssertNotNil(template.metrics["descent_angle"])
+
+        // Verify thresholds
+        XCTAssertEqual(template.metrics["ball_speed"]?.aMin, 104.0)
+        XCTAssertEqual(template.metrics["smash_factor"]?.aMin, 1.25)
+        XCTAssertEqual(template.metrics["smash_factor"]?.bMin, 1.22)
+
+        print("✅ Seed template: club=\(template.club), metrics=\(template.metrics.keys.sorted())")
+        print("✅ PASS: Seed template decodes successfully as KPITemplate")
+    }
 }

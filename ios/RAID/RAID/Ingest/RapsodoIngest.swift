@@ -55,21 +55,33 @@ struct RapsodoIngest {
         )
         
         // Prepare shots for batch insert
-        var shotsForInsert: [(rowIndex: Int, club: String, rawJSON: String, carry: Double?, ballSpeed: Double?)] = []
-        
+        var shotsForInsert: [ShotInsertData] = []
+
         for (index, shot) in parseResult.shots.enumerated() {
             // Encode raw JSON
             guard let rawJSON = try? JSONSerialization.data(withJSONObject: shot.rawDict, options: []),
                   let rawJSONString = String(data: rawJSON, encoding: .utf8) else {
                 throw IngestError.jsonEncodingFailed("Failed to encode shot at index \(index)")
             }
-            
-            shotsForInsert.append((
+
+            shotsForInsert.append(ShotInsertData(
                 rowIndex: index,
                 club: shot.club,
                 rawJSON: rawJSONString,
                 carry: shot.carry,
-                ballSpeed: shot.ballSpeed
+                ballSpeed: shot.ballSpeed,
+                smashFactor: shot.smashFactor,
+                spinRate: shot.spinRate,
+                descentAngle: shot.descentAngle,
+                totalDistance: shot.totalDistance,
+                launchAngle: shot.launchAngle,
+                launchDirection: shot.launchDirection,
+                apex: shot.apex,
+                sideCarry: shot.sideCarry,
+                clubSpeed: shot.clubSpeed,
+                attackAngle: shot.attackAngle,
+                clubPath: shot.clubPath,
+                spinAxis: shot.spinAxis
             ))
         }
         
@@ -237,6 +249,15 @@ struct RapsodoIngest {
             smashFactor: smashFactor,
             spinRate: spinRate,
             descentAngle: descentAngle,
+            totalDistance: totalDistance,
+            launchAngle: launchAngle,
+            launchDirection: launchDirection,
+            apex: apex,
+            sideCarry: sideCarry,
+            clubSpeed: clubSpeed,
+            attackAngle: attackAngle,
+            clubPath: clubPath,
+            spinAxis: spinAxis,
             rawDict: rawDict
         )
     }
@@ -278,6 +299,15 @@ struct ParsedShot {
     let smashFactor: Double?
     let spinRate: Double?
     let descentAngle: Double?
+    let totalDistance: Double?
+    let launchAngle: Double?
+    let launchDirection: Double?
+    let apex: Double?
+    let sideCarry: Double?
+    let clubSpeed: Double?
+    let attackAngle: Double?
+    let clubPath: Double?
+    let spinAxis: Double?
     let rawDict: [String: Any]
 }
 

@@ -225,7 +225,7 @@ class SessionRepository {
                 arguments: [sessionId]) else {
                 return nil
             }
-            
+
             return SessionRecord(
                 sessionId: row["session_id"],
                 sessionDate: row["session_date"],
@@ -236,6 +236,51 @@ class SessionRepository {
             )
         }
     }
+
+    /// List all sessions with shot counts, newest first.
+    /// Single grouped query (no N+1).
+    func listSessions() throws -> [SessionListItem] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT s.session_id, s.session_date, s.source_file, s.device_type, s.location, s.ingested_at,
+                       COUNT(sh.shot_id) AS shot_count
+                FROM sessions s
+                LEFT JOIN shots sh ON sh.session_id = s.session_id
+                GROUP BY s.session_id
+                ORDER BY s.session_date DESC, s.session_id DESC
+                """)
+            return rows.map { row in
+                SessionListItem(
+                    sessionId: row["session_id"],
+                    sessionDate: row["session_date"],
+                    sourceFile: row["source_file"],
+                    deviceType: row["device_type"],
+                    location: row["location"],
+                    ingestedAt: row["ingested_at"],
+                    shotCount: row["shot_count"]
+                )
+            }
+        }
+    }
+
+    /// Total session count (for empty-state checks).
+    func sessionCount() throws -> Int {
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sessions") ?? 0
+        }
+    }
+}
+
+// MARK: - Session List Item
+
+struct SessionListItem {
+    let sessionId: Int64
+    let sessionDate: String
+    let sourceFile: String
+    let deviceType: String?
+    let location: String?
+    let ingestedAt: String
+    let shotCount: Int
 }
 
 // MARK: - Shot Record
@@ -255,47 +300,75 @@ struct ShotRecord {
     let descentAngle: Double?
 }
 
+// MARK: - Shot Insert Data
+
+struct ShotInsertData {
+    let rowIndex: Int
+    let club: String
+    let rawJSON: String
+    let carry: Double?
+    let ballSpeed: Double?
+    let smashFactor: Double?
+    let spinRate: Double?
+    let descentAngle: Double?
+    let totalDistance: Double?
+    let launchAngle: Double?
+    let launchDirection: Double?
+    let apex: Double?
+    let sideCarry: Double?
+    let clubSpeed: Double?
+    let attackAngle: Double?
+    let clubPath: Double?
+    let spinAxis: Double?
+}
+
 // MARK: - Shot Repository
 
 class ShotRepository {
     private let dbQueue: DatabaseQueue
-    
+
     init(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
     }
-    
-    /// Insert shots in batch
-    func insertShots(_ shots: [(rowIndex: Int, club: String, rawJSON: String, carry: Double?, ballSpeed: Double?)],
+
+    /// Insert shots in batch (all normalized metric columns)
+    func insertShots(_ shots: [ShotInsertData],
                     sessionId: Int64,
                     sourceFormat: String) throws {
         let importedAt = ISO8601DateFormatter().string(from: Date())
-        
+
         try dbQueue.write { db in
             for shot in shots {
                 try db.execute(
                     sql: """
-                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club,
+                                       carry, ball_speed, smash_factor, spin_rate, descent_angle,
+                                       total_distance, launch_angle, launch_direction, apex, side_carry,
+                                       club_speed, attack_angle, club_path, spin_axis)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    arguments: [sessionId, shot.rowIndex, sourceFormat, importedAt, shot.rawJSON, shot.club, shot.carry, shot.ballSpeed]
+                    arguments: [sessionId, shot.rowIndex, sourceFormat, importedAt, shot.rawJSON, shot.club,
+                               shot.carry, shot.ballSpeed, shot.smashFactor, shot.spinRate, shot.descentAngle,
+                               shot.totalDistance, shot.launchAngle, shot.launchDirection, shot.apex, shot.sideCarry,
+                               shot.clubSpeed, shot.attackAngle, shot.clubPath, shot.spinAxis]
                 )
             }
         }
     }
-    
+
     /// Fetch shots for a session
     func fetchShots(forSession sessionId: Int64) throws -> [ShotRecord] {
         return try dbQueue.read { db in
             let rows = try Row.fetchAll(db,
                 sql: """
-                SELECT shot_id, session_id, source_row_index, source_format, imported_at, raw_json, 
+                SELECT shot_id, session_id, source_row_index, source_format, imported_at, raw_json,
                        club, carry, ball_speed, smash_factor, spin_rate, descent_angle
-                FROM shots 
-                WHERE session_id = ? 
+                FROM shots
+                WHERE session_id = ?
                 ORDER BY source_row_index
                 """,
                 arguments: [sessionId])
-            
+
             return rows.map { row in
                 ShotRecord(
                     shotId: row["shot_id"],

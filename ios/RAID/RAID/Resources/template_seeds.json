@@ -1,0 +1,13 @@
+[
+  {
+    "schema_version": "1.0",
+    "club": "7i",
+    "aggregation_method": "worst_metric",
+    "metrics": {
+      "ball_speed": {"direction": "higher_is_better", "a_min": 104.0},
+      "smash_factor": {"direction": "higher_is_better", "a_min": 1.25, "b_min": 1.22},
+      "spin_rate": {"direction": "higher_is_better", "a_min": 4300.0, "b_min": 4200.0},
+      "descent_angle": {"direction": "higher_is_better", "a_min": 45.0, "b_min": 44.0}
+    }
+  }
+]
