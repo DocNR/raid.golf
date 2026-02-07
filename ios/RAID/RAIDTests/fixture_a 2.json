@@ -1,0 +1,1 @@
+{"schema_version":"1.0","club":"7i","metrics":{"ball_speed":{"a_min":100,"b_min":90,"direction":"higher_is_better"}},"aggregation_method":"worst_metric"}

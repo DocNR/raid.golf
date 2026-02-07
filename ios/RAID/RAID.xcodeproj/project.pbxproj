@@ -16,7 +16,6 @@
 		EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */; };
 		EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B872F356A060032E6A0 /* Canonical.swift */; };
 		EFB69B992F356A060032E6A0 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B892F356A060032E6A0 /* Repository.swift */; };
-		EFB69B9A2F356A060032E6A0 /* KPITemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,7 +45,6 @@
 		EFB69B892F356A060032E6A0 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
 		EFB69B8A2F356A060032E6A0 /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
 		EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClubSubsession.swift; sourceTree = "<group>"; };
-		EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KPITemplate.swift; sourceTree = "<group>"; };
 		EFB69B8E2F356A060032E6A0 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		EFB69B902F356A060032E6A0 /* .gitkeep */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitkeep; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -144,7 +142,6 @@
 			isa = PBXGroup;
 			children = (
 				EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */,
-				EFB69B8D2F356A060032E6A0 /* KPITemplate.swift */,
 				EFB69B8E2F356A060032E6A0 /* Session.swift */,
 			);
 			name = Models;
@@ -316,7 +313,6 @@
 				EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */,
 				EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */,
 				EFB69B992F356A060032E6A0 /* Repository.swift in Sources */,
-				EFB69B9A2F356A060032E6A0 /* KPITemplate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -31,6 +31,51 @@ This project versions **behavior and rules**, not files.
 
 ---
 
+## [iOS Phase 4A] - 2026-02-06
+
+### Added - Data Confidence Harness (Complete)
+
+**RAIDTests/IngestIntegrationTests.swift**
+- End-to-end ingest integration test (CSV → persisted shots)
+  - Verifies import counts (15 shots imported, 0 skipped)
+  - Validates `source_row_index` uniqueness and sequencing (0..14)
+  - Confirms FK integrity (shots → session)
+- Classification + aggregation determinism test
+  - Template-driven classification (7i template: `96bf2f0d...`)
+  - Deterministic results: A=5, B=0, C=1 (A%=83.33%)
+  - Repeated runs produce identical outputs
+  - Fresh DB ingest produces identical A%
+- Shot immutability guardrail test
+  - UPDATE rejected: "Shots are immutable after creation"
+  - DELETE rejected: "Shots are immutable after creation"
+  - No silent mutation possible
+
+**docs/Data_Confidence_Report.md**
+- Documents Phase 4A validation coverage
+- Defines authoritative `source_row_index` semantics (0-based ingested shot index)
+- Explicitly states what is/isn't asserted (golden aggregates deferred to Phase 4A.2)
+- Exit criteria checklist for Phase 4A completion
+
+**docs/private/ios-port-plan.md**
+- Updated to reflect Phase 4A as completed milestone
+- Clarified phase naming (iOS port phases vs. product phases)
+- Set Phase 4A as current resume point
+
+### Test Results
+- ✅ All 34 tests passing (3 integration + 31 kernel tests)
+- ✅ JCS canonicalization vectors (12/12)
+- ✅ Template hash fixtures (3/3)
+- ✅ Immutability enforcement (sessions, templates, subsessions, shots)
+- ✅ Repository hash-once tests (RTM-04)
+- ✅ Deterministic end-to-end pipeline verified
+
+### Notes
+- No UI or trend analysis in this phase (tests only)
+- Golden aggregate fixtures deferred to Phase 4A.2
+- Kernel invariants remain frozen
+
+---
+
 ## [iOS Phase 2.4] - 2026-02-06
 
 ### Added - iOS Repository Layer (RTM-04 Compliance)
