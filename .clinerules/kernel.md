@@ -1,6 +1,7 @@
 # .clinerules — Kernel Protection Addendum (RAID)
 
-**Canonical Kernel Contract:** See `docs/private/kernel/KERNEL_CONTRACT.md` for full governance specification.
+**Canonical Kernel Contract:** See `docs/private/kernel/KERNEL_CONTRACT_v2.md` for full governance specification.
+**Data Governance Policy:** See `docs/private/kernel/KERNEL_GOVERNANCE.md` for lifecycle and promotion rules.
 
 ## Role Constraint
 You are an assistant contributing to RAID Golf. The **kernel invariants are locked**.  
