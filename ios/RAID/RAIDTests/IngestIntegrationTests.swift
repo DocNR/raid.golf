@@ -27,6 +27,49 @@ final class IngestIntegrationTests: XCTestCase {
         let sessionId: Int64
         let ingestResult: IngestResult
     }
+
+    struct AggregateParityGolden: Decodable {
+        struct NumericPolicy: Decodable {
+            let sumRoundDecimals: Int
+
+            enum CodingKeys: String, CodingKey {
+                case sumRoundDecimals = "sum_round_decimals"
+            }
+        }
+
+        struct MetricGolden: Decodable {
+            let count: Int
+            let sum: String
+        }
+
+        struct ABCGolden: Decodable {
+            let a: Int
+            let b: Int
+            let c: Int
+        }
+
+        struct ClubGolden: Decodable {
+            let totalShots: Int
+            let metrics: [String: MetricGolden]
+            let templateHash: String?
+            let abc: ABCGolden?
+
+            enum CodingKeys: String, CodingKey {
+                case totalShots = "total_shots"
+                case metrics
+                case templateHash = "template_hash"
+                case abc
+            }
+        }
+
+        let numericPolicy: NumericPolicy
+        let clubs: [String: ClubGolden]
+
+        enum CodingKeys: String, CodingKey {
+            case numericPolicy = "numeric_policy"
+            case clubs
+        }
+    }
     
     /// Create fresh database and ingest CSV fixture
     /// - Returns: Database, session ID, and ingest result
@@ -64,6 +107,28 @@ final class IngestIntegrationTests: XCTestCase {
             sessionId: result.sessionId,
             ingestResult: result
         )
+    }
+
+    private static func metricValues(_ shots: [ShotRecord], metricName: String) -> [Double] {
+        switch metricName {
+        case "carry":
+            return shots.compactMap { $0.carry }
+        case "ball_speed":
+            return shots.compactMap { $0.ballSpeed }
+        case "smash_factor":
+            return shots.compactMap { $0.smashFactor }
+        case "spin_rate":
+            return shots.compactMap { $0.spinRate }
+        case "descent_angle":
+            return shots.compactMap { $0.descentAngle }
+        default:
+            return []
+        }
+    }
+
+    private static func roundedSumString(_ values: [Double], decimals: Int) -> String {
+        let total = values.reduce(0.0, +)
+        return String(format: "%.*f", decimals, total)
     }
     
     // MARK: - Test 1: Fixture Ingest Integration
@@ -531,5 +596,89 @@ final class IngestIntegrationTests: XCTestCase {
 
         print("✅ Seed template: club=\(template.club), metrics=\(template.metrics.keys.sorted())")
         print("✅ PASS: Seed template decodes successfully as KPITemplate")
+    }
+
+    // MARK: - Phase 4A.2: Golden Aggregate Parity
+
+    func testAggregateParityFixtureA_WithGoldenFixture() throws {
+        print("\n=== Phase 4A.2 Test: Golden Aggregate Parity (fixture_a) ===")
+
+        let fixture = try makeFreshDBAndIngestFixture()
+        let shotRepo = ShotRepository(dbQueue: fixture.dbQueue)
+        let allShots = try shotRepo.fetchShots(forSession: fixture.sessionId)
+        let shotsByClub = Dictionary(grouping: allShots, by: { $0.club })
+
+        guard let goldenURL = Bundle(for: type(of: self)).url(
+            forResource: "aggregate_parity_mixed_club_sample",
+            withExtension: "json"
+        ) else {
+            XCTFail("Golden fixture not found in test bundle. Add ios/RAID/RAIDTests/aggregate_parity_mixed_club_sample.json to RAIDTests resources.")
+            return
+        }
+
+        let goldenData = try Data(contentsOf: goldenURL)
+        let golden = try JSONDecoder().decode(AggregateParityGolden.self, from: goldenData)
+
+        // Aggregate parity: per-club metric count/sum with fixed rounding policy
+        for (club, clubGolden) in golden.clubs {
+            let clubShots = shotsByClub[club] ?? []
+            XCTAssertEqual(clubShots.count, clubGolden.totalShots,
+                           "Club \(club) total shot count should match golden")
+
+            for (metricName, metricGolden) in clubGolden.metrics {
+                let values = Self.metricValues(clubShots, metricName: metricName)
+                XCTAssertEqual(values.count, metricGolden.count,
+                               "Club \(club) metric \(metricName) count should match golden")
+
+                let sumString = Self.roundedSumString(values, decimals: golden.numericPolicy.sumRoundDecimals)
+                XCTAssertEqual(sumString, metricGolden.sum,
+                               "Club \(club) metric \(metricName) rounded sum should match golden")
+            }
+        }
+
+        // Classification parity: 7i only, fixture_a scoped
+        guard let templateURL = Bundle(for: type(of: self)).url(
+            forResource: "fixture_a",
+            withExtension: "json"
+        ) else {
+            XCTFail("Template fixture_a not found in test bundle")
+            return
+        }
+
+        let templateData = try Data(contentsOf: templateURL)
+        let templateRepo = TemplateRepository(dbQueue: fixture.dbQueue)
+        let templateRecord = try templateRepo.insertTemplate(rawJSON: templateData)
+
+        guard let club7iGolden = golden.clubs["7i"],
+              let expectedHash = club7iGolden.templateHash,
+              let expectedABC = club7iGolden.abc else {
+            XCTFail("Golden fixture missing 7i template_hash or abc payload")
+            return
+        }
+
+        XCTAssertEqual(templateRecord.hash, expectedHash,
+                       "Inserted fixture_a template hash should match 7i golden hash")
+        XCTAssertEqual(templateRecord.hash, "96bf2f0d9540211669916f580aaec0ac26d1a14e8d2fdd35cee2172595f86698",
+                       "fixture_a hash should match frozen expected hash")
+
+        guard let fetchedTemplate = try templateRepo.fetchTemplate(byHash: templateRecord.hash) else {
+            XCTFail("Template should be fetchable by hash")
+            return
+        }
+
+        let canonicalData = Data(fetchedTemplate.canonicalJSON.utf8)
+        let kpiTemplate = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        let shots7i = (shotsByClub["7i"] ?? []).sorted { $0.sourceRowIndex < $1.sourceRowIndex }
+        let classifications = try ShotClassifier.classify(shots7i, using: kpiTemplate)
+        let summary = ShotClassifier.aggregate(classifications, shots: shots7i)
+
+        XCTAssertEqual(summary.aCount, expectedABC.a, "7i A count should match golden")
+        XCTAssertEqual(summary.bCount, expectedABC.b, "7i B count should match golden")
+        XCTAssertEqual(summary.cCount, expectedABC.c, "7i C count should match golden")
+        XCTAssertEqual(summary.aCount + summary.bCount + summary.cCount, summary.totalShots,
+                       "7i A+B+C must equal total shots")
+
+        print("✅ PASS: Aggregate parity matches golden fixture (counts, sums, 7i A/B/C, template hash)")
     }
 }

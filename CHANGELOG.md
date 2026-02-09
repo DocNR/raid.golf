@@ -29,6 +29,25 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 4A.2: Golden aggregate parity fixture lock-in**
+  - Added deterministic Python golden generator:
+    - `tools/scripts/generate_aggregate_parity_golden.py`
+  - Added golden artifact (source of parity truth):
+    - `tests/vectors/goldens/aggregate_parity_mixed_club_sample.json`
+  - Added RAIDTests bundle copy for iOS runtime parity checks:
+    - `ios/RAID/RAIDTests/aggregate_parity_mixed_club_sample.json`
+  - Added iOS parity integration coverage in `IngestIntegrationTests`:
+    - per-club `total_shots` parity
+    - per-club metric `count` + `sum` parity for `carry`, `ball_speed`, `smash_factor`, `spin_rate`, `descent_angle`
+    - 7i-only classification parity (`A/B/C`) using `fixture_a.json`
+    - template hash parity assertion for fixture_a (`96bf2f0d...`)
+  - Numeric policy locked for parity comparisons:
+    - fixed rounding to 6 decimals
+    - sums serialized and compared as fixed-decimal strings
+  - Scope explicitly template-scoped for this vector:
+    - 7i classified
+    - 5i aggregate-only
+
 - **iOS Phase 4C: CSV Import + Sessions List + Empty States**
   - Template bootstrap: bundled `template_seeds.json` with v2.0 7i template (4 metrics)
     - Idempotent: PK constraint prevents duplicate inserts
