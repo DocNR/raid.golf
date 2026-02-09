@@ -1,0 +1,74 @@
+{
+  "clubs": {
+    "5i": {
+      "metrics": {
+        "ball_speed": {
+          "count": 9,
+          "sum": "964.800000"
+        },
+        "carry": {
+          "count": 9,
+          "sum": "1417.500000"
+        },
+        "descent_angle": {
+          "count": 9,
+          "sum": "379.200000"
+        },
+        "smash_factor": {
+          "count": 9,
+          "sum": "12.050000"
+        },
+        "spin_rate": {
+          "count": 9,
+          "sum": "40651.000000"
+        }
+      },
+      "total_shots": 9
+    },
+    "7i": {
+      "abc": {
+        "a": 5,
+        "b": 0,
+        "c": 1
+      },
+      "metrics": {
+        "ball_speed": {
+          "count": 6,
+          "sum": "595.900000"
+        },
+        "carry": {
+          "count": 6,
+          "sum": "836.600000"
+        },
+        "descent_angle": {
+          "count": 6,
+          "sum": "279.100000"
+        },
+        "smash_factor": {
+          "count": 6,
+          "sum": "7.740000"
+        },
+        "spin_rate": {
+          "count": 6,
+          "sum": "30817.000000"
+        }
+      },
+      "template_hash": "96bf2f0d9540211669916f580aaec0ac26d1a14e8d2fdd35cee2172595f86698",
+      "total_shots": 6
+    }
+  },
+  "fixture": "rapsodo_mlm2pro_mixed_club_sample.csv",
+  "numeric_policy": {
+    "sum_encoding": "fixed_decimal_string",
+    "sum_round_decimals": 6
+  },
+  "scope": {
+    "aggregate_only_clubs": [
+      "5i"
+    ],
+    "classified_clubs": [
+      "7i"
+    ]
+  },
+  "template_fixture": "fixture_a.json"
+}
