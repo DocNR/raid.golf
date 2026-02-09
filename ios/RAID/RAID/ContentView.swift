@@ -1,7 +1,7 @@
 // ContentView.swift
 // RAID Golf - iOS Port
 //
-// Phase 4C: TabView navigation (Trends + Sessions)
+// Phase 4C: TabView navigation (Trends + Sessions + Rounds)
 
 import SwiftUI
 import GRDB
@@ -19,6 +19,11 @@ struct ContentView: View {
             SessionsView(dbQueue: dbQueue)
                 .tabItem {
                     Label("Sessions", systemImage: "list.bullet")
+                }
+
+            RoundsView(dbQueue: dbQueue)
+                .tabItem {
+                    Label("Rounds", systemImage: "flag.fill")
                 }
         }
     }

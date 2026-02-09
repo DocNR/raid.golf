@@ -29,6 +29,33 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Scorecard v0 Bugfix Sprint (feature/scorecard-v0)**
+  - Added `ActiveRoundStore` view model pattern for long-lived scoring state
+    - Owned by `RoundsView` via `@State`, passed to `ScoreEntryView`
+    - ScoreEntryView becomes thin render shell over store
+    - State survives view recreation and navigation
+  - Added finish confirmation dialog ("Are you sure you want to end your round?")
+  - Added Front 9 / Back 9 / 18 hole picker in CreateRoundView
+    - Front 9: holes 1-9
+    - Back 9: holes 10-18
+    - 18: all holes
+  - Added 4 regression tests in ScorecardTests.swift (31 scorecard tests total, ~69 project-wide)
+    - Nested-read safety test
+    - Default-value persistence test
+    - Last-hole finish eligibility test
+  - Fixed Issue B (EXC_BREAKPOINT crash): Restructured `RoundDetailView.loadData()` to use sequential non-nested reads
+    - GRDB precondition failure: "Database methods are not reentrant"
+    - Replaced nested `dbQueue.read` with sequential repo calls
+  - Fixed Issue A (default par persistence): Removed `guard let` check in `saveCurrentScore()`
+    - Now always persists displayed value (falls back to par if user didn't adjust)
+    - Previously skipped persistence when user didn't change from default
+  - Fixed last-hole finish bug: Added `ensureCurrentHoleHasDefault()` pattern
+    - Populates default par in memory when arriving at each hole
+    - Finish button now works on last hole
+  - **Pattern learned:** Never nest `dbQueue.read` calls in GRDB
+  - **Pattern learned:** Always persist displayed values, even defaults
+  - **Pattern learned:** Use `@Observable` class at parent level for stateful flows that must survive view recreation
+
 - **iOS Phase 4A.2: Golden aggregate parity fixture lock-in**
   - Added deterministic Python golden generator:
     - `tools/scripts/generate_aggregate_parity_golden.py`

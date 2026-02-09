@@ -3,6 +3,7 @@
 //
 // Phase 2.3: SQLite Schema + Immutability Triggers
 // Phase 2.3b: Shots Table (v2_add_shots migration)
+// Scorecard v0: course_snapshots, course_holes, rounds, round_events, hole_scores
 //
 // Purpose:
 // - Define authoritative tables with immutability triggers
@@ -12,6 +13,7 @@
 // Migrations:
 // - v1_create_schema: sessions, kpi_templates, club_subsessions, projections
 // - v2_add_shots: shots table with FK to sessions
+// - v3_create_scorecard_schema: scorecard tables (kernel-adjacent)
 //
 // Invariant: All authoritative tables are immutable at creation time
 // Design rule: No table ever transitions from mutable → immutable in-place
@@ -241,6 +243,189 @@ struct Schema {
                 """)
         }
         
+        // ============================================================
+        // v3_create_scorecard_schema: Scorecard tables (kernel-adjacent)
+        //
+        // New domain: scorecards. Does NOT modify frozen kernel tables.
+        // Tables: course_snapshots, course_holes, rounds, round_events, hole_scores
+        // All authoritative tables are immutable (UPDATE/DELETE triggers).
+        // ============================================================
+        migrator.registerMigration("v3_create_scorecard_schema") { db in
+
+            // Course Snapshots (content-addressed, immutable)
+            // Mirrors kpi_templates: hash PK, canonical JSON stored.
+            // course_hash = SHA-256(UTF-8(JCS(canonical_json)))
+            try db.execute(sql: """
+                CREATE TABLE course_snapshots (
+                    course_hash TEXT PRIMARY KEY,
+                    course_name TEXT NOT NULL,
+                    tee_set TEXT NOT NULL,
+                    hole_count INTEGER NOT NULL,
+                    canonical_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+
+                    CHECK (length(course_hash) = 64),
+                    CHECK (course_hash GLOB '[0-9a-f]*'),
+                    CHECK (hole_count IN (9, 18))
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_course_snapshots_name ON course_snapshots(course_name)")
+
+            try db.execute(sql: """
+                CREATE TRIGGER course_snapshots_no_update
+                BEFORE UPDATE ON course_snapshots
+                BEGIN
+                    SELECT RAISE(ABORT, 'Course snapshots are immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER course_snapshots_no_delete
+                BEFORE DELETE ON course_snapshots
+                BEGIN
+                    SELECT RAISE(ABORT, 'Course snapshots are immutable after creation');
+                END
+                """)
+
+            // Course Holes (normalized hole definitions, immutable)
+            // Avoids JSON parsing at runtime. PK: (course_hash, hole_number).
+            try db.execute(sql: """
+                CREATE TABLE course_holes (
+                    course_hash TEXT NOT NULL,
+                    hole_number INTEGER NOT NULL,
+                    par INTEGER NOT NULL,
+                    handicap_index INTEGER,
+
+                    PRIMARY KEY (course_hash, hole_number),
+
+                    FOREIGN KEY (course_hash) REFERENCES course_snapshots(course_hash)
+                        ON DELETE RESTRICT,
+
+                    CHECK (hole_number >= 1 AND hole_number <= 18),
+                    CHECK (par >= 3 AND par <= 6)
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER course_holes_no_update
+                BEFORE UPDATE ON course_holes
+                BEGIN
+                    SELECT RAISE(ABORT, 'Course holes are immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER course_holes_no_delete
+                BEFORE DELETE ON course_holes
+                BEGIN
+                    SELECT RAISE(ABORT, 'Course holes are immutable after creation');
+                END
+                """)
+
+            // Rounds (immutable — no UPDATE ever)
+            try db.execute(sql: """
+                CREATE TABLE rounds (
+                    round_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    course_hash TEXT NOT NULL,
+                    round_date TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+
+                    FOREIGN KEY (course_hash) REFERENCES course_snapshots(course_hash)
+                        ON DELETE RESTRICT
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_rounds_date ON rounds(round_date)")
+
+            try db.execute(sql: """
+                CREATE TRIGGER rounds_no_update
+                BEFORE UPDATE ON rounds
+                BEGIN
+                    SELECT RAISE(ABORT, 'Rounds are immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER rounds_no_delete
+                BEFORE DELETE ON rounds
+                BEGIN
+                    SELECT RAISE(ABORT, 'Rounds are immutable after creation');
+                END
+                """)
+
+            // Round Events (append-only lifecycle events)
+            // Completion is an event, not a status UPDATE on rounds.
+            // UNIQUE(round_id, event_type) prevents double-completion.
+            try db.execute(sql: """
+                CREATE TABLE round_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    round_id INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+
+                    FOREIGN KEY (round_id) REFERENCES rounds(round_id)
+                        ON DELETE RESTRICT,
+
+                    UNIQUE (round_id, event_type),
+                    CHECK (event_type IN ('completed'))
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_events_no_update
+                BEFORE UPDATE ON round_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round events are immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_events_no_delete
+                BEFORE DELETE ON round_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round events are immutable after creation');
+                END
+                """)
+
+            // Hole Scores (append-only, latest-wins corrections)
+            // Multiple rows per (round_id, hole_number) allowed.
+            // Latest-wins: MAX(recorded_at), tie-break MAX(score_id).
+            try db.execute(sql: """
+                CREATE TABLE hole_scores (
+                    score_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    round_id INTEGER NOT NULL,
+                    hole_number INTEGER NOT NULL,
+                    strokes INTEGER NOT NULL,
+                    recorded_at TEXT NOT NULL,
+
+                    FOREIGN KEY (round_id) REFERENCES rounds(round_id)
+                        ON DELETE RESTRICT,
+
+                    CHECK (hole_number >= 1 AND hole_number <= 18),
+                    CHECK (strokes >= 1 AND strokes <= 20)
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_hole_scores_round_hole ON hole_scores(round_id, hole_number, recorded_at DESC)")
+
+            try db.execute(sql: """
+                CREATE TRIGGER hole_scores_no_update
+                BEFORE UPDATE ON hole_scores
+                BEGIN
+                    SELECT RAISE(ABORT, 'Hole scores are immutable; insert a correction instead');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER hole_scores_no_delete
+                BEFORE DELETE ON hole_scores
+                BEGIN
+                    SELECT RAISE(ABORT, 'Hole scores are immutable after creation');
+                END
+                """)
+        }
+
         return migrator
     }
     
