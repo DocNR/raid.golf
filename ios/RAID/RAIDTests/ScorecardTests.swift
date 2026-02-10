@@ -65,6 +65,15 @@ final class ScorecardTests: XCTestCase {
         )
     }
 
+    /// Create a back-9 course snapshot input (holes 10-18)
+    private func makeBack9Input() -> CourseSnapshotInput {
+        CourseSnapshotInput(
+            courseName: "Back Nine Course",
+            teeSet: "Blue",
+            holes: (10...18).map { HoleDefinition(holeNumber: $0, par: 4) }
+        )
+    }
+
     // MARK: - Schema Immutability: course_snapshots
 
     func testCourseSnapshotUpdateRejected() throws {
@@ -386,6 +395,50 @@ final class ScorecardTests: XCTestCase {
         let holes = try repo.fetchHoles(forCourse: record.courseHash)
         XCTAssertEqual(holes.count, 18)
         XCTAssertEqual(holes.map(\.holeNumber), Array(1...18))
+    }
+
+    func testBack9SnapshotInsertsExactlyNineHolesStartingAt10() throws {
+        let dbQueue = try createTestDatabase()
+        let repo = CourseSnapshotRepository(dbQueue: dbQueue)
+
+        let record = try repo.insertCourseSnapshot(makeBack9Input())
+        XCTAssertEqual(record.holeCount, 9)
+
+        let holes = try repo.fetchHoles(forCourse: record.courseHash)
+        XCTAssertEqual(holes.count, 9)
+        XCTAssertEqual(holes.map(\.holeNumber), Array(10...18),
+                       "Back 9 snapshot must store exactly holes 10-18")
+    }
+
+    func testMalformedNineHoleSetRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let repo = CourseSnapshotRepository(dbQueue: dbQueue)
+
+        // 9 holes but not a valid front/back set: {1..8, 10}
+        let malformedInput = CourseSnapshotInput(
+            courseName: "Bad Course",
+            teeSet: "Red",
+            holes: [1, 2, 3, 4, 5, 6, 7, 8, 10].map { HoleDefinition(holeNumber: $0, par: 4) }
+        )
+
+        XCTAssertThrowsError(try repo.insertCourseSnapshot(malformedInput)) { error in
+            guard case CourseSnapshotError.invalidHoleSet = error else {
+                XCTFail("Expected invalidHoleSet error, got: \(error)")
+                return
+            }
+        }
+
+        // Verify transactional rollback: no course_snapshots rows
+        let snapshotCount = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM course_snapshots")
+        }
+        XCTAssertEqual(snapshotCount, 0, "No snapshot should exist after rejection")
+
+        // Verify transactional rollback: no course_holes rows
+        let holesCount = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM course_holes")
+        }
+        XCTAssertEqual(holesCount, 0, "No course_holes should exist after rejection")
     }
 
     func testInvalidHoleCountRejected() throws {

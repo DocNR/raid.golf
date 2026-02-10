@@ -490,74 +490,71 @@ class TrendsRepository {
         }
     }
     
-    // MARK: aOnly (Swift-computed)
-    
-    /// Phase 4B v1 semantics:
-    /// - Select latest template for club at query time
-    /// - Recompute A/B/C on demand from persisted shots
-    /// - Include template hash on every returned point
+    // MARK: aOnly (Swift-computed, pinned template)
+
+    /// Phase 4B v2 semantics:
+    /// - Use template_hash persisted in club_subsessions at analysis time
+    /// - Never resolves "latest template" — historical points are stable
+    /// - Sessions without a club_subsessions row are excluded
     private func fetchAOnlyTrendPoints(club: String,
                                        metric: TrendMetric) throws -> [TrendPoint] {
-        guard let templateRecord = try templateRepository.fetchLatestTemplate(forClub: club) else {
-            return []
+        // Phase 4B v2: sessions with persisted analysis context
+        struct SessionContext {
+            let sessionDate: String
+            let sessionId: Int64
+            let templateHash: String
         }
-        
-        guard let templateData = templateRecord.canonicalJSON.data(using: .utf8) else {
-            return []
+
+        let sessionContexts: [SessionContext] = try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT sessions.session_date, sessions.session_id, cs.kpi_template_hash
+                FROM club_subsessions cs
+                INNER JOIN sessions ON sessions.session_id = cs.session_id
+                WHERE cs.club = ?
+                ORDER BY sessions.session_date ASC, sessions.session_id ASC
+                """, arguments: [club])
+            return rows.map {
+                SessionContext(sessionDate: $0["session_date"],
+                              sessionId: $0["session_id"],
+                              templateHash: $0["kpi_template_hash"])
+            }
         }
-        let template = try JSONDecoder().decode(KPITemplate.self, from: templateData)
-        
-        // Session list for this club, deterministic ordering
-        let orderedSessions: [(sessionDate: String, sessionId: Int64)] = try dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT sessions.session_date AS session_date, sessions.session_id AS session_id
-                    FROM sessions
-                    INNER JOIN shots ON shots.session_id = sessions.session_id
-                    WHERE shots.club = ?
-                    GROUP BY sessions.session_date, sessions.session_id
-                    ORDER BY sessions.session_date ASC, sessions.session_id ASC
-                    """,
-                arguments: [club]
-            )
-            return rows.map { ($0["session_date"], $0["session_id"]) }
+
+        guard !sessionContexts.isEmpty else { return [] }
+
+        // Fetch each unique template once
+        let uniqueHashes = Set(sessionContexts.map { $0.templateHash })
+        var templates: [String: KPITemplate] = [:]
+        for hash in uniqueHashes {
+            guard let record = try templateRepository.fetchTemplate(byHash: hash),
+                  let data = record.canonicalJSON.data(using: .utf8) else {
+                continue
+            }
+            templates[hash] = try JSONDecoder().decode(KPITemplate.self, from: data)
         }
-        
-        guard !orderedSessions.isEmpty else {
-            return []
-        }
-        
-        let sessionIds = orderedSessions.map { $0.sessionId }
+
+        // Fetch all shots for these sessions in one query
+        let sessionIds = sessionContexts.map { $0.sessionId }
         let placeholders = Array(repeating: "?", count: sessionIds.count).joined(separator: ",")
         let sql = """
             SELECT
-                shots.shot_id,
-                shots.session_id,
-                shots.source_row_index,
-                shots.source_format,
-                shots.imported_at,
-                shots.raw_json,
-                shots.club,
-                shots.carry,
-                shots.ball_speed,
-                shots.smash_factor,
-                shots.spin_rate,
-                shots.descent_angle
+                shots.shot_id, shots.session_id, shots.source_row_index,
+                shots.source_format, shots.imported_at, shots.raw_json,
+                shots.club, shots.carry, shots.ball_speed,
+                shots.smash_factor, shots.spin_rate, shots.descent_angle
             FROM shots
-            INNER JOIN sessions ON sessions.session_id = shots.session_id
             WHERE shots.club = ?
               AND shots.session_id IN (\(placeholders))
-            ORDER BY sessions.session_date ASC, shots.session_id ASC, shots.source_row_index ASC
+            ORDER BY shots.session_id ASC, shots.source_row_index ASC
             """
-        
+
         var shotArgs: [DatabaseValueConvertible] = [club]
         shotArgs.append(contentsOf: sessionIds)
-        
+
         let rows = try dbQueue.read { db in
             try Row.fetchAll(db, sql: sql, arguments: StatementArguments(shotArgs))
         }
-        
+
         var shotsBySession: [Int64: [ShotRecord]] = [:]
         for row in rows {
             let shot = ShotRecord(
@@ -576,27 +573,29 @@ class TrendsRepository {
             )
             shotsBySession[shot.sessionId, default: []].append(shot)
         }
-        
-        return try orderedSessions.map { session in
-            let shots = shotsBySession[session.sessionId] ?? []
+
+        return try sessionContexts.compactMap { context in
+            guard let template = templates[context.templateHash] else { return nil }
+
+            let shots = shotsBySession[context.sessionId] ?? []
             let classifications = try ShotClassifier.classify(shots, using: template)
             let aShotIds = Set(classifications.filter { $0.grade == .a }.map { $0.shotId })
-            
+
             let aMetricValues = shots
                 .filter { aShotIds.contains($0.shotId) }
                 .compactMap { shotMetricValue($0, metric: metric) }
-            
+
             let mean: Double? = aMetricValues.isEmpty
                 ? nil
                 : aMetricValues.reduce(0.0, +) / Double(aMetricValues.count)
-            
+
             return TrendPoint(
-                sessionDate: session.sessionDate,
-                sessionId: session.sessionId,
+                sessionDate: context.sessionDate,
+                sessionId: context.sessionId,
                 metric: metric,
                 meanValue: mean,
                 nShots: aMetricValues.count,
-                templateHash: templateRecord.hash
+                templateHash: context.templateHash
             )
         }
     }
@@ -608,5 +607,85 @@ class TrendsRepository {
         case .spinRate: return shot.spinRate
         case .descentAngle: return shot.descentAngle
         }
+    }
+}
+
+// MARK: - Subsession Repository (Phase 4B v2)
+
+class SubsessionRepository {
+    private let dbQueue: DatabaseQueue
+
+    init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    /// Create a club_subsessions record for a session+club+template.
+    /// Performs classification and aggregation, persists the analysis context.
+    /// Idempotent: UNIQUE(session_id, club, kpi_template_hash) silently ignores duplicates.
+    func analyzeSessionClub(
+        sessionId: Int64,
+        club: String,
+        shots: [ShotRecord],
+        template: KPITemplate,
+        templateHash: String
+    ) throws {
+        let classifications = try ShotClassifier.classify(shots, using: template)
+        let shotCount = classifications.count
+
+        guard shotCount > 0 else { return }
+
+        let aCount = classifications.filter { $0.grade == .a }.count
+        let bCount = classifications.filter { $0.grade == .b }.count
+        let cCount = classifications.filter { $0.grade == .c }.count
+
+        // Validity status (Phase D thresholds)
+        let validityStatus: String
+        if shotCount < 5 {
+            validityStatus = "invalid_insufficient_data"
+        } else if shotCount < 15 {
+            validityStatus = "valid_low_sample_warning"
+        } else {
+            validityStatus = "valid"
+        }
+
+        // A percentage (nil when invalid)
+        let aPercentage: Double?
+        if validityStatus == "invalid_insufficient_data" {
+            aPercentage = nil
+        } else {
+            aPercentage = Double(aCount) / Double(shotCount) * 100.0
+        }
+
+        // Average metrics for A-shots
+        let aShotIds = Set(classifications.filter { $0.grade == .a }.map { $0.shotId })
+        let aShots = shots.filter { aShotIds.contains($0.shotId) }
+        let avgCarry = average(aShots.compactMap { $0.carry })
+        let avgBallSpeed = average(aShots.compactMap { $0.ballSpeed })
+        let avgSpin = average(aShots.compactMap { $0.spinRate })
+        let avgDescent = average(aShots.compactMap { $0.descentAngle })
+
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT OR IGNORE INTO club_subsessions
+                    (session_id, club, kpi_template_hash, shot_count, validity_status,
+                     a_count, b_count, c_count, a_percentage,
+                     avg_carry, avg_ball_speed, avg_spin, avg_descent, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    sessionId, club, templateHash, shotCount, validityStatus,
+                    aCount, bCount, cCount, aPercentage,
+                    avgCarry, avgBallSpeed, avgSpin, avgDescent, now
+                ]
+            )
+        }
+    }
+
+    private func average(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0.0, +) / Double(values.count)
     }
 }

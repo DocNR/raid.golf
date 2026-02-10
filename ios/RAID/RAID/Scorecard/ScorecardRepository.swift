@@ -19,6 +19,7 @@ import GRDB
 
 enum CourseSnapshotError: Error {
     case invalidHoleCount(expected: Int, actual: Int)
+    case invalidHoleSet(holeNumbers: [Int])
     case utf8EncodingFailed
 }
 
@@ -46,6 +47,13 @@ class CourseSnapshotRepository {
         // Validate hole count (9 or 18)
         guard holeCount == 9 || holeCount == 18 else {
             throw CourseSnapshotError.invalidHoleCount(expected: 9, actual: holeCount)
+        }
+
+        // Validate hole numbers form a valid set (front 9, back 9, or full 18)
+        let holeNumbers = Set(input.holes.map(\.holeNumber))
+        let validSets: [Set<Int>] = [Set(1...9), Set(10...18), Set(1...18)]
+        guard holeNumbers.count == holeCount && validSets.contains(holeNumbers) else {
+            throw CourseSnapshotError.invalidHoleSet(holeNumbers: input.holes.map(\.holeNumber).sorted())
         }
 
         // Build NIP-aligned JSON dict with frozen keys

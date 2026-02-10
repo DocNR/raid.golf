@@ -1,5 +1,5 @@
 # Changelog
-All notable changes to the Strike Quality Practice System are documented here.
+All notable changes to RAID Golf are documented here.
 
 The format follows a simplified version of Keep a Changelog.
 This project versions **behavior and rules**, not files.
@@ -28,6 +28,39 @@ This project versions **behavior and rules**, not files.
 ## [Unreleased]
 
 ### Added
+
+- **iOS Phase 4B v2: Analysis-Context Linkage (A-only trend stability)**
+  - A-only trend classification now uses template_hash persisted in `club_subsessions` at analysis time
+  - Removed latest-template resolution from A-only query path — historical points are stable
+  - Sessions without a `club_subsessions` row are excluded from A-only trends (no silent drift)
+  - Added `SubsessionRepository.analyzeSessionClub()`:
+    - Creates `club_subsessions` row with full classification aggregates
+    - Pins `kpi_template_hash` at analysis time (analysis context linkage)
+    - Computes validity status, A/B/C counts, A%, and average metrics for A-shots
+    - Idempotent: `UNIQUE(session_id, club, kpi_template_hash)` prevents duplicates
+  - Added regression test `testAOnlyTrendStableWhenNewTemplateInserted`:
+    - Ingest session + analyze with T1 → insert stricter T2 → re-query A-only
+    - Asserts trend points are identical before/after T2 insertion
+    - Asserts all points use T1 hash (not T2)
+  - Added `testAppendOnlyAnalysis_DifferentTemplateCreatesNewRow`:
+    - Proves Kernel Contract invariant 1.4: re-analysis with different template creates new row
+    - Asserts different `subsession_id`, different `kpi_template_hash`, original metrics unchanged
+  - Updated existing trends test to Phase 4B v2 semantics
+  - UI wiring: `analyzeImportedSession` called automatically after CSV import in SessionsView
+
+- **Scorecard v0: Back-9 hole set guardrail**
+  - Added hole set validation to `CourseSnapshotRepository.insertCourseSnapshot()`:
+    - 9-hole snapshots must be exactly {1..9} (front) or {10..18} (back)
+    - 18-hole snapshots must be exactly {1..18}
+    - Malformed sets (e.g., {1..8, 10}) rejected with `invalidHoleSet` error
+    - No schema change; validation is code-level in repository
+  - Added 2 tests:
+    - `testBack9SnapshotInsertsExactlyNineHolesStartingAt10`: back-9 stores holes 10-18
+    - `testMalformedNineHoleSetRejected`: {1..8, 10} rejected; asserts transactional rollback (no snapshots, no holes)
+
+- **Hard Stop: UX Contract**
+  - Created `docs/private/UX_CONTRACT.md` declaring locked analytical semantics, deferred non-decisions, and free-to-iterate areas
+  - 73 total unit/integration tests
 
 - **iOS Scorecard v0 Bugfix Sprint (feature/scorecard-v0)**
   - Added `ActiveRoundStore` view model pattern for long-lived scoring state
@@ -118,10 +151,7 @@ This project versions **behavior and rules**, not files.
 
 ### Notes
 
-- **Phase 4B v1 limitation (documented semantics):**
-  - A/B/C grades are recomputed on demand from persisted shots.
-  - A-only trend uses the **latest template at query time**.
-  - Historical A-only trend values may shift if templates change until analysis-context linkage is persisted at ingest.
+- **Phase 4B v2 semantics (final):** A-only trends use `club_subsessions.kpi_template_hash` pinned at analysis time. A/B/C grades are recomputed on demand from persisted shots using the pinned template. Historical points are stable — inserting a new template does not change existing classifications.
 
 ---
 

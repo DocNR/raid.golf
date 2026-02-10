@@ -128,6 +128,10 @@ struct SessionsView: View {
                     sessionRepository: sessionRepo,
                     shotRepository: shotRepo
                 )
+
+                // Phase 4B v2: auto-analyze to pin template_hash for A-only trends
+                analyzeImportedSession(sessionId: ingestResult.sessionId, shotRepo: shotRepo)
+
                 importResult = ImportResultInfo(
                     imported: ingestResult.importedCount,
                     skipped: ingestResult.skippedCount,
@@ -140,6 +144,36 @@ struct SessionsView: View {
 
         case .failure(let error):
             importError = error.localizedDescription
+        }
+    }
+
+    /// Post-import analysis: create club_subsessions rows to pin template_hash.
+    /// Non-fatal: if analysis fails, import still succeeded but A-only trends
+    /// won't include this session until re-analysis.
+    private func analyzeImportedSession(sessionId: Int64, shotRepo: ShotRepository) {
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+        do {
+            let allShots = try shotRepo.fetchShots(forSession: sessionId)
+            let clubGroups = Dictionary(grouping: allShots, by: { $0.club })
+
+            for (club, shots) in clubGroups {
+                guard let templateRecord = try templateRepo.fetchLatestTemplate(forClub: club),
+                      let templateData = templateRecord.canonicalJSON.data(using: .utf8) else {
+                    continue
+                }
+                let template = try JSONDecoder().decode(KPITemplate.self, from: templateData)
+                try subsessionRepo.analyzeSessionClub(
+                    sessionId: sessionId,
+                    club: club,
+                    shots: shots,
+                    template: template,
+                    templateHash: templateRecord.hash
+                )
+            }
+        } catch {
+            print("[RAID] Post-import analysis failed: \(error)")
         }
     }
 

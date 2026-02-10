@@ -364,16 +364,17 @@ final class IngestIntegrationTests: XCTestCase {
         print("✅ PASS: Authoritative shot mutation blocked (no silent mutation)")
     }
 
-    // MARK: - Phase 4B: Trends v1
+    // MARK: - Phase 4B: Trends v2 (pinned template)
 
-    func testTrendsV1_AllShotsAndAOnly_DeterministicAndStable() throws {
-        print("\n=== Phase 4B Test: Trends v1 (allShots + aOnly) ===")
+    func testTrendsV2_AllShotsAndAOnly_DeterministicAndStable() throws {
+        print("\n=== Phase 4B v2 Test: Trends (allShots + aOnly with pinned template) ===")
 
         // Fresh DB with deterministic setup
         let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
         let sessionRepo = SessionRepository(dbQueue: dbQueue)
         let shotRepo = ShotRepository(dbQueue: dbQueue)
         let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
         let trendsRepo = TrendsRepository(dbQueue: dbQueue, templateRepository: templateRepo)
 
         // Fixtures from test bundle
@@ -407,7 +408,7 @@ final class IngestIntegrationTests: XCTestCase {
         let sessionDate1 = "2026-02-06T12:00:00Z"
         let sessionDate2 = "2026-02-07T12:00:00Z"
 
-        _ = try RapsodoIngest.ingest(
+        let result1 = try RapsodoIngest.ingest(
             csvURL: csvURL,
             sessionRepository: sessionRepo,
             shotRepository: shotRepo,
@@ -416,7 +417,7 @@ final class IngestIntegrationTests: XCTestCase {
             location: "Test Range A"
         )
 
-        _ = try RapsodoIngest.ingest(
+        let result2 = try RapsodoIngest.ingest(
             csvURL: csvURL,
             sessionRepository: sessionRepo,
             shotRepository: shotRepo,
@@ -424,6 +425,18 @@ final class IngestIntegrationTests: XCTestCase {
             deviceType: "Rapsodo MLM2Pro",
             location: "Test Range B"
         )
+
+        // Phase 4B v2: Analyze sessions to persist template linkage in club_subsessions
+        for sessionId in [result1.sessionId, result2.sessionId] {
+            let shots7i = try shotRepo.fetchShots(forSession: sessionId).filter { $0.club == "7i" }
+            try subsessionRepo.analyzeSessionClub(
+                sessionId: sessionId,
+                club: "7i",
+                shots: shots7i,
+                template: kpiTemplate,
+                templateHash: templateRecord.hash
+            )
+        }
 
         // allShots (SQL-only AVG/COUNT(metric))
         let allShotsRun1 = try trendsRepo.fetchTrendPoints(
@@ -447,7 +460,7 @@ final class IngestIntegrationTests: XCTestCase {
                               "Tie-break must be session_id ASC")
         }
 
-        // aOnly (Swift-computed with latest template at query time)
+        // aOnly (Swift-computed with pinned template from club_subsessions)
         let aOnlyRun1 = try trendsRepo.fetchTrendPoints(
             club: "7i",
             metric: .carry,
@@ -473,7 +486,7 @@ final class IngestIntegrationTests: XCTestCase {
         XCTAssertTrue(aOnlyRun1.allSatisfy { $0.templateHash != nil },
                       "Every A-only trend point must include non-null templateHash")
         XCTAssertTrue(aOnlyRun1.allSatisfy { $0.templateHash == templateRecord.hash },
-                      "A-only templateHash should be stable and match latest template")
+                      "A-only templateHash should be stable and match pinned template")
 
         // Required: A-only nShots equals A-with-metric count per session
         for point in aOnlyRun1 {
@@ -492,7 +505,214 @@ final class IngestIntegrationTests: XCTestCase {
                            "A-only nShots must equal A-with-metric count for session \(point.sessionId)")
         }
 
-        print("✅ PASS: Trends v1 allShots + aOnly deterministic semantics verified")
+        print("✅ PASS: Trends v2 allShots + aOnly deterministic semantics verified")
+    }
+
+    /// Phase 4B v2 regression: inserting a new template must NOT change historical A-only trends.
+    /// Proves that A-only classification uses the template pinned at analysis time, not "latest."
+    func testAOnlyTrendStableWhenNewTemplateInserted() throws {
+        print("\n=== Phase 4B v2 Regression: A-only trend stability ===")
+
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+        let sessionRepo = SessionRepository(dbQueue: dbQueue)
+        let shotRepo = ShotRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+        let trendsRepo = TrendsRepository(dbQueue: dbQueue, templateRepository: templateRepo)
+
+        // Template T1: lenient ball_speed thresholds
+        guard let templateURL = Bundle(for: type(of: self)).url(
+            forResource: "fixture_a",
+            withExtension: "json"
+        ) else {
+            XCTFail("Template fixture not found")
+            return
+        }
+        let t1Data = try Data(contentsOf: templateURL)
+        let t1 = try templateRepo.insertTemplate(rawJSON: t1Data)
+        let t1Template = try JSONDecoder().decode(
+            KPITemplate.self,
+            from: Data(t1.canonicalJSON.utf8)
+        )
+
+        // Ingest session
+        guard let csvURL = Bundle(for: type(of: self)).url(
+            forResource: "rapsodo_mlm2pro_mixed_club_sample",
+            withExtension: "csv"
+        ) else {
+            XCTFail("CSV fixture not found")
+            return
+        }
+        let ingestResult = try RapsodoIngest.ingest(
+            csvURL: csvURL,
+            sessionRepository: sessionRepo,
+            shotRepository: shotRepo,
+            sessionDate: "2026-02-06T12:00:00Z",
+            deviceType: "Rapsodo MLM2Pro",
+            location: "Test Range"
+        )
+
+        // Analyze with T1 (persists template linkage)
+        let shots7i = try shotRepo.fetchShots(forSession: ingestResult.sessionId)
+            .filter { $0.club == "7i" }
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: ingestResult.sessionId,
+            club: "7i",
+            shots: shots7i,
+            template: t1Template,
+            templateHash: t1.hash
+        )
+
+        // Capture baseline A-only trend
+        let aOnlyBefore = try trendsRepo.fetchTrendPoints(
+            club: "7i", metric: .carry, seriesType: .aOnly
+        )
+        XCTAssertFalse(aOnlyBefore.isEmpty, "Should have A-only points after analysis")
+        XCTAssertTrue(aOnlyBefore.allSatisfy { $0.templateHash == t1.hash },
+                      "All points should use T1")
+
+        // Insert T2 with much stricter thresholds (all shots would be C)
+        let t2JSON = Data("""
+        {"schema_version":"2.0","club":"7i","metrics":{"ball_speed":{"a_min":200,"b_min":150,"direction":"higher_is_better"}},"aggregation_method":"worst_metric"}
+        """.utf8)
+        let t2 = try templateRepo.insertTemplate(rawJSON: t2JSON)
+        XCTAssertNotEqual(t1.hash, t2.hash, "Templates must have different hashes")
+
+        // Verify T2 is now the "latest" template for 7i
+        let latest = try templateRepo.fetchLatestTemplate(forClub: "7i")
+        XCTAssertEqual(latest?.hash, t2.hash, "T2 should be the latest template")
+
+        // Re-query A-only — must be identical to baseline (pinned to T1)
+        let aOnlyAfter = try trendsRepo.fetchTrendPoints(
+            club: "7i", metric: .carry, seriesType: .aOnly
+        )
+        XCTAssertEqual(aOnlyBefore, aOnlyAfter,
+                       "A-only trend must NOT drift when a new template is inserted")
+        XCTAssertTrue(aOnlyAfter.allSatisfy { $0.templateHash == t1.hash },
+                      "Template hash must remain T1, not shift to T2")
+
+        print("✅ PASS: A-only trend stable after new template insertion")
+    }
+
+    /// Kernel Contract v2 invariant 1.4: re-analysis with a different template
+    /// creates a NEW club_subsessions row. The original row is preserved unchanged.
+    func testAppendOnlyAnalysis_DifferentTemplateCreatesNewRow() throws {
+        print("\n=== Invariant 1.4: Append-only re-analysis ===")
+
+        let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
+        let sessionRepo = SessionRepository(dbQueue: dbQueue)
+        let shotRepo = ShotRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+        // Insert T1 (lenient thresholds)
+        guard let templateURL = Bundle(for: type(of: self)).url(
+            forResource: "fixture_a", withExtension: "json"
+        ) else {
+            XCTFail("Template fixture not found")
+            return
+        }
+        let t1Data = try Data(contentsOf: templateURL)
+        let t1 = try templateRepo.insertTemplate(rawJSON: t1Data)
+        let t1Template = try JSONDecoder().decode(
+            KPITemplate.self, from: Data(t1.canonicalJSON.utf8)
+        )
+
+        // Ingest session
+        guard let csvURL = Bundle(for: type(of: self)).url(
+            forResource: "rapsodo_mlm2pro_mixed_club_sample", withExtension: "csv"
+        ) else {
+            XCTFail("CSV fixture not found")
+            return
+        }
+        let ingestResult = try RapsodoIngest.ingest(
+            csvURL: csvURL,
+            sessionRepository: sessionRepo,
+            shotRepository: shotRepo,
+            sessionDate: "2026-02-06T12:00:00Z",
+            deviceType: "Rapsodo MLM2Pro",
+            location: "Test Range"
+        )
+        let sessionId = ingestResult.sessionId
+
+        // Analyze with T1
+        let shots7i = try shotRepo.fetchShots(forSession: sessionId).filter { $0.club == "7i" }
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId, club: "7i", shots: shots7i,
+            template: t1Template, templateHash: t1.hash
+        )
+
+        // Assert: exactly 1 row for (session_id, club='7i')
+        let rowsAfterT1 = try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT subsession_id, kpi_template_hash, shot_count, a_count, b_count, c_count
+                FROM club_subsessions WHERE session_id = ? AND club = ?
+                """, arguments: [sessionId, "7i"])
+        }
+        XCTAssertEqual(rowsAfterT1.count, 1, "Should have exactly 1 subsession row after T1 analysis")
+
+        let t1Row = rowsAfterT1[0]
+        let t1SubsessionId: Int64 = t1Row["subsession_id"]
+        let t1ShotCount: Int = t1Row["shot_count"]
+        let t1ACount: Int = t1Row["a_count"]
+        let t1BCount: Int = t1Row["b_count"]
+        let t1CCount: Int = t1Row["c_count"]
+        XCTAssertEqual(t1Row["kpi_template_hash"] as String, t1.hash)
+
+        // Insert T2 (stricter thresholds)
+        let t2JSON = Data("""
+        {"schema_version":"2.0","club":"7i","metrics":{"ball_speed":{"a_min":200,"b_min":150,"direction":"higher_is_better"}},"aggregation_method":"worst_metric"}
+        """.utf8)
+        let t2 = try templateRepo.insertTemplate(rawJSON: t2JSON)
+        let t2Template = try JSONDecoder().decode(
+            KPITemplate.self, from: Data(t2.canonicalJSON.utf8)
+        )
+        XCTAssertNotEqual(t1.hash, t2.hash)
+
+        // Analyze same session+club with T2
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId, club: "7i", shots: shots7i,
+            template: t2Template, templateHash: t2.hash
+        )
+
+        // Assert: now 2 rows for (session_id, club='7i')
+        let rowsAfterT2 = try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT subsession_id, kpi_template_hash, shot_count, a_count, b_count, c_count
+                FROM club_subsessions WHERE session_id = ? AND club = ?
+                ORDER BY subsession_id ASC
+                """, arguments: [sessionId, "7i"])
+        }
+        XCTAssertEqual(rowsAfterT2.count, 2,
+                       "Re-analysis with different template must create NEW row, not overwrite")
+
+        // Assert: different subsession_ids
+        let row1 = rowsAfterT2[0]
+        let row2 = rowsAfterT2[1]
+        let id1: Int64 = row1["subsession_id"]
+        let id2: Int64 = row2["subsession_id"]
+        XCTAssertNotEqual(id1, id2, "Two rows must have different subsession_id")
+
+        // Assert: different template hashes
+        let hash1: String = row1["kpi_template_hash"]
+        let hash2: String = row2["kpi_template_hash"]
+        XCTAssertNotEqual(hash1, hash2, "Two rows must have different kpi_template_hash")
+        XCTAssertEqual(hash1, t1.hash, "First row should reference T1")
+        XCTAssertEqual(hash2, t2.hash, "Second row should reference T2")
+
+        // Assert: original row metrics unchanged
+        XCTAssertEqual(row1["subsession_id"] as Int64, t1SubsessionId,
+                       "Original subsession_id must be unchanged")
+        XCTAssertEqual(row1["shot_count"] as Int, t1ShotCount,
+                       "Original shot_count must be unchanged")
+        XCTAssertEqual(row1["a_count"] as Int, t1ACount,
+                       "Original a_count must be unchanged")
+        XCTAssertEqual(row1["b_count"] as Int, t1BCount,
+                       "Original b_count must be unchanged")
+        XCTAssertEqual(row1["c_count"] as Int, t1CCount,
+                       "Original c_count must be unchanged")
+
+        print("✅ PASS: Append-only analysis — different template creates new row, original preserved")
     }
 
     // MARK: - Phase 4C: Template Bootstrap
