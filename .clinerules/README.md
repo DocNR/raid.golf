@@ -17,7 +17,7 @@ For a new sprint or significant coding task, review files in this order:
 | 3 | **kernel.md** | Agents | Kernel protection addendum: frozen invariants, extension pattern, PR hygiene |
 | 4 | **client-governance.md** | Humans | Workflow guide: rules of thumb, adding data, handling edits, branching, freezes |
 | 5 | **doc-updates.md** | All | Documentation hygiene after milestones |
-| 6 | **phase-0-rules.md** | Agents | Phase 0 MVP rules and Rapsodo ingest handling (see note below) |
+| 6 | **phase-0-rules.md** | Agents | Rapsodo ingest & Strike Quality Practice System rules |
 
 ---
 
@@ -71,13 +71,11 @@ Practical guidance for developers working in the IDE. Covers:
 
 Lightweight rule: update `CHANGELOG.md` and relevant docs after completing a major phase or milestone.
 
-### phase-0-rules.md — Phase 0 MVP & Rapsodo Rules
+### phase-0-rules.md — Rapsodo Ingest & Strike Quality Rules
 **Audience:** Coding agents
-**Status:** Partially outdated
+**Status:** Current (trimmed — Phase 0 MVP section archived)
 
-Contains two sections:
-1. **Phase 0 MVP rules** — scope constraints and authority order for Phase 0. The scope lock ("Phase 0 only") and Python tooling references (`tools/scripts/analyze_session.py`, `tools/kpis.json`, `data/summaries/`) are outdated as the project has moved to Phase 4C with an iOS app. Core principles (SQLite is authoritative, immutability enforced, no template_hash recomputation) remain valid but are now covered more completely in `kernel-governance.md` and `kernel.md`.
-2. **Strike Quality Practice System rules** — Rapsodo CSV handling, session ingest workflow, derived output rules, versioning rules. These remain relevant for any work touching CSV ingest or the Python analysis pipeline.
+Rapsodo CSV handling, session ingest workflow, derived output rules, and versioning rules for the Strike Quality Practice System. Relevant for any work touching CSV ingest or the Python analysis pipeline. Phase 0 MVP scope rules previously here are now covered by `kernel-governance.md` and `kernel.md`.
 
 ---
 

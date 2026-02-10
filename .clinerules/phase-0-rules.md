@@ -1,26 +1,8 @@
-# AI Agent Instructions — RAID Phase 0 (MVP)
+# .clinerules — Rapsodo Ingest & Strike Quality Rules
 
-If any RAID Phase 0 instruction conflicts with the Strike Quality Practice System instructions below, follow RAID Phase 0 requirements and **explicitly flag the conflict** instead of guessing.
-
-## Authority & Scope (Phase 0 Only)
-- **Authority order:** PRD (`docs/PRD_Phase_0_MVP.md`) > Schema Brief (`docs/schema_brief/*`) > Reference Test Matrix (`docs/reference_test_matrix.md`).
-- **Scope locked to Phase 0** MVP requirements only. Anything beyond Phase 0 is out of scope.
-
-## Non‑Negotiable Rules (Phase 0)
-- **SQLite is authoritative** for persisted data; JSON is serialization/export only.
-- **Immutability enforced:** sessions, club sub-sessions, and KPI templates never mutate.
-- **No template_hash recomputation** after storage; stored hash is authoritative.
-- **Projections are derived only** and must NOT be imported as authoritative data.
-- **No silent filtering:** validity/status must be visible in outputs and queries.
-
-## STOP Conditions (Ask Before Proceeding)
-- A **schema change (including additive changes)** is required.
-- An **invariant must be relaxed**.
-- **Ambiguity or missing requirement** in PRD/brief.
-- Request is **outside Phase 0 scope**.
-
-## Testing Guidance
-- When writing tests, align with **docs/reference_test_matrix.md**.
+> **Note:** The Phase 0 MVP scope rules that previously lived here are superseded by
+> `kernel-governance.md` and `kernel.md`. Only the Rapsodo ingest and Strike Quality
+> rules below remain active.
 
 ---
 
@@ -74,8 +56,8 @@ Expected artifacts (written only to `data/summaries/`):
 - `a_shot_trends.csv`
 - `ingest_report.md`
 
-These artifacts are **derived outputs** only.  
-SQLite remains the authoritative datastore per RAID Phase 0 rules; CSV/markdown files must be regenerable and are not canonical.
+These artifacts are **derived outputs** only.
+SQLite remains the authoritative datastore; CSV/markdown files must be regenerable and are not canonical.
 
 ---
 
@@ -132,14 +114,14 @@ The agent must NOT:
 ## Versioning Rules
 - Practice system changes require a version bump
 - KPI changes require:
-  - ≥ 3 sessions
-  - ≥ 25 A-shots
+  - >= 3 sessions
+  - >= 25 A-shots
   - Stable variance
 - Old data remains valid under its original version
 
 ---
 
 ## Operating Principle
-Quality-filtered data > volume  
-Consistency > novelty  
+Quality-filtered data > volume
+Consistency > novelty
 Explicit decisions > implicit drift
