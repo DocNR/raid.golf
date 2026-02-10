@@ -41,6 +41,7 @@ struct TemplateRecord {
     let club: String
     let canonicalJSON: String
     let createdAt: String
+    let importedAt: String?
 }
 
 // MARK: - Template Repository Errors
@@ -109,7 +110,8 @@ class TemplateRepository {
             schemaVersion: schemaVersion,
             club: club,
             canonicalJSON: canonicalString,
-            createdAt: now
+            createdAt: now,
+            importedAt: now
         )
     }
     
@@ -127,13 +129,14 @@ class TemplateRepository {
                 arguments: [hash]) else {
                 return nil
             }
-            
+
             return TemplateRecord(
                 hash: row["template_hash"],
                 schemaVersion: row["schema_version"],
                 club: row["club"],
                 canonicalJSON: row["canonical_json"],
-                createdAt: row["created_at"]
+                createdAt: row["created_at"],
+                importedAt: row["imported_at"]
             )
         }
     }
@@ -148,7 +151,7 @@ class TemplateRepository {
         return try dbQueue.read { db in
             guard let row = try Row.fetchOne(db,
                 sql: """
-                SELECT template_hash, schema_version, club, canonical_json, created_at
+                SELECT template_hash, schema_version, club, canonical_json, created_at, imported_at
                 FROM kpi_templates
                 WHERE club = ?
                 ORDER BY COALESCE(imported_at, created_at) DESC, rowid DESC
@@ -157,14 +160,68 @@ class TemplateRepository {
                 arguments: [club]) else {
                 return nil
             }
-            
+
             return TemplateRecord(
                 hash: row["template_hash"],
                 schemaVersion: row["schema_version"],
                 club: row["club"],
                 canonicalJSON: row["canonical_json"],
-                createdAt: row["created_at"]
+                createdAt: row["created_at"],
+                importedAt: row["imported_at"]
             )
+        }
+    }
+
+    /// List all non-hidden templates for a given club, ordered by recency
+    /// - Parameter club: Club identifier (e.g., "7i", "PW")
+    /// - Returns: Array of template records ordered by recency (most recent first)
+    /// - Throws: Database error
+    func listTemplates(forClub club: String) throws -> [TemplateRecord] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT t.template_hash, t.schema_version, t.club, t.canonical_json, t.created_at, t.imported_at
+                FROM kpi_templates t
+                LEFT JOIN template_preferences tp ON t.template_hash = tp.template_hash
+                WHERE t.club = ? AND (tp.is_hidden IS NULL OR tp.is_hidden = 0)
+                ORDER BY COALESCE(t.imported_at, t.created_at) DESC, t.rowid DESC
+                """, arguments: [club])
+
+            return rows.map { row in
+                TemplateRecord(
+                    hash: row["template_hash"],
+                    schemaVersion: row["schema_version"],
+                    club: row["club"],
+                    canonicalJSON: row["canonical_json"],
+                    createdAt: row["created_at"],
+                    importedAt: row["imported_at"]
+                )
+            }
+        }
+    }
+
+    /// List all non-hidden templates grouped by club (club ASC, then recency DESC)
+    /// - Returns: Array of template records ordered by club ASC, then recency DESC
+    /// - Throws: Database error
+    func listAllTemplates() throws -> [TemplateRecord] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT t.template_hash, t.schema_version, t.club, t.canonical_json, t.created_at, t.imported_at
+                FROM kpi_templates t
+                LEFT JOIN template_preferences tp ON t.template_hash = tp.template_hash
+                WHERE (tp.is_hidden IS NULL OR tp.is_hidden = 0)
+                ORDER BY t.club ASC, COALESCE(t.imported_at, t.created_at) DESC, t.rowid DESC
+                """)
+
+            return rows.map { row in
+                TemplateRecord(
+                    hash: row["template_hash"],
+                    schemaVersion: row["schema_version"],
+                    club: row["club"],
+                    canonicalJSON: row["canonical_json"],
+                    createdAt: row["created_at"],
+                    importedAt: row["imported_at"]
+                )
+            }
         }
     }
 }
@@ -610,6 +667,26 @@ class TrendsRepository {
     }
 }
 
+// MARK: - Subsession Record
+
+struct SubsessionRecord {
+    let subsessionId: Int64
+    let sessionId: Int64
+    let club: String
+    let kpiTemplateHash: String
+    let shotCount: Int
+    let validityStatus: String
+    let aCount: Int
+    let bCount: Int
+    let cCount: Int
+    let aPercentage: Double?
+    let avgCarry: Double?
+    let avgBallSpeed: Double?
+    let avgSpin: Double?
+    let avgDescent: Double?
+    let analyzedAt: String
+}
+
 // MARK: - Subsession Repository (Phase 4B v2)
 
 class SubsessionRepository {
@@ -681,6 +758,43 @@ class SubsessionRepository {
                     avgCarry, avgBallSpeed, avgSpin, avgDescent, now
                 ]
             )
+        }
+    }
+
+    /// Fetch all subsession records for a session, ordered by club ASC, analyzed_at DESC
+    /// - Parameter sessionId: Session ID to fetch subsessions for
+    /// - Returns: Array of subsession records ordered by club ASC, analyzed_at DESC
+    /// - Throws: Database error
+    func fetchSubsessions(forSession sessionId: Int64) throws -> [SubsessionRecord] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT subsession_id, session_id, club, kpi_template_hash, shot_count,
+                       validity_status, a_count, b_count, c_count, a_percentage,
+                       avg_carry, avg_ball_speed, avg_spin, avg_descent, analyzed_at
+                FROM club_subsessions
+                WHERE session_id = ?
+                ORDER BY club ASC, analyzed_at DESC
+                """, arguments: [sessionId])
+
+            return rows.map { row in
+                SubsessionRecord(
+                    subsessionId: row["subsession_id"],
+                    sessionId: row["session_id"],
+                    club: row["club"],
+                    kpiTemplateHash: row["kpi_template_hash"],
+                    shotCount: row["shot_count"],
+                    validityStatus: row["validity_status"],
+                    aCount: row["a_count"],
+                    bCount: row["b_count"],
+                    cCount: row["c_count"],
+                    aPercentage: row["a_percentage"],
+                    avgCarry: row["avg_carry"],
+                    avgBallSpeed: row["avg_ball_speed"],
+                    avgSpin: row["avg_spin"],
+                    avgDescent: row["avg_descent"],
+                    analyzedAt: row["analyzed_at"]
+                )
+            }
         }
     }
 
