@@ -22,6 +22,7 @@ struct TemplateDetailView: View {
     @State private var isRenaming = false
     @State private var renameText = ""
     @State private var showingSetActiveAlert = false
+    @State private var showingDuplicate = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -52,6 +53,12 @@ struct TemplateDetailView: View {
         }
         .sheet(isPresented: $isRenaming) {
             renameSheet
+        }
+        .sheet(isPresented: $showingDuplicate) {
+            CreateTemplateView(dbQueue: dbQueue, sourceTemplate: template) {
+                loadTemplate()
+                onUpdate?()
+            }
         }
     }
 
@@ -155,9 +162,8 @@ struct TemplateDetailView: View {
             }
 
             Button("Duplicate") {
-                // Task 6: Navigate to create form with this template as source
+                showingDuplicate = true
             }
-            .disabled(true) // Disabled until Task 6
         }
     }
 

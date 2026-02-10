@@ -16,6 +16,7 @@ struct TemplateListView: View {
 
     @State private var templates: [TemplateRecord] = []
     @State private var preferences: [String: TemplatePreference] = [:] // keyed by hash
+    @State private var showingCreateTemplate = false
 
     var body: some View {
         NavigationStack {
@@ -35,11 +36,15 @@ struct TemplateListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        // Task 6: Create Template flow
+                        showingCreateTemplate = true
                     } label: {
                         Label("Create Template", systemImage: "plus")
                     }
-                    .disabled(true) // Disabled until Task 6
+                }
+            }
+            .sheet(isPresented: $showingCreateTemplate) {
+                CreateTemplateView(dbQueue: dbQueue) {
+                    loadTemplates()
                 }
             }
             .task { loadTemplates() }
