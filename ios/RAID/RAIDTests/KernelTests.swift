@@ -1009,17 +1009,17 @@ final class KernelTests: XCTestCase {
     
     func testFetchTemplateNeverRecomputesHash() throws {
         print("\n=== Testing Fetch Template Never Recomputes Hash ===")
-        
+
         // Create test database
         let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
-        
+
         // Create spy implementations
         let spyCanon = SpyCanonicalizer()
         let spyHash = SpyHasher()
-        
+
         // Create repository with spies
         let repo = TemplateRepository(dbQueue: dbQueue, canonicalizer: spyCanon, hasher: spyHash)
-        
+
         // Template JSON
         let templateDict: [String: Any] = [
             "club": "7i",
@@ -1034,27 +1034,296 @@ final class KernelTests: XCTestCase {
             ]
         ]
         let rawJSON = try JSONSerialization.data(withJSONObject: templateDict, options: [])
-        
+
         // Insert template
         let record = try repo.insertTemplate(rawJSON: rawJSON)
         XCTAssertEqual(spyCanon.callCount, 1, "Insert should call canonicalize once")
         XCTAssertEqual(spyHash.callCount, 1, "Insert should call hash once")
-        
+
         print("✅ After insert: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
-        
+
         // Fetch multiple times
         for i in 1...3 {
             let fetched = try repo.fetchTemplate(byHash: record.hash)
             XCTAssertNotNil(fetched, "Template should be fetchable (attempt \(i))")
             XCTAssertEqual(fetched?.hash, record.hash, "Hash should match (attempt \(i))")
-            
+
             // Verify counters unchanged
             XCTAssertEqual(spyCanon.callCount, 1, "Fetch \(i) should NOT call canonicalize")
             XCTAssertEqual(spyHash.callCount, 1, "Fetch \(i) should NOT call hash")
         }
-        
+
         print("✅ After 3 fetches: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
         print("✅ Fetch path never calls canonicalize or hash (RTM-04 verified)")
+    }
+
+    // MARK: - v4 Migration: Template Preferences Tests
+
+    func testV4MigrationAppliesOnFreshDB() throws {
+        print("\n=== Testing v4 Migration Applies on Fresh DB ===")
+        let dbQueue = try createTestDatabase()
+
+        // Verify template_preferences table exists
+        let tableExists = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name='template_preferences'
+                """)
+        }
+        XCTAssertEqual(tableExists, 1, "template_preferences table should exist")
+
+        // Verify partial unique index exists
+        let indexExists = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='index' AND name='idx_one_active_per_club'
+                """)
+        }
+        XCTAssertEqual(indexExists, 1, "idx_one_active_per_club index should exist")
+
+        print("✅ v4 migration applied successfully")
+        print("✅ template_preferences table created")
+        print("✅ idx_one_active_per_club index created")
+    }
+
+    func testTemplatePreferenceFKEnforcement() throws {
+        print("\n=== Testing Template Preference FK Enforcement ===")
+        let dbQueue = try createTestDatabase()
+
+        let nonexistentHash = "a" + String(repeating: "0", count: 63)
+
+        // Attempt to insert preference with nonexistent template_hash - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO template_preferences (template_hash, club, updated_at)
+                    VALUES (?, ?, ?)
+                    """, arguments: [nonexistentHash, "7i", "2026-02-10T12:00:00Z"])
+            }
+            XCTFail("INSERT with invalid FK should have been rejected")
+        } catch let error as DatabaseError {
+            print("✅ FK violation rejected: \(error.message ?? "")")
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be FK constraint violation")
+        }
+    }
+
+    func testTemplatePreferenceActiveUniquenessPerClub() throws {
+        print("\n=== Testing Template Preference Active Uniqueness Per Club ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert two templates for same club
+        let templateHash1 = "b" + String(repeating: "0", count: 63)
+        let templateHash2 = "c" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash1, "1.0", "7i", "{\"version\":\"1\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash2, "1.0", "7i", "{\"version\":\"2\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Insert first preference as active
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash1, "7i", 1, "2026-02-10T12:00:00Z"])
+        }
+
+        // Attempt to insert second preference as active for same club - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [templateHash2, "7i", 1, "2026-02-10T12:00:00Z"])
+            }
+            XCTFail("INSERT of second active template for same club should have been rejected")
+        } catch let error as DatabaseError {
+            print("✅ Active uniqueness violation rejected: \(error.message ?? "")")
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be UNIQUE constraint violation")
+        }
+
+        // Verify first preference still active
+        let activeHash = try dbQueue.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT template_hash FROM template_preferences
+                WHERE club = ? AND is_active = 1
+                """, arguments: ["7i"])
+        }
+        XCTAssertEqual(activeHash, templateHash1, "First template should remain active")
+
+        print("✅ Partial unique index prevents multiple active templates per club")
+    }
+
+    func testTemplatePreferenceAllowsMultipleInactivePerClub() throws {
+        print("\n=== Testing Template Preference Allows Multiple Inactive Per Club ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert two templates for same club
+        let templateHash1 = "d" + String(repeating: "0", count: 63)
+        let templateHash2 = "e" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash1, "1.0", "7i", "{\"version\":\"1\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash2, "1.0", "7i", "{\"version\":\"2\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Insert both preferences as inactive - should succeed
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash1, "7i", 0, "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash2, "7i", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify both exist
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE club = ? AND is_active = 0
+                """, arguments: ["7i"])
+        }
+        XCTAssertEqual(count, 2, "Both inactive preferences should exist")
+
+        print("✅ Multiple inactive templates per club allowed")
+    }
+
+    func testTemplatePreferenceUpdateAllowed() throws {
+        print("\n=== Testing Template Preference UPDATE Allowed ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template and preference
+        let templateHash = "f" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, display_name, is_active, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "7i", "Original Name", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Update display_name - should succeed (no immutability triggers)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                UPDATE template_preferences
+                SET display_name = ?, updated_at = ?
+                WHERE template_hash = ?
+                """, arguments: ["Updated Name", "2026-02-10T13:00:00Z", templateHash])
+        }
+
+        // Verify update succeeded
+        let displayName = try dbQueue.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT display_name FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(displayName, "Updated Name", "Display name should be updated")
+
+        print("✅ UPDATE allowed on template_preferences (no immutability triggers)")
+    }
+
+    func testTemplatePreferenceDeleteAllowed() throws {
+        print("\n=== Testing Template Preference DELETE Allowed ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template and preference
+        let templateHash = "1" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash, "7i", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify preference exists
+        let countBefore = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(countBefore, 1, "Preference should exist before delete")
+
+        // Delete preference - should succeed (no immutability triggers)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                DELETE FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+
+        // Verify deletion succeeded
+        let countAfter = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(countAfter, 0, "Preference should be deleted")
+
+        print("✅ DELETE allowed on template_preferences (no immutability triggers)")
+    }
+
+    func testTemplatePreferenceDefaultValues() throws {
+        print("\n=== Testing Template Preference Default Values ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template
+        let templateHash = "2" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            // Insert preference without specifying is_active or is_hidden (should default to 0)
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, updated_at)
+                VALUES (?, ?, ?)
+                """, arguments: [templateHash, "7i", "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify default values
+        let row = try dbQueue.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT is_active, is_hidden FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+
+        let isActive = try XCTUnwrap(row?["is_active"] as Int?, "is_active should exist")
+        let isHidden = try XCTUnwrap(row?["is_hidden"] as Int?, "is_hidden should exist")
+
+        XCTAssertEqual(isActive, 0, "is_active should default to 0")
+        XCTAssertEqual(isHidden, 0, "is_hidden should default to 0")
+
+        print("✅ Default values: is_active=0, is_hidden=0")
     }
 }
 

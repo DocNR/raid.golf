@@ -14,6 +14,7 @@
 // - v1_create_schema: sessions, kpi_templates, club_subsessions, projections
 // - v2_add_shots: shots table with FK to sessions
 // - v3_create_scorecard_schema: scorecard tables (kernel-adjacent)
+// - v4_create_template_preferences: template_preferences (mutable preference table)
 //
 // Invariant: All authoritative tables are immutable at creation time
 // Design rule: No table ever transitions from mutable → immutable in-place
@@ -423,6 +424,39 @@ struct Schema {
                 BEGIN
                     SELECT RAISE(ABORT, 'Hole scores are immutable after creation');
                 END
+                """)
+        }
+
+        // ============================================================
+        // v4_create_template_preferences: Template Preferences Table
+        //
+        // Mutable preference table for KPI templates (no immutability triggers).
+        // Stores user-facing display names, active/hidden status per template.
+        // Denormalizes club from kpi_templates for partial unique index constraint.
+        // ============================================================
+        migrator.registerMigration("v4_create_template_preferences") { db in
+            // Template Preferences (mutable)
+            try db.execute(sql: """
+                CREATE TABLE template_preferences (
+                    template_hash TEXT PRIMARY KEY,
+                    club TEXT NOT NULL,
+                    display_name TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    is_hidden INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+
+                    FOREIGN KEY (template_hash) REFERENCES kpi_templates(template_hash)
+                        ON DELETE RESTRICT,
+
+                    CHECK (is_active IN (0, 1)),
+                    CHECK (is_hidden IN (0, 1))
+                )
+                """)
+
+            // Partial unique index: at most one active template per club
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_one_active_per_club
+                ON template_preferences(club) WHERE is_active = 1
                 """)
         }
 
