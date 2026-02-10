@@ -1,14 +1,18 @@
 // PracticeSummaryView.swift
 // RAID Golf - iOS Port
 //
-// Phase 3.3: Minimal Practice Summary UI
+// KPI Template UX Sprint - Task 8
 //
 // Purpose:
-// - Display session summary with A/B/C breakdown
-// - Show A-only averages
-// - Compute classifications in-memory (no persistence)
+// - Display session summary using persisted analyses from club_subsessions
+// - Show multiple analyses per club (different templates)
+// - Support re-analysis with active template
 //
-// Phase 3.5: Wire classification with latest template selection
+// Design:
+// - No on-the-fly classification (use persisted data)
+// - Multiple analyses per club = multiple cards
+// - "Active" badge for current active template
+// - "Analyze" button for clubs with no analysis
 
 import SwiftUI
 import GRDB
@@ -16,11 +20,14 @@ import GRDB
 struct PracticeSummaryView: View {
     let sessionId: Int64
     let dbQueue: DatabaseQueue
-    
-    @State private var summary: SessionSummary?
+
+    @State private var sessionInfo: SessionInfo?
+    @State private var clubAnalyses: [String: [AnalysisInfo]] = [:]
+    @State private var clubsWithoutAnalysis: Set<String> = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    
+    @State private var isAnalyzing = false
+
     var body: some View {
         Group {
             if isLoading {
@@ -38,7 +45,7 @@ struct PracticeSummaryView: View {
                         .multilineTextAlignment(.center)
                 }
                 .padding()
-            } else if let summary = summary {
+            } else if let info = sessionInfo {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         // Session header
@@ -46,21 +53,45 @@ struct PracticeSummaryView: View {
                             Text("Practice Session")
                                 .font(.title)
                                 .fontWeight(.bold)
-                            Text(formatDate(summary.sessionDate))
+                            Text(formatDate(info.sessionDate))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            if let location = summary.location {
+                            if let location = info.location {
                                 Text(location)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         }
-                        
+
                         Divider()
-                        
-                        // Club summaries
-                        ForEach(summary.clubSummaries, id: \.club) { clubSummary in
-                            ClubSummaryCard(clubSummary: clubSummary)
+
+                        // Club analyses grouped by club
+                        let sortedClubs = Array(clubAnalyses.keys).sorted()
+                        ForEach(sortedClubs, id: \.self) { club in
+                            if let analyses = clubAnalyses[club] {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // Club header
+                                    Text(club.uppercased())
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+
+                                    // Show all analyses for this club
+                                    ForEach(analyses, id: \.subsessionId) { analysis in
+                                        AnalysisCard(analysis: analysis)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Clubs without analysis
+                        ForEach(Array(clubsWithoutAnalysis).sorted(), id: \.self) { club in
+                            UnanalyzedClubCard(
+                                club: club,
+                                shotCount: info.clubShotCounts[club] ?? 0,
+                                isAnalyzing: isAnalyzing
+                            ) {
+                                analyzeClub(club)
+                            }
                         }
                     }
                     .padding()
@@ -73,99 +104,147 @@ struct PracticeSummaryView: View {
             await loadSession()
         }
     }
-    
+
     private func loadSession() async {
         do {
             let sessionRepo = SessionRepository(dbQueue: dbQueue)
             let shotRepo = ShotRepository(dbQueue: dbQueue)
+            let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
             let templateRepo = TemplateRepository(dbQueue: dbQueue)
-            
+            let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
             guard let sessionRecord = try sessionRepo.fetchSession(byId: sessionId) else {
                 errorMessage = "Session not found"
                 isLoading = false
                 return
             }
-            
-            // Fetch shots
-            let shots = try shotRepo.fetchShots(forSession: sessionId)
-            
-            // Group by club
-            let shotsByClub = Dictionary(grouping: shots, by: { $0.club })
-            
-            // Compute summaries for each club
-            var clubSummaries: [ClubSummary] = []
-            
-            for (club, clubShots) in shotsByClub.sorted(by: { $0.key < $1.key }) {
-                // Fetch latest template for club
-                guard let templateRecord = try templateRepo.fetchLatestTemplate(forClub: club) else {
-                    // No template for this club → show "no template" state
-                    let clubSummary = ClubSummary(
-                        club: club,
-                        totalShots: clubShots.count,
-                        aCount: nil,
-                        bCount: nil,
-                        cCount: nil,
-                        aPercentage: nil,
-                        avgCarry: nil,
-                        avgBallSpeed: nil,
-                        avgSpin: nil,
-                        avgDescent: nil,
-                        templateHash: nil
-                    )
-                    clubSummaries.append(clubSummary)
-                    continue
+
+            // Fetch all shots for the session
+            let allShots = try shotRepo.fetchShots(forSession: sessionId)
+            let clubShotCounts = Dictionary(grouping: allShots, by: { $0.club })
+                .mapValues { $0.count }
+
+            // Fetch all persisted subsessions
+            let subsessions = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+
+            // Get active template hashes for each club
+            var activeTemplateHashes: [String: String] = [:]
+            for club in clubShotCounts.keys {
+                if let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: club) {
+                    activeTemplateHashes[club] = activeTemplate.hash
                 }
-                
-                // Decode KPITemplate from canonical_json
-                guard let templateData = templateRecord.canonicalJSON.data(using: .utf8),
-                      let kpiTemplate = try? JSONDecoder().decode(KPITemplate.self, from: templateData) else {
-                    errorMessage = "Failed to decode template for \(club)"
-                    isLoading = false
-                    return
-                }
-                
-                // Classify shots
-                let classifications = try ShotClassifier.classify(clubShots, using: kpiTemplate)
-                
-                // Aggregate
-                let aggregated = ShotClassifier.aggregate(classifications, shots: clubShots)
-                
-                // Debug log (integration check)
-                print("✅ Club \(club): \(clubShots.count) shots, template \(templateRecord.hash.prefix(8)), A/B/C: \(aggregated.aCount)/\(aggregated.bCount)/\(aggregated.cCount)")
-                
-                // Verify counts sum to total
-                assert(aggregated.aCount + aggregated.bCount + aggregated.cCount == aggregated.totalShots,
-                       "A/B/C counts must sum to totalShots")
-                
-                let clubSummary = ClubSummary(
-                    club: club,
-                    totalShots: aggregated.totalShots,
-                    aCount: aggregated.aCount,
-                    bCount: aggregated.bCount,
-                    cCount: aggregated.cCount,
-                    aPercentage: aggregated.aPercentage,
-                    avgCarry: aggregated.avgCarry,
-                    avgBallSpeed: aggregated.avgBallSpeed,
-                    avgSpin: aggregated.avgSpin,
-                    avgDescent: aggregated.avgDescent,
-                    templateHash: templateRecord.hash
-                )
-                clubSummaries.append(clubSummary)
             }
-            
-            summary = SessionSummary(
+
+            // Group subsessions by club and fetch template preferences
+            var clubAnalysesDict: [String: [AnalysisInfo]] = [:]
+            var analyzedClubs = Set<String>()
+
+            for subsession in subsessions {
+                analyzedClubs.insert(subsession.club)
+
+                // Get template name (display_name or fallback)
+                let pref = try? prefsRepo.fetchPreference(forHash: subsession.kpiTemplateHash)
+                let templateName: String
+                if let displayName = pref?.displayName, !displayName.isEmpty {
+                    templateName = displayName
+                } else {
+                    let shortHash = String(subsession.kpiTemplateHash.prefix(8))
+                    templateName = "\(subsession.club) \(shortHash)"
+                }
+
+                let isActive = activeTemplateHashes[subsession.club] == subsession.kpiTemplateHash
+
+                let analysis = AnalysisInfo(
+                    subsessionId: subsession.subsessionId,
+                    club: subsession.club,
+                    templateName: templateName,
+                    templateHash: subsession.kpiTemplateHash,
+                    shotCount: subsession.shotCount,
+                    validityStatus: subsession.validityStatus,
+                    aCount: subsession.aCount,
+                    bCount: subsession.bCount,
+                    cCount: subsession.cCount,
+                    aPercentage: subsession.aPercentage,
+                    avgCarry: subsession.avgCarry,
+                    avgBallSpeed: subsession.avgBallSpeed,
+                    avgSpin: subsession.avgSpin,
+                    avgDescent: subsession.avgDescent,
+                    analyzedAt: subsession.analyzedAt,
+                    isActive: isActive
+                )
+
+                clubAnalysesDict[subsession.club, default: []].append(analysis)
+            }
+
+            // Identify clubs without analysis
+            let allClubs = Set(clubShotCounts.keys)
+            let unanalyzedClubs = allClubs.subtracting(analyzedClubs)
+
+            sessionInfo = SessionInfo(
                 sessionDate: sessionRecord.sessionDate,
                 location: sessionRecord.location,
-                clubSummaries: clubSummaries
+                clubShotCounts: clubShotCounts
             )
+            clubAnalyses = clubAnalysesDict
+            clubsWithoutAnalysis = unanalyzedClubs
             isLoading = false
-            
+
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
         }
     }
-    
+
+    private func analyzeClub(_ club: String) {
+        guard !isAnalyzing else { return }
+        isAnalyzing = true
+
+        Task {
+            do {
+                let shotRepo = ShotRepository(dbQueue: dbQueue)
+                let templateRepo = TemplateRepository(dbQueue: dbQueue)
+                let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+                let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+                // Fetch shots for this club
+                let allShots = try shotRepo.fetchShots(forSession: sessionId)
+                let clubShots = allShots.filter { $0.club == club }
+
+                guard !clubShots.isEmpty else {
+                    isAnalyzing = false
+                    return
+                }
+
+                // Get active template (with fallback to latest)
+                guard let templateRecord = try prefsRepo.fetchActiveTemplate(forClub: club)
+                    ?? templateRepo.fetchLatestTemplate(forClub: club),
+                      let templateData = templateRecord.canonicalJSON.data(using: .utf8) else {
+                    isAnalyzing = false
+                    return
+                }
+
+                let template = try JSONDecoder().decode(KPITemplate.self, from: templateData)
+
+                // Analyze and persist
+                try subsessionRepo.analyzeSessionClub(
+                    sessionId: sessionId,
+                    club: club,
+                    shots: clubShots,
+                    template: template,
+                    templateHash: templateRecord.hash
+                )
+
+                // Reload view
+                isAnalyzing = false
+                await loadSession()
+
+            } catch {
+                print("[RAID] Analysis failed: \(error)")
+                isAnalyzing = false
+            }
+        }
+    }
+
     private func formatDate(_ isoDate: String) -> String {
         let formatter = ISO8601DateFormatter()
         if let date = formatter.date(from: isoDate) {
@@ -178,69 +257,153 @@ struct PracticeSummaryView: View {
     }
 }
 
-struct ClubSummaryCard: View {
-    let clubSummary: ClubSummary
-    
+// MARK: - Analysis Card
+
+struct AnalysisCard: View {
+    let analysis: AnalysisInfo
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Club header
+            // Template header
             HStack {
-                Text(clubSummary.club.uppercased())
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Spacer()
-                Text("\(clubSummary.totalShots) shots")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Check if template exists
-            if clubSummary.templateHash == nil {
-                Text("⚠️ No template for this club")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            } else if clubSummary.totalShots >= 5, let aCount = clubSummary.aCount, let bCount = clubSummary.bCount, let cCount = clubSummary.cCount {
-                // A/B/C breakdown
-                HStack(spacing: 16) {
-                    GradeBox(grade: "A", count: aCount, color: .green)
-                    GradeBox(grade: "B", count: bCount, color: .orange)
-                    GradeBox(grade: "C", count: cCount, color: .red)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(analysis.templateName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text(String(analysis.templateHash.prefix(8)))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .monospaced()
                 }
-                
-                if let aPercentage = clubSummary.aPercentage {
+                Spacer()
+                if analysis.isActive {
+                    Text("ACTIVE")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue)
+                        .cornerRadius(4)
+                }
+            }
+
+            // Shot count and validity status
+            HStack {
+                Text("\(analysis.shotCount) shots")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if analysis.validityStatus == "invalid_insufficient_data" {
+                    Text("Insufficient data (< 5 shots)")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else if analysis.validityStatus == "valid_low_sample_warning" {
+                    Text("Low sample warning (< 15 shots)")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // A/B/C breakdown (if valid)
+            if analysis.validityStatus != "invalid_insufficient_data" {
+                HStack(spacing: 16) {
+                    GradeBox(grade: "A", count: analysis.aCount, color: .green)
+                    GradeBox(grade: "B", count: analysis.bCount, color: .orange)
+                    GradeBox(grade: "C", count: analysis.cCount, color: .red)
+                }
+
+                if let aPercentage = analysis.aPercentage {
                     Text("A-shots: \(String(format: "%.1f", aPercentage))%")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 }
-                
+
                 // A-only averages
-                if aCount > 0 {
+                if analysis.aCount > 0 {
                     Divider()
-                    
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text("A-Shot Averages")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
-                        if let avgCarry = clubSummary.avgCarry {
+
+                        if let avgCarry = analysis.avgCarry {
                             MetricRow(label: "Carry", value: String(format: "%.1f yds", avgCarry))
                         }
-                        if let avgBallSpeed = clubSummary.avgBallSpeed {
+                        if let avgBallSpeed = analysis.avgBallSpeed {
                             MetricRow(label: "Ball Speed", value: String(format: "%.1f mph", avgBallSpeed))
                         }
-                        if let avgSpin = clubSummary.avgSpin {
+                        if let avgSpin = analysis.avgSpin {
                             MetricRow(label: "Spin", value: String(format: "%.0f rpm", avgSpin))
                         }
-                        if let avgDescent = clubSummary.avgDescent {
+                        if let avgDescent = analysis.avgDescent {
                             MetricRow(label: "Descent", value: String(format: "%.1f°", avgDescent))
                         }
                     }
                 }
-            } else {
-                Text("⚠️ Insufficient data (< 5 shots)")
-                    .font(.caption)
-                    .foregroundColor(.orange)
             }
+
+            // Analyzed timestamp
+            Text("Analyzed: \(formatDate(analysis.analyzedAt))")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func formatDate(_ isoDate: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: isoDate) {
+            let displayFormatter = DateFormatter()
+            displayFormatter.dateStyle = .short
+            displayFormatter.timeStyle = .short
+            return displayFormatter.string(from: date)
+        }
+        return isoDate
+    }
+}
+
+// MARK: - Unanalyzed Club Card
+
+struct UnanalyzedClubCard: View {
+    let club: String
+    let shotCount: Int
+    let isAnalyzing: Bool
+    let onAnalyze: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Club header
+            HStack {
+                Text(club.uppercased())
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Spacer()
+                Text("\(shotCount) shots")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Text("Not yet analyzed")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Button(action: onAnalyze) {
+                if isAnalyzing {
+                    HStack {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                        Text("Analyzing...")
+                    }
+                } else {
+                    Text("Analyze")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isAnalyzing)
         }
         .padding()
         .background(Color(.systemGray6))
@@ -248,11 +411,13 @@ struct ClubSummaryCard: View {
     }
 }
 
+// MARK: - Supporting Components (reused from original)
+
 struct GradeBox: View {
     let grade: String
     let count: Int
     let color: Color
-    
+
     var body: some View {
         VStack(spacing: 4) {
             Text(grade)
@@ -273,7 +438,7 @@ struct GradeBox: View {
 struct MetricRow: View {
     let label: String
     let value: String
-    
+
     var body: some View {
         HStack {
             Text(label)
@@ -288,22 +453,27 @@ struct MetricRow: View {
 
 // MARK: - Data Models
 
-struct SessionSummary {
+struct SessionInfo {
     let sessionDate: String
     let location: String?
-    let clubSummaries: [ClubSummary]
+    let clubShotCounts: [String: Int]
 }
 
-struct ClubSummary {
+struct AnalysisInfo {
+    let subsessionId: Int64
     let club: String
-    let totalShots: Int
-    let aCount: Int?
-    let bCount: Int?
-    let cCount: Int?
+    let templateName: String
+    let templateHash: String
+    let shotCount: Int
+    let validityStatus: String
+    let aCount: Int
+    let bCount: Int
+    let cCount: Int
     let aPercentage: Double?
     let avgCarry: Double?
     let avgBallSpeed: Double?
     let avgSpin: Double?
     let avgDescent: Double?
-    let templateHash: String?
+    let analyzedAt: String
+    let isActive: Bool
 }
