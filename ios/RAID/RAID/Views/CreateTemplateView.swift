@@ -16,11 +16,12 @@ struct CreateTemplateView: View {
     var sourceTemplate: TemplateRecord?
     var onCreated: (() -> Void)?
 
-    @State private var club: String = ""
+    @State private var club: String = "7i"
     @State private var displayName: String = ""
     @State private var metrics: [EditableMetric] = []
     @State private var errorMessage: String?
     @State private var showingError = false
+    @State private var clubChoices: [String] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -60,10 +61,13 @@ struct CreateTemplateView: View {
 
     private var clubSection: some View {
         Section {
-            TextField("Club", text: $club)
-                .textInputAutocapitalization(.characters)
+            Picker("Club", selection: $club) {
+                ForEach(clubChoices, id: \.self) { clubName in
+                    Text(clubName).tag(clubName)
+                }
+            }
         } footer: {
-            Text("E.g., \"7i\", \"PW\", \"Driver\"")
+            Text("Must match the club name in your Rapsodo CSV exports.")
         }
     }
 
@@ -141,7 +145,7 @@ struct CreateTemplateView: View {
     // MARK: - Validation
 
     private var isValid: Bool {
-        guard !club.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !club.isEmpty else {
             return false
         }
         guard !metrics.isEmpty else {
@@ -173,6 +177,8 @@ struct CreateTemplateView: View {
     // MARK: - Actions
 
     private func loadSourceTemplate() {
+        loadClubChoices()
+
         guard let source = sourceTemplate else {
             // New template — add one empty metric
             metrics = [EditableMetric()]
@@ -296,6 +302,64 @@ struct CreateTemplateView: View {
             errorMessage = "Failed to create template: \(error.localizedDescription)"
             showingError = true
         }
+    }
+
+    // MARK: - Club List
+
+    private static let defaultClubs = [
+        "Driver", "3w", "5w", "7w",
+        "3h", "4h", "5h",
+        "3i", "4i", "5i", "6i", "7i", "8i", "9i",
+        "PW", "GW", "SW", "LW"
+    ]
+
+    private func loadClubChoices() {
+        // Start with defaults keyed by lowercase for dedup
+        var clubsByLower: [String: String] = [:]
+        for c in Self.defaultClubs {
+            clubsByLower[c.lowercased()] = c
+        }
+
+        // Imported clubs override defaults (use exact casing from CSV)
+        if let importedClubs = try? dbQueue.read({ db in
+            try String.fetchAll(db, sql: "SELECT DISTINCT club FROM shots")
+        }) {
+            for c in importedClubs {
+                clubsByLower[c.lowercased()] = c
+            }
+        }
+
+        // Ensure source club is always present when duplicating
+        if let source = sourceTemplate {
+            clubsByLower[source.club.lowercased()] = source.club
+        }
+
+        clubChoices = clubsByLower.values.sorted { lhs, rhs in
+            clubSortKey(lhs) < clubSortKey(rhs)
+        }
+    }
+
+    private func clubSortKey(_ club: String) -> (Int, Int, String) {
+        let lower = club.lowercased()
+        if lower == "driver" { return (0, 0, club) }
+        if lower.hasSuffix("w") && !lower.hasSuffix("pw") && !lower.hasSuffix("gw") && !lower.hasSuffix("sw") && !lower.hasSuffix("lw") {
+            let num = Int(lower.dropLast()) ?? 99
+            return (1, num, club)
+        }
+        if lower.hasSuffix("h") {
+            let num = Int(lower.dropLast()) ?? 99
+            return (2, num, club)
+        }
+        if lower.hasSuffix("i") {
+            let num = Int(lower.dropLast()) ?? 99
+            return (3, num, club)
+        }
+        // Wedges
+        let wedgeOrder = ["pw": 0, "gw": 1, "sw": 2, "lw": 3]
+        if let order = wedgeOrder[lower] {
+            return (4, order, club)
+        }
+        return (5, 0, club)
     }
 
     // MARK: - Helpers
