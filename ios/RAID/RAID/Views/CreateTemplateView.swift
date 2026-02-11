@@ -313,6 +313,7 @@ struct CreateTemplateView: View {
         "PW", "GW", "SW", "LW"
     ]
 
+    // TODO(B-001): Once club alias table exists, source picker from canonical names
     private func loadClubChoices() {
         // Start with defaults keyed by lowercase for dedup
         var clubsByLower: [String: String] = [:]

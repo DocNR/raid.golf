@@ -164,6 +164,7 @@ struct SessionsView: View {
             let clubGroups = Dictionary(grouping: allShots, by: { $0.club })
 
             for (club, shots) in clubGroups {
+                // TODO(B-001): Club name is exact-match here; normalize once alias table exists
                 // Try active template first, fall back to latest
                 guard let templateRecord = try prefsRepo.fetchActiveTemplate(forClub: club)
                     ?? templateRepo.fetchLatestTemplate(forClub: club),

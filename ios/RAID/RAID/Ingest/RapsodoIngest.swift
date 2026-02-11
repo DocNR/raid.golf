@@ -207,6 +207,7 @@ struct RapsodoIngest {
             throw IngestError.missingColumn("club")
         }
         
+        // TODO(B-001): Normalize club name here (e.g. "7 Iron" → "7i") once alias table exists
         let club = row[clubIdx].trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         
         // Parse numeric fields (all optional except club)
