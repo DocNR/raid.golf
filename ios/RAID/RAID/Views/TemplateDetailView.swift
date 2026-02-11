@@ -23,6 +23,7 @@ struct TemplateDetailView: View {
     @State private var renameText = ""
     @State private var showingSetActiveAlert = false
     @State private var showingDuplicate = false
+    @State private var errorMessage: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -59,6 +60,14 @@ struct TemplateDetailView: View {
                 loadTemplate()
                 onUpdate?()
             }
+        }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -264,6 +273,7 @@ struct TemplateDetailView: View {
             kpiTemplate = fetchedKPI
         } catch {
             print("[Gambit] Failed to load template: \(error)")
+            errorMessage = "Could not load template details."
         }
     }
 
@@ -278,6 +288,7 @@ struct TemplateDetailView: View {
             onUpdate?()
         } catch {
             print("[Gambit] Failed to set active: \(error)")
+            errorMessage = "Could not set template as active."
         }
     }
 
@@ -299,6 +310,7 @@ struct TemplateDetailView: View {
             onUpdate?()
         } catch {
             print("[Gambit] Failed to save display name: \(error)")
+            errorMessage = "Could not save display name."
         }
     }
 
@@ -318,6 +330,7 @@ struct TemplateDetailView: View {
             onUpdate?()
         } catch {
             print("[Gambit] Failed to toggle hidden: \(error)")
+            errorMessage = "Could not update template visibility."
         }
     }
 }

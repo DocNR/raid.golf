@@ -27,6 +27,7 @@ struct PracticeSummaryView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var isAnalyzing = false
+    @State private var analyzeError: String?
 
     var body: some View {
         Group {
@@ -102,6 +103,14 @@ struct PracticeSummaryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadSession()
+        }
+        .alert("Error", isPresented: Binding(
+            get: { analyzeError != nil },
+            set: { if !$0 { analyzeError = nil } }
+        )) {
+            Button("OK") { analyzeError = nil }
+        } message: {
+            Text(analyzeError ?? "")
         }
     }
 
@@ -240,6 +249,7 @@ struct PracticeSummaryView: View {
 
             } catch {
                 print("[Gambit] Analysis failed: \(error)")
+                analyzeError = "Analysis failed. Please try again."
                 isAnalyzing = false
             }
         }

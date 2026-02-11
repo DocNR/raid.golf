@@ -23,6 +23,7 @@ class ActiveRoundStore {
     var currentHoleIndex: Int = 0
     var isCompleting: Bool = false
     var isLoaded: Bool = false
+    var errorMessage: String?
 
     // MARK: - Identity
 
@@ -132,6 +133,7 @@ class ActiveRoundStore {
             dismiss()
         } catch {
             print("[Gambit] Failed to complete round: \(error)")
+            errorMessage = "Could not finish round. Please try again."
             isCompleting = false
         }
     }
@@ -169,6 +171,7 @@ class ActiveRoundStore {
             _ = try scoreRepo.recordScore(roundId: roundId, score: input)
         } catch {
             print("[Gambit] Failed to save score: \(error)")
+            errorMessage = "Could not save score for this hole."
         }
     }
 
@@ -203,6 +206,7 @@ class ActiveRoundStore {
             isLoaded = true
         } catch {
             print("[Gambit] Failed to load round data: \(error)")
+            errorMessage = "Could not load round data."
         }
     }
 }

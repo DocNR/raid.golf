@@ -14,6 +14,7 @@ struct RoundsView: View {
     @State private var showingCreateRound = false
     @State private var navigationTarget: NavigationTarget?
     @State private var activeRoundStore: ActiveRoundStore?
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,14 @@ struct RoundsView: View {
                 }
             }
             .task { loadRounds() }
+            .alert("Error", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
     }
 
@@ -156,6 +165,7 @@ struct RoundsView: View {
             }
         } catch {
             print("[Gambit] Failed to fetch courseHash: \(error)")
+            errorMessage = "Could not load round data."
             return nil
         }
     }

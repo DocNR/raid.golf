@@ -31,6 +31,23 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 5.3: Error Handling Polish**
+  - Added user-facing error alerts to 9 error sites across 5 files (user-facing flows only)
+  - TemplateDetailView: 4 error sites (loadTemplate, setActive, saveDisplayName, toggleHidden) now show alerts
+  - ActiveRoundStore: 3 error sites (completeRound, saveScore, loadData) now set errorMessage, displayed via ScoreEntryView alert
+  - RoundsView: 1 error site (fetchCourseHash) now shows alert
+  - PracticeSummaryView: 1 error site (analyzeClub) now shows alert via separate analyzeError state
+  - Error handling pattern: `@State private var errorMessage: String?` + `.alert()` modifier
+  - Debug print statements preserved alongside user alerts for development diagnostics
+  - All 96 tests pass, build succeeds
+
+- **iOS Phase 5.0: Rebrand to Gambit Golf**
+  - App display name changed from "RAID" to "Gambit Golf" (iOS app only)
+  - Bundle identifier changed from `dev.local.RAID` to `com.gambitgolf.ios`
+  - File headers, debug logs, and CFBundleDisplayName all updated to Gambit Golf
+  - Python kernel and repository names remain as RAID (no changes to backend/kernel layer)
+  - All tests passing post-rebrand
+
 - **KPI Template UX Sprint (feature/kpi-template-ux)**
   - Added `template_preferences` table (v4 migration) for mutable template metadata (display names, active/hidden flags)
     - Partial unique index `idx_one_active_per_club` enforces one active template per club
