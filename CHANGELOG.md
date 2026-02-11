@@ -27,7 +27,40 @@ This project versions **behavior and rules**, not files.
 
 ## [Unreleased]
 
+> Entries include both iOS port phases and feature sprints; ordered chronologically, grouped by theme.
+
 ### Added
+
+- **KPI Template UX Sprint (feature/kpi-template-ux)**
+  - Added `template_preferences` table (v4 migration) for mutable template metadata (display names, active/hidden flags)
+    - Partial unique index `idx_one_active_per_club` enforces one active template per club
+    - FK to `kpi_templates` with RESTRICT on delete
+    - No immutability triggers (mutable by design — non-kernel product layer)
+  - Added `TemplatePreferencesRepository` with CRUD operations:
+    - `setActive(templateHash:club:)`: transactional deactivate-old → activate-new
+    - `setHidden(templateHash:hidden:)`, `setDisplayName(templateHash:name:)`
+    - `fetchActiveTemplate(forClub:)`: JOIN to kpi_templates for full template record
+    - `ensurePreferenceExists(forHash:club:)`: idempotent INSERT OR IGNORE
+  - Extended `TemplateRepository` with list methods:
+    - `listTemplates(forClub:)`: excludes hidden via LEFT JOIN, ordered by recency
+    - `listAllTemplates()`: grouped by club ASC, ordered by created_at DESC
+  - Extended `SubsessionRepository` with `fetchSubsessions(forSession:)` read method
+  - Added Template Library tab (4th tab in TabView):
+    - `TemplateListView`: grouped by club, active badge, metric count, navigation to detail
+    - `TemplateDetailView`: full metadata display, rename, set active, hide/unhide, duplicate
+    - `CreateTemplateView`: form-based template creation with PK collision handling
+  - Added template preference bootstrap: seed templates get preference rows and active flag on first launch
+  - Updated import flow: `analyzeImportedSession()` now uses active template with fallback to latest
+  - Refactored `PracticeSummaryView` (Session Detail):
+    - Reads persisted `club_subsessions` instead of on-the-fly classification
+    - Shows multiple analyses per club with template identity (name + hash + ACTIVE badge)
+    - "Analyze" button for unanalyzed clubs
+  - Added trends template filter:
+    - `TemplateFilter` enum: `.all`, `.activeOnly`, `.specific(hash)`
+    - In-memory filtering of A-only points; allShots section never filtered
+    - Default: activeOnly when active template set, all otherwise
+  - 20 new tests across KernelTests and BootstrapTests
+  - Total test count: 96
 
 - **iOS Phase 4B v2: Analysis-Context Linkage (A-only trend stability)**
   - A-only trend classification now uses template_hash persisted in `club_subsessions` at analysis time
@@ -60,7 +93,7 @@ This project versions **behavior and rules**, not files.
 
 - **Hard Stop: UX Contract**
   - Created `docs/private/UX_CONTRACT.md` declaring locked analytical semantics, deferred non-decisions, and free-to-iterate areas
-  - 73 total unit/integration tests
+  - 73 unit/integration tests at time of hard stop
 
 - **iOS Scorecard v0 Bugfix Sprint (feature/scorecard-v0)**
   - Added `ActiveRoundStore` view model pattern for long-lived scoring state
@@ -151,7 +184,7 @@ This project versions **behavior and rules**, not files.
 
 ### Notes
 
-- **Phase 4B v2 semantics (final):** A-only trends use `club_subsessions.kpi_template_hash` pinned at analysis time. A/B/C grades are recomputed on demand from persisted shots using the pinned template. Historical points are stable — inserting a new template does not change existing classifications.
+- **Phase 4B v2 semantics (final):** A-only trends read persisted `club_subsessions` aggregates (A/B/C counts, A%, averages) pinned at analysis time via `kpi_template_hash`. No recomputation occurs on the read path. Recomputation only happens via explicit analysis actions (import auto-analyze or manual re-analyze button). Historical points are stable — inserting a new template does not change existing classifications.
 
 ---
 

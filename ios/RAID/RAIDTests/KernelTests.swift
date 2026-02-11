@@ -1009,17 +1009,17 @@ final class KernelTests: XCTestCase {
     
     func testFetchTemplateNeverRecomputesHash() throws {
         print("\n=== Testing Fetch Template Never Recomputes Hash ===")
-        
+
         // Create test database
         let dbQueue = try DatabaseQueue.createRAIDDatabase(at: ":memory:")
-        
+
         // Create spy implementations
         let spyCanon = SpyCanonicalizer()
         let spyHash = SpyHasher()
-        
+
         // Create repository with spies
         let repo = TemplateRepository(dbQueue: dbQueue, canonicalizer: spyCanon, hasher: spyHash)
-        
+
         // Template JSON
         let templateDict: [String: Any] = [
             "club": "7i",
@@ -1034,27 +1034,963 @@ final class KernelTests: XCTestCase {
             ]
         ]
         let rawJSON = try JSONSerialization.data(withJSONObject: templateDict, options: [])
-        
+
         // Insert template
         let record = try repo.insertTemplate(rawJSON: rawJSON)
         XCTAssertEqual(spyCanon.callCount, 1, "Insert should call canonicalize once")
         XCTAssertEqual(spyHash.callCount, 1, "Insert should call hash once")
-        
+
         print("✅ After insert: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
-        
+
         // Fetch multiple times
         for i in 1...3 {
             let fetched = try repo.fetchTemplate(byHash: record.hash)
             XCTAssertNotNil(fetched, "Template should be fetchable (attempt \(i))")
             XCTAssertEqual(fetched?.hash, record.hash, "Hash should match (attempt \(i))")
-            
+
             // Verify counters unchanged
             XCTAssertEqual(spyCanon.callCount, 1, "Fetch \(i) should NOT call canonicalize")
             XCTAssertEqual(spyHash.callCount, 1, "Fetch \(i) should NOT call hash")
         }
-        
+
         print("✅ After 3 fetches: canonicalize=\(spyCanon.callCount), hash=\(spyHash.callCount)")
         print("✅ Fetch path never calls canonicalize or hash (RTM-04 verified)")
+    }
+
+    // MARK: - v4 Migration: Template Preferences Tests
+
+    func testV4MigrationAppliesOnFreshDB() throws {
+        print("\n=== Testing v4 Migration Applies on Fresh DB ===")
+        let dbQueue = try createTestDatabase()
+
+        // Verify template_preferences table exists
+        let tableExists = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name='template_preferences'
+                """)
+        }
+        XCTAssertEqual(tableExists, 1, "template_preferences table should exist")
+
+        // Verify partial unique index exists
+        let indexExists = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='index' AND name='idx_one_active_per_club'
+                """)
+        }
+        XCTAssertEqual(indexExists, 1, "idx_one_active_per_club index should exist")
+
+        print("✅ v4 migration applied successfully")
+        print("✅ template_preferences table created")
+        print("✅ idx_one_active_per_club index created")
+    }
+
+    func testTemplatePreferenceFKEnforcement() throws {
+        print("\n=== Testing Template Preference FK Enforcement ===")
+        let dbQueue = try createTestDatabase()
+
+        let nonexistentHash = "a" + String(repeating: "0", count: 63)
+
+        // Attempt to insert preference with nonexistent template_hash - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO template_preferences (template_hash, club, updated_at)
+                    VALUES (?, ?, ?)
+                    """, arguments: [nonexistentHash, "7i", "2026-02-10T12:00:00Z"])
+            }
+            XCTFail("INSERT with invalid FK should have been rejected")
+        } catch let error as DatabaseError {
+            print("✅ FK violation rejected: \(error.message ?? "")")
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be FK constraint violation")
+        }
+    }
+
+    func testTemplatePreferenceActiveUniquenessPerClub() throws {
+        print("\n=== Testing Template Preference Active Uniqueness Per Club ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert two templates for same club
+        let templateHash1 = "b" + String(repeating: "0", count: 63)
+        let templateHash2 = "c" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash1, "1.0", "7i", "{\"version\":\"1\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash2, "1.0", "7i", "{\"version\":\"2\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Insert first preference as active
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash1, "7i", 1, "2026-02-10T12:00:00Z"])
+        }
+
+        // Attempt to insert second preference as active for same club - should fail
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """, arguments: [templateHash2, "7i", 1, "2026-02-10T12:00:00Z"])
+            }
+            XCTFail("INSERT of second active template for same club should have been rejected")
+        } catch let error as DatabaseError {
+            print("✅ Active uniqueness violation rejected: \(error.message ?? "")")
+            XCTAssertEqual(error.resultCode, .SQLITE_CONSTRAINT, "Should be UNIQUE constraint violation")
+        }
+
+        // Verify first preference still active
+        let activeHash = try dbQueue.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT template_hash FROM template_preferences
+                WHERE club = ? AND is_active = 1
+                """, arguments: ["7i"])
+        }
+        XCTAssertEqual(activeHash, templateHash1, "First template should remain active")
+
+        print("✅ Partial unique index prevents multiple active templates per club")
+    }
+
+    func testTemplatePreferenceAllowsMultipleInactivePerClub() throws {
+        print("\n=== Testing Template Preference Allows Multiple Inactive Per Club ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert two templates for same club
+        let templateHash1 = "d" + String(repeating: "0", count: 63)
+        let templateHash2 = "e" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash1, "1.0", "7i", "{\"version\":\"1\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash2, "1.0", "7i", "{\"version\":\"2\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Insert both preferences as inactive - should succeed
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash1, "7i", 0, "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash2, "7i", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify both exist
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE club = ? AND is_active = 0
+                """, arguments: ["7i"])
+        }
+        XCTAssertEqual(count, 2, "Both inactive preferences should exist")
+
+        print("✅ Multiple inactive templates per club allowed")
+    }
+
+    func testTemplatePreferenceUpdateAllowed() throws {
+        print("\n=== Testing Template Preference UPDATE Allowed ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template and preference
+        let templateHash = "f" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, display_name, is_active, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "7i", "Original Name", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Update display_name - should succeed (no immutability triggers)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                UPDATE template_preferences
+                SET display_name = ?, updated_at = ?
+                WHERE template_hash = ?
+                """, arguments: ["Updated Name", "2026-02-10T13:00:00Z", templateHash])
+        }
+
+        // Verify update succeeded
+        let displayName = try dbQueue.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT display_name FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(displayName, "Updated Name", "Display name should be updated")
+
+        print("✅ UPDATE allowed on template_preferences (no immutability triggers)")
+    }
+
+    func testTemplatePreferenceDeleteAllowed() throws {
+        print("\n=== Testing Template Preference DELETE Allowed ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template and preference
+        let templateHash = "1" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_active, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [templateHash, "7i", 0, "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify preference exists
+        let countBefore = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(countBefore, 1, "Preference should exist before delete")
+
+        // Delete preference - should succeed (no immutability triggers)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                DELETE FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+
+        // Verify deletion succeeded
+        let countAfter = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+        XCTAssertEqual(countAfter, 0, "Preference should be deleted")
+
+        print("✅ DELETE allowed on template_preferences (no immutability triggers)")
+    }
+
+    func testTemplatePreferenceDefaultValues() throws {
+        print("\n=== Testing Template Preference Default Values ===")
+        let dbQueue = try createTestDatabase()
+
+        // Insert template
+        let templateHash = "2" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+
+            // Insert preference without specifying is_active or is_hidden (should default to 0)
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, updated_at)
+                VALUES (?, ?, ?)
+                """, arguments: [templateHash, "7i", "2026-02-10T12:00:00Z"])
+        }
+
+        // Verify default values
+        let row = try dbQueue.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT is_active, is_hidden FROM template_preferences
+                WHERE template_hash = ?
+                """, arguments: [templateHash])
+        }
+
+        let isActive = try XCTUnwrap(row?["is_active"] as Int?, "is_active should exist")
+        let isHidden = try XCTUnwrap(row?["is_hidden"] as Int?, "is_hidden should exist")
+
+        XCTAssertEqual(isActive, 0, "is_active should default to 0")
+        XCTAssertEqual(isHidden, 0, "is_hidden should default to 0")
+
+        print("✅ Default values: is_active=0, is_hidden=0")
+    }
+
+    // MARK: - Task 2: Repository Read Extensions Tests
+
+    func testListTemplatesForClubOrdersByRecency() throws {
+        print("\n=== Testing listTemplates(forClub:) Orders By Recency ===")
+        let dbQueue = try createTestDatabase()
+        let repo = TemplateRepository(dbQueue: dbQueue)
+
+        // Insert three templates for same club at different times
+        let hash1 = "3" + String(repeating: "0", count: 63)
+        let hash2 = "4" + String(repeating: "0", count: 63)
+        let hash3 = "5" + String(repeating: "0", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-08T12:00:00Z", "2026-02-08T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash3, "1.0", "7i", "{\"v\":\"3\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        let templates = try repo.listTemplates(forClub: "7i")
+
+        XCTAssertEqual(templates.count, 3, "Should return 3 templates")
+        XCTAssertEqual(templates[0].hash, hash3, "Most recent template should be first")
+        XCTAssertEqual(templates[1].hash, hash2, "Second most recent template should be second")
+        XCTAssertEqual(templates[2].hash, hash1, "Oldest template should be last")
+
+        print("✅ listTemplates orders by recency: \(templates.map { $0.hash })")
+    }
+
+    func testListTemplatesExcludesHidden() throws {
+        print("\n=== Testing listTemplates Excludes Hidden Templates ===")
+        let dbQueue = try createTestDatabase()
+        let repo = TemplateRepository(dbQueue: dbQueue)
+
+        // Insert two templates for same club
+        let hash1 = "6" + String(repeating: "0", count: 63)
+        let hash2 = "7" + String(repeating: "0", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T13:00:00Z", "2026-02-10T13:00:00Z"])
+
+            // Hide hash1
+            try db.execute(sql: """
+                INSERT INTO template_preferences (template_hash, club, is_hidden, updated_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [hash1, "7i", 1, "2026-02-10T14:00:00Z"])
+        }
+
+        let templates = try repo.listTemplates(forClub: "7i")
+
+        XCTAssertEqual(templates.count, 1, "Should return only non-hidden template")
+        XCTAssertEqual(templates[0].hash, hash2, "Should return only non-hidden template")
+
+        print("✅ listTemplates excludes hidden templates")
+    }
+
+    func testListAllTemplatesGroupsByClub() throws {
+        print("\n=== Testing listAllTemplates Groups By Club ===")
+        let dbQueue = try createTestDatabase()
+        let repo = TemplateRepository(dbQueue: dbQueue)
+
+        // Insert templates for multiple clubs
+        let hash7i1 = "8" + String(repeating: "0", count: 63)
+        let hash7i2 = "9" + String(repeating: "0", count: 63)
+        let hashPW = "a" + String(repeating: "0", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash7i1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash7i2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashPW, "1.0", "PW", "{\"v\":\"1\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        let templates = try repo.listAllTemplates()
+
+        XCTAssertEqual(templates.count, 3, "Should return all 3 templates")
+        // Should be ordered: 7i (most recent first), then PW
+        XCTAssertEqual(templates[0].club, "7i")
+        XCTAssertEqual(templates[0].hash, hash7i2, "Most recent 7i template first")
+        XCTAssertEqual(templates[1].club, "7i")
+        XCTAssertEqual(templates[1].hash, hash7i1, "Older 7i template second")
+        XCTAssertEqual(templates[2].club, "PW")
+        XCTAssertEqual(templates[2].hash, hashPW, "PW template last (club ASC)")
+
+        print("✅ listAllTemplates groups by club (ASC), orders by recency (DESC)")
+    }
+
+    func testFetchSubsessionsReturnsCorrectRecords() throws {
+        print("\n=== Testing fetchSubsessions Returns Correct Records ===")
+        let dbQueue = try createTestDatabase()
+        let sessionRepo = SessionRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+        // Insert session and template
+        let session = try sessionRepo.insertSession(
+            sessionDate: "2026-02-10T12:00:00Z",
+            sourceFile: "test.csv"
+        )
+
+        let templateHash = "b" + String(repeating: "0", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [templateHash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Insert two subsessions for different clubs
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO club_subsessions
+                    (session_id, club, kpi_template_hash, shot_count, validity_status,
+                     a_count, b_count, c_count, a_percentage, avg_carry, avg_ball_speed,
+                     avg_spin, avg_descent, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    session.sessionId, "7i", templateHash, 20, "valid",
+                    10, 8, 2, 50.0, 142.5, 99.2, 7200.0, 48.5,
+                    "2026-02-10T13:00:00Z"
+                ])
+
+            try db.execute(sql: """
+                INSERT INTO club_subsessions
+                    (session_id, club, kpi_template_hash, shot_count, validity_status,
+                     a_count, b_count, c_count, a_percentage, analyzed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    session.sessionId, "PW", templateHash, 15, "valid_low_sample_warning",
+                    8, 5, 2, 53.3,
+                    "2026-02-10T13:30:00Z"
+                ])
+        }
+
+        let subsessions = try subsessionRepo.fetchSubsessions(forSession: session.sessionId)
+
+        XCTAssertEqual(subsessions.count, 2, "Should return 2 subsessions")
+        XCTAssertEqual(subsessions[0].club, "7i", "First subsession should be 7i (club ASC)")
+        XCTAssertEqual(subsessions[1].club, "PW", "Second subsession should be PW")
+
+        // Verify 7i subsession data
+        XCTAssertEqual(subsessions[0].shotCount, 20)
+        XCTAssertEqual(subsessions[0].aCount, 10)
+        let aPercentage = try XCTUnwrap(subsessions[0].aPercentage)
+        XCTAssertEqual(aPercentage, 50.0, accuracy: 0.01)
+        let avgCarry = try XCTUnwrap(subsessions[0].avgCarry)
+        XCTAssertEqual(avgCarry, 142.5, accuracy: 0.01)
+
+        print("✅ fetchSubsessions returns correct records ordered by club ASC")
+    }
+
+    // MARK: - Task 2: TemplatePreferencesRepository Tests
+
+    func testSetActiveTransactionally() throws {
+        print("\n=== Testing setActive Transactionally Switches Active Template ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
+        // Insert two templates for same club
+        let hash1 = "c" + String(repeating: "0", count: 63)
+        let hash2 = "d" + String(repeating: "0", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hash1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hash2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Activate first template
+        try prefsRepo.setActive(templateHash: hash1, club: "7i")
+
+        // Verify first template is active
+        let pref1 = try prefsRepo.fetchPreference(forHash: hash1)
+        XCTAssertNotNil(pref1)
+        XCTAssertTrue(pref1?.isActive ?? false, "First template should be active")
+
+        // Activate second template (should deactivate first)
+        try prefsRepo.setActive(templateHash: hash2, club: "7i")
+
+        // Verify first template is now inactive
+        let pref1After = try prefsRepo.fetchPreference(forHash: hash1)
+        XCTAssertNotNil(pref1After)
+        XCTAssertFalse(pref1After?.isActive ?? true, "First template should be inactive")
+
+        // Verify second template is active
+        let pref2 = try prefsRepo.fetchPreference(forHash: hash2)
+        XCTAssertNotNil(pref2)
+        XCTAssertTrue(pref2?.isActive ?? false, "Second template should be active")
+
+        print("✅ setActive transactionally switches active template")
+    }
+
+    func testFetchActiveTemplateReturnsCorrectTemplate() throws {
+        print("\n=== Testing fetchActiveTemplate Returns Correct Template ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
+        // Insert two templates for same club
+        let hash1 = "e" + String(repeating: "0", count: 63)
+        let hash2 = "f" + String(repeating: "0", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hash2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T13:00:00Z", "2026-02-10T13:00:00Z"])
+        }
+
+        // No active template initially
+        let noActive = try prefsRepo.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNil(noActive, "Should have no active template initially")
+
+        // Activate second template
+        try prefsRepo.setActive(templateHash: hash2, club: "7i")
+
+        // Fetch active template
+        let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNotNil(activeTemplate)
+        XCTAssertEqual(activeTemplate?.hash, hash2, "Active template should be hash2")
+        XCTAssertEqual(activeTemplate?.club, "7i")
+        XCTAssertEqual(activeTemplate?.importedAt, "2026-02-10T13:00:00Z")
+
+        print("✅ fetchActiveTemplate returns correct template after activation")
+    }
+
+    func testEnsurePreferenceExistsIsIdempotent() throws {
+        print("\n=== Testing ensurePreferenceExists Is Idempotent ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
+        // Insert template
+        let hash = "1" + String(repeating: "2", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        // Ensure preference exists (first call)
+        try prefsRepo.ensurePreferenceExists(forHash: hash, club: "7i")
+
+        // Fetch preference
+        let pref1 = try prefsRepo.fetchPreference(forHash: hash)
+        XCTAssertNotNil(pref1)
+        XCTAssertFalse(pref1?.isActive ?? true, "Should be inactive by default")
+        XCTAssertFalse(pref1?.isHidden ?? true, "Should be not hidden by default")
+
+        // Ensure preference exists again (idempotent)
+        try prefsRepo.ensurePreferenceExists(forHash: hash, club: "7i")
+
+        // Verify preference still exists and unchanged
+        let pref2 = try prefsRepo.fetchPreference(forHash: hash)
+        XCTAssertNotNil(pref2)
+        XCTAssertEqual(pref1?.updatedAt, pref2?.updatedAt, "Should not update existing preference")
+
+        // Verify only one preference row exists
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM template_preferences WHERE template_hash = ?",
+                            arguments: [hash])
+        }
+        XCTAssertEqual(count, 1, "Should have exactly one preference row")
+
+        print("✅ ensurePreferenceExists is idempotent")
+    }
+
+    func testSetDisplayNameUpdatesPreference() throws {
+        print("\n=== Testing setDisplayName Updates Preference ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
+        // Insert template and preference
+        let hash = "1" + String(repeating: "3", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        try prefsRepo.ensurePreferenceExists(forHash: hash, club: "7i")
+
+        // Set display name
+        try prefsRepo.setDisplayName(templateHash: hash, name: "My 7i Template")
+
+        // Verify display name was set
+        let pref = try prefsRepo.fetchPreference(forHash: hash)
+        XCTAssertNotNil(pref)
+        XCTAssertEqual(pref?.displayName, "My 7i Template")
+
+        print("✅ setDisplayName updates preference")
+    }
+
+    func testSetHiddenUpdatesPreference() throws {
+        print("\n=== Testing setHidden Updates Preference ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+
+        // Insert template and preference
+        let hash = "1" + String(repeating: "4", count: 63)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hash, "1.0", "7i", "{\"club\":\"7i\"}", "2026-02-10T12:00:00Z"])
+        }
+
+        try prefsRepo.ensurePreferenceExists(forHash: hash, club: "7i")
+
+        // Set hidden
+        try prefsRepo.setHidden(templateHash: hash, hidden: true)
+
+        // Verify hidden status was set
+        let pref = try prefsRepo.fetchPreference(forHash: hash)
+        XCTAssertNotNil(pref)
+        XCTAssertTrue(pref?.isHidden ?? false)
+
+        // Set not hidden
+        try prefsRepo.setHidden(templateHash: hash, hidden: false)
+
+        // Verify hidden status was unset
+        let pref2 = try prefsRepo.fetchPreference(forHash: hash)
+        XCTAssertNotNil(pref2)
+        XCTAssertFalse(pref2?.isHidden ?? true)
+
+        print("✅ setHidden updates preference")
+    }
+
+    // MARK: - Task 10: Final Sprint Regression Tests
+
+    func testActiveTemplateSwitchDoesNotAffectExistingSubsessions() throws {
+        print("\n=== Testing Active Template Switch Does Not Affect Existing Subsessions ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+        // Insert two templates for same club with valid KPI data
+        let hashT1 = "a" + String(repeating: "1", count: 63)
+        let hashT2 = "b" + String(repeating: "2", count: 63)
+
+        let templateT1JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 140,
+                    "b_min": 130,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        let templateT2JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 150,
+                    "b_min": 140,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", templateT1JSON, "2026-02-10T10:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hashT2, "1.0", "7i", templateT2JSON, "2026-02-10T11:00:00Z"])
+        }
+
+        // Create a session and insert shots via raw SQL
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-10T12:00:00Z", "test.csv", "2026-02-10T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+
+            // Insert 10 shots (raw SQL as per KernelTests pattern)
+            for i in 0..<10 {
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [sessionId, i, "rapsodo_mlm2pro_shotexport_v1", "2026-02-10T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.0 + Double(i), 99.0])
+            }
+        }
+
+        // Fetch shots and template for analysis
+        let shotRepo = ShotRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        let shots = try shotRepo.fetchShots(forSession: sessionId)
+        guard let templateRecord = try templateRepo.fetchTemplate(byHash: hashT1) else {
+            XCTFail("Template T1 should be fetchable")
+            return
+        }
+        let canonicalData = Data(templateRecord.canonicalJSON.utf8)
+        let template = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        // Analyze with T1
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId,
+            club: "7i",
+            shots: shots,
+            template: template,
+            templateHash: hashT1
+        )
+
+        // Set T1 as active
+        try prefsRepo.setActive(templateHash: hashT1, club: "7i")
+
+        // Fetch initial subsession metrics
+        let subsessionsBefore = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsBefore.count, 1, "Should have 1 subsession before switch")
+        XCTAssertEqual(subsessionsBefore[0].kpiTemplateHash, hashT1, "Initial subsession should use T1")
+        let aCountBefore = subsessionsBefore[0].aCount
+        let bCountBefore = subsessionsBefore[0].bCount
+        let cCountBefore = subsessionsBefore[0].cCount
+
+        print("✅ Initial analysis: T1 hash=\(hashT1)")
+        print("✅ Initial metrics: A=\(aCountBefore), B=\(bCountBefore), C=\(cCountBefore)")
+
+        // Switch active to T2
+        try prefsRepo.setActive(templateHash: hashT2, club: "7i")
+
+        print("✅ Active template switched from T1 to T2")
+
+        // Verify: existing club_subsessions row still references T1 hash (not T2)
+        let subsessionsAfter = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsAfter.count, 1, "Should still have 1 subsession after switch")
+        XCTAssertEqual(subsessionsAfter[0].kpiTemplateHash, hashT1, "Subsession should still use T1 hash after active switch")
+
+        // Verify: subsession metrics are unchanged
+        XCTAssertEqual(subsessionsAfter[0].aCount, aCountBefore, "A count should be unchanged")
+        XCTAssertEqual(subsessionsAfter[0].bCount, bCountBefore, "B count should be unchanged")
+        XCTAssertEqual(subsessionsAfter[0].cCount, cCountBefore, "C count should be unchanged")
+
+        print("✅ After switch: subsession still uses T1 hash (unchanged)")
+        print("✅ After switch: metrics unchanged: A=\(subsessionsAfter[0].aCount), B=\(subsessionsAfter[0].bCount), C=\(subsessionsAfter[0].cCount)")
+        print("✅ Active template switch does NOT affect existing analyses")
+    }
+
+    func testHiddenTemplateAnalysesRemainVisible() throws {
+        print("\n=== Testing Hidden Template Analyses Remain Visible ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        // Insert template T1 for club "7i" with valid KPI data
+        let hashT1 = "c" + String(repeating: "3", count: 63)
+
+        let templateT1JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 140,
+                    "b_min": 130,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", templateT1JSON, "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        // Create a session and analyze with T1
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-10T12:00:00Z", "test.csv", "2026-02-10T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+
+            // Insert 15 shots
+            for i in 0..<15 {
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [sessionId, i, "rapsodo_mlm2pro_shotexport_v1", "2026-02-10T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.0, 99.0])
+            }
+        }
+
+        let shotRepo2 = ShotRepository(dbQueue: dbQueue)
+        let templateRepo2 = TemplateRepository(dbQueue: dbQueue)
+
+        let shots = try shotRepo2.fetchShots(forSession: sessionId)
+        guard let templateRecord = try templateRepo2.fetchTemplate(byHash: hashT1) else {
+            XCTFail("Template T1 should be fetchable")
+            return
+        }
+        let canonicalData = Data(templateRecord.canonicalJSON.utf8)
+        let template = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId,
+            club: "7i",
+            shots: shots,
+            template: template,
+            templateHash: hashT1
+        )
+
+        // Fetch subsessions — verify T1 analysis exists
+        let subsessionsBefore = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsBefore.count, 1, "Should have 1 subsession before hiding")
+        XCTAssertEqual(subsessionsBefore[0].kpiTemplateHash, hashT1, "Subsession should use T1")
+
+        print("✅ Initial analysis exists: T1 hash=\(hashT1)")
+
+        // Verify T1 is visible in template list
+        let templatesBeforeHiding = try templateRepo2.listTemplates(forClub: "7i")
+        XCTAssertEqual(templatesBeforeHiding.count, 1, "Should have 1 visible template before hiding")
+        XCTAssertEqual(templatesBeforeHiding[0].hash, hashT1, "Visible template should be T1")
+
+        print("✅ T1 is visible in template list")
+
+        // Hide T1
+        try prefsRepo.ensurePreferenceExists(forHash: hashT1, club: "7i")
+        try prefsRepo.setHidden(templateHash: hashT1, hidden: true)
+
+        print("✅ T1 hidden via preference")
+
+        // Fetch subsessions again — verify T1 analysis STILL exists
+        let subsessionsAfter = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsAfter.count, 1, "Should still have 1 subsession after hiding template")
+        XCTAssertEqual(subsessionsAfter[0].kpiTemplateHash, hashT1, "Subsession should still use T1 hash")
+
+        print("✅ After hiding: subsession still exists (analysis preserved)")
+
+        // Verify: listTemplates now excludes T1 (it IS hidden from template list)
+        let templatesAfterHiding = try templateRepo.listTemplates(forClub: "7i")
+        XCTAssertEqual(templatesAfterHiding.count, 0, "Hidden template should be excluded from template list")
+
+        print("✅ After hiding: T1 excluded from template list (is_hidden=1)")
+        print("✅ Hiding a template is a UI concern, not a data mutation")
+    }
+
+    func testImportFlowUsesActiveTemplateWithFallback() throws {
+        print("\n=== Testing Import Flow Uses Active Template With Fallback ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        // Create fresh DB, insert two templates T1 (older) and T2 (newer) for "7i"
+        let hashT1 = "d" + String(repeating: "4", count: 63)
+        let hashT2 = "e" + String(repeating: "5", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        print("✅ Inserted T1 (older) and T2 (newer) for 7i")
+
+        // Set T2 as active
+        try prefsRepo.setActive(templateHash: hashT2, club: "7i")
+
+        // Verify: fetchActiveTemplate returns T2
+        let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNotNil(activeTemplate, "Active template should exist")
+        XCTAssertEqual(activeTemplate?.hash, hashT2, "Active template should be T2")
+
+        print("✅ Active template for 7i: T2 hash=\(hashT2)")
+
+        // Also verify: fetchLatestTemplate returns T2 (happens to be the same here)
+        let latestTemplate = try templateRepo.fetchLatestTemplate(forClub: "7i")
+        XCTAssertNotNil(latestTemplate, "Latest template should exist")
+        XCTAssertEqual(latestTemplate?.hash, hashT2, "Latest template should be T2")
+
+        print("✅ Latest template for 7i: T2 hash=\(hashT2) (same as active)")
+
+        // Now test fallback: create new DB with only T1, no preference
+        let dbQueue2 = try createTestDatabase()
+        let prefsRepo2 = TemplatePreferencesRepository(dbQueue: dbQueue2)
+        let templateRepo2 = TemplateRepository(dbQueue: dbQueue2)
+
+        try dbQueue2.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+        }
+
+        print("✅ Fresh DB: inserted only T1, no active preference set")
+
+        // Verify: fetchActiveTemplate returns nil (no active template set)
+        let noActiveTemplate = try prefsRepo2.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNil(noActiveTemplate, "Should have no active template when not set")
+
+        print("✅ fetchActiveTemplate returns nil (no preference)")
+
+        // Verify: fetchLatestTemplate returns T1 (the fallback)
+        let fallbackTemplate = try templateRepo2.fetchLatestTemplate(forClub: "7i")
+        XCTAssertNotNil(fallbackTemplate, "Fallback template should exist")
+        XCTAssertEqual(fallbackTemplate?.hash, hashT1, "Fallback template should be T1")
+
+        print("✅ fetchLatestTemplate returns T1 (fallback)")
+        print("✅ Import flow pattern validated: fetchActiveTemplate ?? fetchLatestTemplate")
     }
 }
 

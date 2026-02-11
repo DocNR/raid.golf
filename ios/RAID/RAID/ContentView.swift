@@ -25,6 +25,11 @@ struct ContentView: View {
                 .tabItem {
                     Label("Rounds", systemImage: "flag.fill")
                 }
+
+            TemplateListView(dbQueue: dbQueue)
+                .tabItem {
+                    Label("Templates", systemImage: "list.clipboard")
+                }
         }
     }
 }

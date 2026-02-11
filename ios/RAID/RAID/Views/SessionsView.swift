@@ -83,17 +83,21 @@ struct SessionsView: View {
 
     private var sessionsList: some View {
         List(sessions, id: \.sessionId) { session in
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(formatDate(session.sessionDate))
-                        .font(.headline)
-                    Spacer()
-                    Text("\(session.shotCount) shots")
+            NavigationLink {
+                PracticeSummaryView(sessionId: session.sessionId, dbQueue: dbQueue)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(formatDate(session.sessionDate))
+                            .font(.headline)
+                        Spacer()
+                        Text("\(session.shotCount) shots")
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(session.sourceFile)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text(session.sourceFile)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .refreshable { loadSessions() }
@@ -152,6 +156,7 @@ struct SessionsView: View {
     /// won't include this session until re-analysis.
     private func analyzeImportedSession(sessionId: Int64, shotRepo: ShotRepository) {
         let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
         let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
 
         do {
@@ -159,7 +164,9 @@ struct SessionsView: View {
             let clubGroups = Dictionary(grouping: allShots, by: { $0.club })
 
             for (club, shots) in clubGroups {
-                guard let templateRecord = try templateRepo.fetchLatestTemplate(forClub: club),
+                // Try active template first, fall back to latest
+                guard let templateRecord = try prefsRepo.fetchActiveTemplate(forClub: club)
+                    ?? templateRepo.fetchLatestTemplate(forClub: club),
                       let templateData = templateRecord.canonicalJSON.data(using: .utf8) else {
                     continue
                 }

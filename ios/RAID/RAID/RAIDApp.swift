@@ -45,7 +45,8 @@ struct RAIDApp: App {
 
 /// Kernel-safe template bootstrap.
 /// Loads bundled seed templates via the repository insert path.
-/// Idempotent: duplicate inserts are caught and ignored (PK constraint).
+/// Creates preference rows and sets first template as active for each club.
+/// Idempotent: duplicate inserts are caught and ignored (PK constraint + INSERT OR IGNORE).
 enum TemplateBootstrap {
     static func loadSeeds(into dbQueue: DatabaseQueue) throws {
         guard let seedURL = Bundle.main.url(forResource: "template_seeds", withExtension: "json") else {
@@ -59,13 +60,24 @@ enum TemplateBootstrap {
             return
         }
 
-        let repo = TemplateRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
 
         for seed in seeds {
             let templateJSON = try JSONSerialization.data(withJSONObject: seed)
             do {
-                let record = try repo.insertTemplate(rawJSON: templateJSON)
+                let record = try templateRepo.insertTemplate(rawJSON: templateJSON)
                 print("[RAID] Template bootstrapped: \(record.club) hash=\(record.hash.prefix(12))…")
+
+                // Ensure preference row exists for this template
+                try prefsRepo.ensurePreferenceExists(forHash: record.hash, club: record.club)
+
+                // Set as active if no active template exists for this club
+                let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: record.club)
+                if activeTemplate == nil {
+                    try prefsRepo.setActive(templateHash: record.hash, club: record.club)
+                    print("[RAID] Set \(record.club) as active (first template for club)")
+                }
             } catch {
                 // Expected on subsequent launches (PK constraint on template_hash).
                 // Also handles any other non-fatal error.
