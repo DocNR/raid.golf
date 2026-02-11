@@ -1,7 +1,7 @@
 // ScoreEntryView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Scorecard: Hole-by-hole score entry.
+// Hole-by-hole score entry.
 // Thin rendering shell — all state and persistence lives in ActiveRoundStore.
 
 import SwiftUI

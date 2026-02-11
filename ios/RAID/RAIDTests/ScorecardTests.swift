@@ -1,5 +1,5 @@
 // ScorecardTests.swift
-// RAID Golf - Scorecard v0 Tests
+// Gambit Golf
 //
 // Tests for scorecard domain (kernel-adjacent):
 // - Schema immutability (5 tables × UPDATE/DELETE)

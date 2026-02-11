@@ -1,5 +1,5 @@
 // Session.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
 // Purpose:
 // - Model for practice sessions (authoritative, immutable)

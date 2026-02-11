@@ -1,5 +1,5 @@
 // ActiveRoundStore.swift
-// RAID Golf - Scorecard v0
+// Gambit Golf
 //
 // Long-lived view model for active round scoring state.
 // Owns holes, scores, navigation index, and persistence logic.
@@ -131,7 +131,7 @@ class ActiveRoundStore {
             try roundRepo.completeRound(roundId: roundId)
             dismiss()
         } catch {
-            print("[RAID] Failed to complete round: \(error)")
+            print("[Gambit] Failed to complete round: \(error)")
             isCompleting = false
         }
     }
@@ -168,7 +168,7 @@ class ActiveRoundStore {
             let input = HoleScoreInput(holeNumber: hole.holeNumber, strokes: strokes)
             _ = try scoreRepo.recordScore(roundId: roundId, score: input)
         } catch {
-            print("[RAID] Failed to save score: \(error)")
+            print("[Gambit] Failed to save score: \(error)")
         }
     }
 
@@ -202,7 +202,7 @@ class ActiveRoundStore {
 
             isLoaded = true
         } catch {
-            print("[RAID] Failed to load round data: \(error)")
+            print("[Gambit] Failed to load round data: \(error)")
         }
     }
 }

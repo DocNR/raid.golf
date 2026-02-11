@@ -1,7 +1,7 @@
 // RapsodoIngest.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 3.1: CSV Parsing and Session Ingest
+// CSV Parsing and Session Ingest
 //
 // Purpose:
 // - Parse Rapsodo MLM2 Pro CSV exports

@@ -1,7 +1,7 @@
 // BootstrapTests.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 5
+// Template Bootstrap Tests
 //
 // Purpose:
 // - Validate seed template bootstrap with preference initialization

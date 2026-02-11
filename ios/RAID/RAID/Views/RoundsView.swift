@@ -1,7 +1,7 @@
 // RoundsView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Scorecard: Rounds list view.
+// Rounds list view.
 // Owns ActiveRoundStore so scoring state survives view recreation.
 
 import SwiftUI
@@ -133,7 +133,7 @@ struct RoundsView: View {
             let repo = RoundRepository(dbQueue: dbQueue)
             rounds = try repo.listRounds()
         } catch {
-            print("[RAID] Failed to load rounds: \(error)")
+            print("[Gambit] Failed to load rounds: \(error)")
         }
     }
 
@@ -155,7 +155,7 @@ struct RoundsView: View {
                 )
             }
         } catch {
-            print("[RAID] Failed to fetch courseHash: \(error)")
+            print("[Gambit] Failed to fetch courseHash: \(error)")
             return nil
         }
     }

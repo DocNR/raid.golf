@@ -1,5 +1,5 @@
 // ClubSubsession.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
 // Purpose:
 // - Model for club-specific subsessions within a practice session

@@ -1,7 +1,7 @@
 // ContentView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 4C: TabView navigation (Trends + Sessions + Rounds)
+// TabView navigation (Trends + Sessions + Rounds)
 
 import SwiftUI
 import GRDB

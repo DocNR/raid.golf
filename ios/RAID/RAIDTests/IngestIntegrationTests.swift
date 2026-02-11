@@ -1,7 +1,7 @@
 // IngestIntegrationTests.swift
-// RAID Golf - iOS Port - Phase 4A Integration Tests
+// Gambit Golf
 //
-// Phase 4A: Data Confidence Harness
+// Ingest Integration Tests
 //
 // Purpose:
 // - Prove end-to-end pipeline correctness

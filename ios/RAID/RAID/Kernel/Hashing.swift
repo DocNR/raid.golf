@@ -1,7 +1,7 @@
 // Hashing.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 2.2: SHA-256 Content-Addressed Hashing
+// SHA-256 Content-Addressed Hashing
 //
 // Purpose:
 // - Formula: hash = SHA-256(UTF-8(JCS(json)))

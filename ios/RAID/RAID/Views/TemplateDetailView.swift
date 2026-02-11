@@ -1,7 +1,7 @@
 // TemplateDetailView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 4
+// Template detail + preferences
 //
 // Purpose:
 // - Detail view for a single template
@@ -263,7 +263,7 @@ struct TemplateDetailView: View {
             preference = fetchedPreference
             kpiTemplate = fetchedKPI
         } catch {
-            print("[RAID] Failed to load template: \(error)")
+            print("[Gambit] Failed to load template: \(error)")
         }
     }
 
@@ -277,7 +277,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[RAID] Failed to set active: \(error)")
+            print("[Gambit] Failed to set active: \(error)")
         }
     }
 
@@ -298,7 +298,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[RAID] Failed to save display name: \(error)")
+            print("[Gambit] Failed to save display name: \(error)")
         }
     }
 
@@ -317,7 +317,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[RAID] Failed to toggle hidden: \(error)")
+            print("[Gambit] Failed to toggle hidden: \(error)")
         }
     }
 }

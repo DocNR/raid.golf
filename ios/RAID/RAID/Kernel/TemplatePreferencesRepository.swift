@@ -1,7 +1,7 @@
 // TemplatePreferencesRepository.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 2
+// Template Preferences (non-kernel product layer)
 //
 // Purpose:
 // - Manage mutable preferences for KPI templates

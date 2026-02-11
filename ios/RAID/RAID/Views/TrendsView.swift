@@ -1,7 +1,7 @@
 // TrendsView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 4B: Trends v1 (minimal UI)
+// Trends view
 // Phase 4C: Empty state keyed on session count
 
 import SwiftUI

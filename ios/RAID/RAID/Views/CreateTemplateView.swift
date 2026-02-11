@@ -1,7 +1,7 @@
 // CreateTemplateView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 6
+// Create / duplicate template
 //
 // Purpose:
 // - Form for creating new KPI templates or duplicating existing ones

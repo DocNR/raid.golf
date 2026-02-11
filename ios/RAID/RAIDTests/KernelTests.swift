@@ -1,7 +1,7 @@
 // KernelTests.swift
-// RAID Golf - iOS Port - Kernel Test Harness
+// Gambit Golf
 //
-// Phase 2: Kernel Harness Tests
+// Kernel Harness Tests
 //
 // Purpose:
 // - Validate Swift kernel implementation against Python reference

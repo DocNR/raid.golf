@@ -1,7 +1,7 @@
 // ShotClassifier.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 3.2: Pure Shot Classification Logic
+// Pure Shot Classification Logic
 //
 // Purpose:
 // - Pure function: shots × template → classifications

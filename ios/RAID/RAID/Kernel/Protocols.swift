@@ -1,7 +1,7 @@
 // Protocols.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 2.4: Kernel Protocols for Dependency Injection
+// Kernel Protocols for Dependency Injection
 //
 // Purpose:
 // - Enable behavioral testing of repository without global state

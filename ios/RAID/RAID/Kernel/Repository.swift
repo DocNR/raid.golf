@@ -1,7 +1,7 @@
 // Repository.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 2.4: Data Access Layer
+// Data Access Layer
 //
 // Purpose:
 // - Insert path: canonicalize → hash → store (hash computed once)

@@ -1,7 +1,7 @@
 // KPITemplate.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 3: Typed KPI Template Model
+// Typed KPI Template Model
 //
 // Purpose:
 // - Strongly-typed representation of KPI template for classification

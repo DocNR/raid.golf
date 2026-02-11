@@ -1,8 +1,7 @@
 // Schema.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 2.3: SQLite Schema + Immutability Triggers
-// Phase 2.3b: Shots Table (v2_add_shots migration)
+// SQLite Schema + Immutability Triggers
 // Scorecard v0: course_snapshots, course_holes, rounds, round_events, hole_scores
 //
 // Purpose:

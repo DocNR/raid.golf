@@ -1,7 +1,7 @@
 // CreateRoundView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Scorecard: Create new round form
+// Create new round form
 
 import SwiftUI
 import GRDB

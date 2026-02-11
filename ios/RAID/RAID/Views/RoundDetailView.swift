@@ -1,7 +1,7 @@
 // RoundDetailView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Scorecard: Completed round scorecard display
+// Completed round scorecard display
 
 import SwiftUI
 import GRDB
@@ -156,7 +156,7 @@ struct RoundDetailView: View {
                 scores[score.holeNumber] = score.strokes
             }
         } catch {
-            print("[RAID] Failed to load round detail: \(error)")
+            print("[Gambit] Failed to load round detail: \(error)")
         }
     }
 }

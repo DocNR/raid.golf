@@ -1,7 +1,7 @@
 // TemplateListView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 3
+// Template Library (4th tab)
 //
 // Purpose:
 // - List view showing all non-hidden templates grouped by club
@@ -98,7 +98,7 @@ struct TemplateListView: View {
             templates = fetchedTemplates
             preferences = fetchedPreferences
         } catch {
-            print("[RAID] Failed to load templates: \(error)")
+            print("[Gambit] Failed to load templates: \(error)")
         }
     }
 }

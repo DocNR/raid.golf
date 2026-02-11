@@ -1,7 +1,7 @@
 // PracticeSummaryView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// KPI Template UX Sprint - Task 8
+// Session detail view with persisted analysis
 //
 // Purpose:
 // - Display session summary using persisted analyses from club_subsessions
@@ -239,7 +239,7 @@ struct PracticeSummaryView: View {
                 await loadSession()
 
             } catch {
-                print("[RAID] Analysis failed: \(error)")
+                print("[Gambit] Analysis failed: \(error)")
                 isAnalyzing = false
             }
         }

@@ -1,7 +1,7 @@
 // Canonical.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 2.1: RAID Canonical JSON v1 (canonicaljson-compatible)
+// RAID Canonical JSON v1 (canonicaljson-compatible)
 //
 // Purpose:
 // - Match Python `canonicaljson` library output byte-for-byte

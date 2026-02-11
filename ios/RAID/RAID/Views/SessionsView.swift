@@ -1,7 +1,7 @@
 // SessionsView.swift
-// RAID Golf - iOS Port
+// Gambit Golf
 //
-// Phase 4C: Sessions list + CSV import
+// Sessions list + CSV import
 
 import SwiftUI
 import GRDB
@@ -108,7 +108,7 @@ struct SessionsView: View {
             let repo = SessionRepository(dbQueue: dbQueue)
             sessions = try repo.listSessions()
         } catch {
-            print("[RAID] Failed to load sessions: \(error)")
+            print("[Gambit] Failed to load sessions: \(error)")
         }
     }
 
@@ -180,7 +180,7 @@ struct SessionsView: View {
                 )
             }
         } catch {
-            print("[RAID] Post-import analysis failed: \(error)")
+            print("[Gambit] Post-import analysis failed: \(error)")
         }
     }
 
