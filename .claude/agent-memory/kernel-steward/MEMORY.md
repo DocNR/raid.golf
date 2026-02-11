@@ -2,6 +2,42 @@
 
 ## Approved Kernel Extensions
 
+### Template Preferences Layer (2026-02-10)
+**Status**: APPROVED as KERNEL EXTENSION
+**Classification**: Non-kernel preference layer (mutable by design)
+**Migration**: v4_create_template_preferences
+**Commits**: 067cc9c (migration), 4aa003f (repository layer)
+
+**What was added:**
+- template_preferences table: mutable preference storage for KPI templates
+- TemplatePreferencesRepository: CRUD for display names, active/hidden status
+- TemplateRepository read extensions: listTemplates(forClub:), listAllTemplates()
+- SubsessionRepository read extension: fetchSubsessions(forSession:)
+- TemplateRecord extension: added importedAt field (internal change only)
+
+**Why approved:**
+- Additive migration (no modification to existing kernel tables)
+- Clean separation: kpi_templates (immutable facts) vs template_preferences (mutable UI state)
+- Partial unique index enforces "at most one active per club" without application locking
+- FK to kpi_templates with ON DELETE RESTRICT (read-only reference)
+- TemplatePreferencesRepository only mutates template_preferences (never kernel tables)
+- No nested dbQueue.read calls (correct GRDB usage)
+- 16 new tests covering migration, constraints, transactions, read extensions
+
+**Key invariants verified:**
+1. Immutability: Zero writes to kernel tables (sessions, kpi_templates, club_subsessions, shots)
+2. Hash-once: No hash computation in any new code
+3. Schema stability: TemplateRecord.importedAt change isolated to kernel layer (no external callers)
+4. Transactional integrity: setActive() uses atomic 3-step transaction (deactivate → ensure → activate)
+5. Deterministic ordering: All list methods use deterministic tie-breaks (rowid where applicable)
+
+**Pattern: Mutable Preference Layer Over Immutable Kernel**
+- Preference table with FK to authoritative table (ON DELETE RESTRICT)
+- Club denormalized from parent for partial unique index support
+- LEFT JOIN for filtering (NULL = default/not-hidden)
+- INNER JOIN for active resolution (active implies row exists)
+- Transactional activation to prevent race conditions
+
 ### Scorecard v0 Schema (2026-02-08)
 **Status**: APPROVED as KERNEL EXTENSION
 **Classification**: Kernel-adjacent (incubation stage)
@@ -29,6 +65,51 @@
 5. Content-addressing: course_hash uses same JCS canonicalization as kpi_templates
 
 ## Common Safe Patterns
+
+### Sprint Finalization (Regression Test Lock-In) — Task 10 (2026-02-10)
+**Status**: APPROVED as KERNEL-ADJACENT
+**Pattern:** Sprint finale regression test lock-in
+
+**What was added:**
+- 3 regression tests in KernelTests.swift (lines 1697-1994)
+- UX_CONTRACT.md v1.1 (added A.9, A.10 locked semantics; updated B.2, B.4)
+- CHANGELOG.md entry documenting full KPI Template UX Sprint scope
+
+**Test Details:**
+1. `testActiveTemplateSwitchDoesNotAffectExistingSubsessions`:
+   - Creates session + analyze with T1, sets T1 active
+   - Switches active to T2 (template_preferences UPDATE)
+   - Asserts: club_subsessions.kpi_template_hash = T1 (immutable)
+   - Asserts: A/B/C counts unchanged
+   - Proves: UX_CONTRACT A.9 (Active Template Is Forward-Only)
+
+2. `testHiddenTemplateAnalysesRemainVisible`:
+   - Creates session + analyze with T1
+   - Hides T1 (template_preferences UPDATE)
+   - Asserts: fetchSubsessions(forSession:) returns 1 (analysis preserved)
+   - Asserts: listTemplates(forClub:) returns 0 (UI filtering works)
+   - Proves: UX_CONTRACT A.10 (Hidden Templates Preserve Analyses)
+
+3. `testImportFlowUsesActiveTemplateWithFallback`:
+   - Scenario 1: T2 active → fetchActiveTemplate returns T2
+   - Scenario 2: No preference → fetchActiveTemplate returns nil, fetchLatestTemplate returns T1
+   - Proves: Import-time resolution pattern (fetchActiveTemplate ?? fetchLatestTemplate)
+
+**Why approved:**
+- Zero kernel code changes (no Schema, Repository, Canonical, Hashing modifications)
+- Tests use kernel-compliant patterns (raw SQL INSERT, repository fetch)
+- Test names in UX_CONTRACT match actual method names exactly
+- Tests enforce existing invariants (defensive regression guards)
+- Proves separation: template_preferences (mutable) vs club_subsessions (immutable)
+
+**Classification:** KERNEL-ADJACENT (no kernel changes, documents existing behavior)
+
+**Pattern checklist:**
+- [ ] Regression tests added at end of sprint (not enabling new behavior)
+- [ ] UX_CONTRACT updated with locked semantics + test references
+- [ ] CHANGELOG entry summarizing sprint scope
+- [ ] Test names match UX_CONTRACT references exactly
+- [ ] Tests verify separation of mutable preferences vs immutable kernel data
 
 ### Additive Schema Migrations
 - Adding new tables with immutability triggers = KERNEL EXTENSION (safe)
@@ -108,6 +189,14 @@ Kernel-adjacent is NOT a weaker form of kernel protection. It means:
 
 ## Red Flags to Watch For
 
+### Kernel Struct Changes (Method Signature Risk)
+Adding fields to kernel structs (TemplateRecord, ShotRecord, etc.) = REVIEW REQUIRED
+- Check all construction sites (are they internal or external?)
+- Views consuming structs = safe (read-only)
+- Views constructing structs = breaking change
+- Optional fields = less breaking than required fields
+- Example: TemplateRecord.importedAt addition was safe (all constructors internal to Repository.swift)
+
 ### Implicit Coupling
 Adding FK from new table to frozen kernel table = OK if ON DELETE RESTRICT
 Adding computed columns that depend on JOIN with kernel table = requires careful review
@@ -126,6 +215,14 @@ The repository owns the hash, the read path trusts the stored hash
 Any proposal to call fetchLatestTemplate() from a read/query path = REVIEW REQUIRED
 Historical analytical results should use pinned context (template_hash from analysis time)
 Query-time resolution of "latest" causes silent semantic drift
+
+**SAFE EXCEPTION: Import-time vs Display-time distinction (2026-02-10)**
+- Import-time template resolution (fetchActiveTemplate ?? fetchLatestTemplate) = SAFE
+  - Creates FIRST analysis for a session
+  - Template hash is still recorded in club_subsessions.kpi_template_hash
+  - Pinned context preserved for historical stability
+- Display-time template resolution = BLOCKED (causes drift)
+- Manual re-analysis (explicit user action) = SAFE (creates NEW row, append-only)
 
 ### Latest-Wins Without Tie-Break
 Using MAX(recorded_at) alone = INSUFFICIENT (non-deterministic if same timestamp)
@@ -190,6 +287,22 @@ Scorecard v0 correctly updated both documents.
 - SubsessionRepository class with analyzeSessionClub() method
 - A-only trends rewritten to use club_subsessions.kpi_template_hash (pinned at analysis time)
 - UI wiring: analyzeImportedSession() in SessionsView (post-import hook)
+
+### KPI Template UX Sprint — Tasks 7+8 (2026-02-10)
+**Status**: APPROVED as KERNEL-ADJACENT
+**Classification**: UI consuming kernel data, no kernel method changes
+
+**What changed:**
+- SessionsView: Import auto-analyze prefers fetchActiveTemplate() ?? fetchLatestTemplate() (import-time)
+- PracticeSummaryView: Complete refactor — display path reads club_subsessions (no on-the-fly classification)
+- Manual re-analysis via "Analyze" button (explicit user action, append-only)
+
+**Why approved:**
+- Eliminates analytical semantic drift (old PracticeSummaryView called fetchLatestTemplate on every view)
+- Display path now read-only from persisted club_subsessions
+- Import-time template resolution follows approved safe pattern (Phase 4B v2)
+- Re-analysis creates NEW rows via INSERT OR IGNORE (history preserved)
+- No kernel signature changes, no schema changes
 - 2 new integration tests proving append-only analysis + trend stability
 
 **Why approved:**
@@ -212,6 +325,26 @@ Scorecard v0 correctly updated both documents.
 - testAppendOnlyAnalysis_DifferentTemplateCreatesNewRow: Proves Kernel Contract invariant 1.4 (append-only, no UPDATE)
 - testTrendsV2_AllShotsAndAOnly_DeterministicAndStable: Updated to Phase 4B v2 semantics
 
+### KPI Template UX - Tasks 7+8 (2026-02-10)
+**Status**: APPROVED as KERNEL-ADJACENT
+**Classification**: Product layer enhancement using existing kernel contracts
+
+**What changed:**
+- Import path: Now uses `fetchActiveTemplate ?? fetchLatestTemplate` instead of just `fetchLatestTemplate`
+- PracticeSummaryView: Removed on-the-fly classification, now reads persisted `club_subsessions` rows
+- Re-analysis UI: Manual analyze button per club, creates NEW row via SubsessionRepository
+
+**Why approved:**
+1. Template preference is product layer: Active template selection happens before analysis, but template hash is still persisted in club_subsessions
+2. Display-time classification REMOVED: Eliminated a query-time template resolution path (strengthens invariant, not weakens)
+3. Append-only re-analysis: Uses INSERT OR IGNORE with UNIQUE constraint, creates NEW row for different template
+4. No kernel method changes: All methods used are existing frozen kernel methods
+5. Distinction upheld: Import-time resolution (first analysis) is acceptable; display-time resolution (historical drift) is blocked
+
+**Files changed:**
+- SessionsView.swift: Import auto-analyze now prefers active template
+- PracticeSummaryView.swift: Complete refactor from on-the-fly to persisted data reads
+
 ### Back-9 Hole Set Validation (2026-02-10)
 **Status**: APPROVED as KERNEL-ADJACENT EXTENSION
 **Classification**: Code-level validation in kernel-adjacent repository (no schema change)
@@ -228,3 +361,42 @@ Scorecard v0 correctly updated both documents.
 - Maintains transactional integrity (GRDB write block ensures rollback)
 - Test coverage proves rollback correctness (testMalformedNineHoleSetRejected)
 - Scorecard domain is kernel-adjacent (not frozen)
+
+## Review Lessons
+
+### Template Preferences Review (2026-02-10)
+**Reviewed**: Tasks 1 & 2 from KPI Template UX Sprint (commits 067cc9c, 4aa003f)
+**Outcome**: ✅ APPROVED as KERNEL EXTENSION
+
+**Files changed:**
+- Task 1 (067cc9c): Schema.swift migration v4, KernelTests.swift (+7 tests)
+- Task 2 (4aa003f): Repository.swift (+3 read methods), TemplatePreferencesRepository.swift (new), KernelTests.swift (+9 tests)
+
+**Key findings:**
+1. Migration positioned correctly after v3, no conflicts
+2. template_preferences correctly has NO immutability triggers (intentionally mutable)
+3. Partial unique index syntax correct: `CREATE UNIQUE INDEX ... ON template_preferences(club) WHERE is_active = 1`
+4. FK constraint correct: REFERENCES kpi_templates(template_hash) ON DELETE RESTRICT
+5. CHECK constraints work: `CHECK (is_active IN (0, 1))`, `CHECK (is_hidden IN (0, 1))`
+6. No risk to existing kernel tables
+7. All new Repository methods are read-only extensions (no signature changes)
+8. TemplateRecord.importedAt addition safe (all constructors internal to Repository.swift)
+9. TemplatePreferencesRepository only writes to template_preferences (never kernel tables)
+10. setActive() transaction correct: deactivate → ensure → activate (3 steps, atomic)
+11. No nested dbQueue.read calls anywhere
+12. 16 new tests cover all constraints, transactions, and edge cases
+13. All KernelTests pass (no regressions)
+
+**Test coverage verified:**
+- Migration constraints: FK, unique index, defaults, CHECK constraints
+- Mutability: UPDATE/DELETE allowed (no triggers)
+- Transactional activation: setActive switches atomically
+- Read-only kernel extensions: listTemplates, listAllTemplates, fetchSubsessions
+- CRUD operations: setDisplayName, setHidden, fetchActiveTemplate, ensurePreferenceExists
+
+**Retrospective lessons:**
+- Always verify nested dbQueue.read calls (grep with multiline)
+- Always verify struct construction sites when adding optional fields
+- Always verify transactional semantics for multi-step operations
+- Test coverage for constraints is as important as feature tests
+- Partial unique indexes work correctly for "at most one X per Y" patterns

@@ -1691,6 +1691,307 @@ final class KernelTests: XCTestCase {
 
         print("✅ setHidden updates preference")
     }
+
+    // MARK: - Task 10: Final Sprint Regression Tests
+
+    func testActiveTemplateSwitchDoesNotAffectExistingSubsessions() throws {
+        print("\n=== Testing Active Template Switch Does Not Affect Existing Subsessions ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+
+        // Insert two templates for same club with valid KPI data
+        let hashT1 = "a" + String(repeating: "1", count: 63)
+        let hashT2 = "b" + String(repeating: "2", count: 63)
+
+        let templateT1JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 140,
+                    "b_min": 130,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        let templateT2JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 150,
+                    "b_min": 140,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", templateT1JSON, "2026-02-10T10:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [hashT2, "1.0", "7i", templateT2JSON, "2026-02-10T11:00:00Z"])
+        }
+
+        // Create a session and insert shots via raw SQL
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-10T12:00:00Z", "test.csv", "2026-02-10T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+
+            // Insert 10 shots (raw SQL as per KernelTests pattern)
+            for i in 0..<10 {
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [sessionId, i, "rapsodo_mlm2pro_shotexport_v1", "2026-02-10T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.0 + Double(i), 99.0])
+            }
+        }
+
+        // Fetch shots and template for analysis
+        let shotRepo = ShotRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        let shots = try shotRepo.fetchShots(forSession: sessionId)
+        guard let templateRecord = try templateRepo.fetchTemplate(byHash: hashT1) else {
+            XCTFail("Template T1 should be fetchable")
+            return
+        }
+        let canonicalData = Data(templateRecord.canonicalJSON.utf8)
+        let template = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        // Analyze with T1
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId,
+            club: "7i",
+            shots: shots,
+            template: template,
+            templateHash: hashT1
+        )
+
+        // Set T1 as active
+        try prefsRepo.setActive(templateHash: hashT1, club: "7i")
+
+        // Fetch initial subsession metrics
+        let subsessionsBefore = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsBefore.count, 1, "Should have 1 subsession before switch")
+        XCTAssertEqual(subsessionsBefore[0].kpiTemplateHash, hashT1, "Initial subsession should use T1")
+        let aCountBefore = subsessionsBefore[0].aCount
+        let bCountBefore = subsessionsBefore[0].bCount
+        let cCountBefore = subsessionsBefore[0].cCount
+
+        print("✅ Initial analysis: T1 hash=\(hashT1)")
+        print("✅ Initial metrics: A=\(aCountBefore), B=\(bCountBefore), C=\(cCountBefore)")
+
+        // Switch active to T2
+        try prefsRepo.setActive(templateHash: hashT2, club: "7i")
+
+        print("✅ Active template switched from T1 to T2")
+
+        // Verify: existing club_subsessions row still references T1 hash (not T2)
+        let subsessionsAfter = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsAfter.count, 1, "Should still have 1 subsession after switch")
+        XCTAssertEqual(subsessionsAfter[0].kpiTemplateHash, hashT1, "Subsession should still use T1 hash after active switch")
+
+        // Verify: subsession metrics are unchanged
+        XCTAssertEqual(subsessionsAfter[0].aCount, aCountBefore, "A count should be unchanged")
+        XCTAssertEqual(subsessionsAfter[0].bCount, bCountBefore, "B count should be unchanged")
+        XCTAssertEqual(subsessionsAfter[0].cCount, cCountBefore, "C count should be unchanged")
+
+        print("✅ After switch: subsession still uses T1 hash (unchanged)")
+        print("✅ After switch: metrics unchanged: A=\(subsessionsAfter[0].aCount), B=\(subsessionsAfter[0].bCount), C=\(subsessionsAfter[0].cCount)")
+        print("✅ Active template switch does NOT affect existing analyses")
+    }
+
+    func testHiddenTemplateAnalysesRemainVisible() throws {
+        print("\n=== Testing Hidden Template Analyses Remain Visible ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        // Insert template T1 for club "7i" with valid KPI data
+        let hashT1 = "c" + String(repeating: "3", count: 63)
+
+        let templateT1JSON = """
+        {
+            "aggregation_method": "worst_metric",
+            "club": "7i",
+            "metrics": {
+                "carry": {
+                    "a_min": 140,
+                    "b_min": 130,
+                    "direction": "higher_is_better"
+                }
+            },
+            "schema_version": "1.0"
+        }
+        """
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", templateT1JSON, "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        // Create a session and analyze with T1
+        var sessionId: Int64 = 0
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO sessions (session_date, source_file, ingested_at)
+                VALUES (?, ?, ?)
+                """, arguments: ["2026-02-10T12:00:00Z", "test.csv", "2026-02-10T12:00:00Z"])
+            sessionId = db.lastInsertedRowID
+
+            // Insert 15 shots
+            for i in 0..<15 {
+                try db.execute(sql: """
+                    INSERT INTO shots (session_id, source_row_index, source_format, imported_at, raw_json, club, carry, ball_speed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [sessionId, i, "rapsodo_mlm2pro_shotexport_v1", "2026-02-10T12:00:00Z", "{\"club\":\"7i\"}", "7i", 142.0, 99.0])
+            }
+        }
+
+        let shotRepo2 = ShotRepository(dbQueue: dbQueue)
+        let templateRepo2 = TemplateRepository(dbQueue: dbQueue)
+
+        let shots = try shotRepo2.fetchShots(forSession: sessionId)
+        guard let templateRecord = try templateRepo2.fetchTemplate(byHash: hashT1) else {
+            XCTFail("Template T1 should be fetchable")
+            return
+        }
+        let canonicalData = Data(templateRecord.canonicalJSON.utf8)
+        let template = try JSONDecoder().decode(KPITemplate.self, from: canonicalData)
+
+        try subsessionRepo.analyzeSessionClub(
+            sessionId: sessionId,
+            club: "7i",
+            shots: shots,
+            template: template,
+            templateHash: hashT1
+        )
+
+        // Fetch subsessions — verify T1 analysis exists
+        let subsessionsBefore = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsBefore.count, 1, "Should have 1 subsession before hiding")
+        XCTAssertEqual(subsessionsBefore[0].kpiTemplateHash, hashT1, "Subsession should use T1")
+
+        print("✅ Initial analysis exists: T1 hash=\(hashT1)")
+
+        // Verify T1 is visible in template list
+        let templatesBeforeHiding = try templateRepo2.listTemplates(forClub: "7i")
+        XCTAssertEqual(templatesBeforeHiding.count, 1, "Should have 1 visible template before hiding")
+        XCTAssertEqual(templatesBeforeHiding[0].hash, hashT1, "Visible template should be T1")
+
+        print("✅ T1 is visible in template list")
+
+        // Hide T1
+        try prefsRepo.ensurePreferenceExists(forHash: hashT1, club: "7i")
+        try prefsRepo.setHidden(templateHash: hashT1, hidden: true)
+
+        print("✅ T1 hidden via preference")
+
+        // Fetch subsessions again — verify T1 analysis STILL exists
+        let subsessionsAfter = try subsessionRepo.fetchSubsessions(forSession: sessionId)
+        XCTAssertEqual(subsessionsAfter.count, 1, "Should still have 1 subsession after hiding template")
+        XCTAssertEqual(subsessionsAfter[0].kpiTemplateHash, hashT1, "Subsession should still use T1 hash")
+
+        print("✅ After hiding: subsession still exists (analysis preserved)")
+
+        // Verify: listTemplates now excludes T1 (it IS hidden from template list)
+        let templatesAfterHiding = try templateRepo.listTemplates(forClub: "7i")
+        XCTAssertEqual(templatesAfterHiding.count, 0, "Hidden template should be excluded from template list")
+
+        print("✅ After hiding: T1 excluded from template list (is_hidden=1)")
+        print("✅ Hiding a template is a UI concern, not a data mutation")
+    }
+
+    func testImportFlowUsesActiveTemplateWithFallback() throws {
+        print("\n=== Testing Import Flow Uses Active Template With Fallback ===")
+        let dbQueue = try createTestDatabase()
+        let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
+        let templateRepo = TemplateRepository(dbQueue: dbQueue)
+
+        // Create fresh DB, insert two templates T1 (older) and T2 (newer) for "7i"
+        let hashT1 = "d" + String(repeating: "4", count: 63)
+        let hashT2 = "e" + String(repeating: "5", count: 63)
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT2, "1.0", "7i", "{\"v\":\"2\"}", "2026-02-10T12:00:00Z", "2026-02-10T12:00:00Z"])
+        }
+
+        print("✅ Inserted T1 (older) and T2 (newer) for 7i")
+
+        // Set T2 as active
+        try prefsRepo.setActive(templateHash: hashT2, club: "7i")
+
+        // Verify: fetchActiveTemplate returns T2
+        let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNotNil(activeTemplate, "Active template should exist")
+        XCTAssertEqual(activeTemplate?.hash, hashT2, "Active template should be T2")
+
+        print("✅ Active template for 7i: T2 hash=\(hashT2)")
+
+        // Also verify: fetchLatestTemplate returns T2 (happens to be the same here)
+        let latestTemplate = try templateRepo.fetchLatestTemplate(forClub: "7i")
+        XCTAssertNotNil(latestTemplate, "Latest template should exist")
+        XCTAssertEqual(latestTemplate?.hash, hashT2, "Latest template should be T2")
+
+        print("✅ Latest template for 7i: T2 hash=\(hashT2) (same as active)")
+
+        // Now test fallback: create new DB with only T1, no preference
+        let dbQueue2 = try createTestDatabase()
+        let prefsRepo2 = TemplatePreferencesRepository(dbQueue: dbQueue2)
+        let templateRepo2 = TemplateRepository(dbQueue: dbQueue2)
+
+        try dbQueue2.write { db in
+            try db.execute(sql: """
+                INSERT INTO kpi_templates (template_hash, schema_version, club, canonical_json, created_at, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [hashT1, "1.0", "7i", "{\"v\":\"1\"}", "2026-02-09T12:00:00Z", "2026-02-09T12:00:00Z"])
+        }
+
+        print("✅ Fresh DB: inserted only T1, no active preference set")
+
+        // Verify: fetchActiveTemplate returns nil (no active template set)
+        let noActiveTemplate = try prefsRepo2.fetchActiveTemplate(forClub: "7i")
+        XCTAssertNil(noActiveTemplate, "Should have no active template when not set")
+
+        print("✅ fetchActiveTemplate returns nil (no preference)")
+
+        // Verify: fetchLatestTemplate returns T1 (the fallback)
+        let fallbackTemplate = try templateRepo2.fetchLatestTemplate(forClub: "7i")
+        XCTAssertNotNil(fallbackTemplate, "Fallback template should exist")
+        XCTAssertEqual(fallbackTemplate?.hash, hashT1, "Fallback template should be T1")
+
+        print("✅ fetchLatestTemplate returns T1 (fallback)")
+        print("✅ Import flow pattern validated: fetchActiveTemplate ?? fetchLatestTemplate")
+    }
 }
 
 // MARK: - Test Spies

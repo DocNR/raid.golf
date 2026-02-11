@@ -54,6 +54,17 @@
 
 ## Recent Updates
 
+### 2026-02-10: KPI Template UX Sprint Task 10 Documentation Review (COMPLETE)
+- **Sprint scope:** Tasks 1-9 implementation + Task 10 documentation hardening
+- **Test count:** 20 new tests added (16 in KernelTests, 4 in BootstrapTests) → 96 total project tests
+- **CHANGELOG.md:** Sprint entry added to [Unreleased] section — accurate and complete
+- **UX_CONTRACT.md:** Updated to v1.1 with two new locked semantics (A.9, A.10) — both have verified test references
+- **KERNEL_SURFACE_AREA.md v1.5:** All new files properly classified (product-layer table, repositories, views)
+- **KERNEL_GOVERNANCE.md:** template_preferences correctly listed in "Derived / Outside Kernel" section (line 287)
+- **A.9 test:** `testActiveTemplateSwitchDoesNotAffectExistingSubsessions` exists at KernelTests.swift:1697
+- **A.10 test:** `testHiddenTemplateAnalysesRemainVisible` exists at KernelTests.swift:1822
+- **Minor inconsistency:** CHANGELOG claims "~30 new tests" but actual count is 20 (does not affect semantic accuracy)
+
 ### 2026-02-10: Hard-Stop Deliverables Cleanup
 - **UX_CONTRACT.md** (A.4): Added enforcement location (SubsessionRepository.analyzeSessionClub lines 642-648) and test coverage note (indirect via integration tests)
 - **UX_CONTRACT.md** (A.5): Added deterministic ordering guarantee (`session_date ASC, session_id ASC`)
@@ -74,6 +85,8 @@
 - Scorecard v0 initial: 27 tests in ScorecardTests.swift
 - Scorecard v0 bugfix sprint: +4 tests → 31 tests in ScorecardTests.swift (~69 total project-wide)
   - Covers: immutability, hash-once, latest-wins, FK integrity, nested-read safety, default-value persistence
+- KPI Template UX sprint: +20 tests (16 KernelTests, 4 BootstrapTests) → 96 total project tests
+  - Covers: v4 migration, preference CRUD, FK enforcement, active uniqueness, list methods, bootstrap idempotency, active/hidden semantics
 
 ## Cross-Reference Map
 

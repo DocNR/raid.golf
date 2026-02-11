@@ -1,7 +1,7 @@
 # UX Contract -- RAID Analytical Semantics (Private)
 
-**Version:** 1.0 (as of 2026-02-09)
-**Status:** Frozen pending review before KPI Template UX sprint
+**Version:** 1.1 (as of 2026-02-10)
+**Status:** Updated after KPI Template UX sprint
 **Applies to:** Trends, classification, scorecard, and analysis features
 **Companion:** `KERNEL_CONTRACT_v2.md` (integrity layer)
 
@@ -59,6 +59,18 @@
 - Scorecard tables: `course_snapshots`, `course_holes`, `rounds`, `round_events`, `hole_scores`
 - **Tests:** KernelTests (4 tables) + ScorecardTests (5 tables)
 
+### A.9 Active Template Is Forward-Only
+- Setting a template as "active" affects only FUTURE imports
+- Existing `club_subsessions` rows are NOT retroactively changed
+- UI copy: "Used for new imports only. Past sessions are not affected."
+- **Tests:** `testActiveTemplateSwitchDoesNotAffectExistingSubsessions` (KernelTests)
+
+### A.10 Hidden Templates Preserve Analyses
+- Hiding a template excludes it from template list and pickers
+- Existing `club_subsessions` analyses for hidden templates remain visible and queryable
+- Hiding is a UI preference, not a data mutation
+- **Tests:** `testHiddenTemplateAnalysesRemainVisible` (KernelTests)
+
 ---
 
 ## B) Non-Decisions (Explicitly Deferred)
@@ -70,17 +82,20 @@
 - Individual template identity (name + short hash) per analysis is displayed in session detail
 
 ### B.2 Multi-Template Trend Filtering
-- A-only chart currently mixes points from different template versions
-- No per-template filtering or version comparison UI yet
-- Template identity per point is persisted and available for future filtering
+- A-only section now supports template filtering: All / Active Only / Specific hash
+- Filtering is in-memory (no repository changes)
+- allShots section is NEVER filtered (no template concept)
+- Per-template version comparison UI is deferred
 
 ### B.3 Subsession Lifecycle Management
 - No mechanism to archive or soft-delete stale analysis rows
 - Append-only semantics mean old analyses accumulate; this is by design
 
 ### B.4 Template Versioning Display
-- Template identity (name + short hash) is available in `club_subsessions.kpi_template_hash`
-- Basic visibility of which template was used may be added in the template UX sprint
+- Template identity (name + short hash) is displayed in:
+  - Template Library list and detail views
+  - Session detail (PracticeSummaryView) per analysis card
+  - Trends template picker
 - Advanced version diffing or migration tooling is deferred
 
 ### B.5 Back-9 Starting Hole
