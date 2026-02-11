@@ -26,6 +26,9 @@ data/templates/*.xlsx
 # Private planning docs
 docs/private/
 
+# Claude Code agent scratch space
+ios/RAID/.claude/
+
 # Test databases
 test_cli.db
 *.db
