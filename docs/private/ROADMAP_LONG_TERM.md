@@ -91,7 +91,7 @@ See: `docs/private/kernel/KERNEL_CONTRACT.md`
 - Handicaps
 - Competition formats
 - Economic incentives
-- Production hardening (Milestone C — next)
+- Production hardening (iOS Phase 5 — next)
 
 This roadmap defines how those layers are added **without breaking Phase 0**.
 
@@ -99,7 +99,7 @@ This roadmap defines how those layers are added **without breaking Phase 0**.
 
 ## Milestone 1 — Productization (Analytics App) ✅ FEATURE-COMPLETE
 
-> Status updated 2026-02-10. Feature work done; production hardening (Milestone C) pending.
+> Status updated 2026-02-10. Feature work done; production hardening (Phase 5) pending.
 
 **Goal:** Replace scripts and spreadsheets with a usable application.
 
@@ -110,6 +110,17 @@ This roadmap defines how those layers are added **without breaking Phase 0**.
 - Club-level analytics — ✅ A-only trends with pinned templates
 - A/B/C breakdowns — ✅ Per-session, per-club via club_subsessions
 - Validity indicators — ✅ Shot count thresholds
+
+### Production Hardening (iOS Phase 5)
+Before moving to Milestone 2, the app needs production-readiness work:
+- Release build sanity (archive, physical device, file import permissions)
+- Export/share foundation (session summary JSON, share sheet)
+- Error handling polish (replace silent `try?` with actionable messages)
+- First-run experience (empty states, template explanation, import CTA)
+- UX contract + docs (user-facing README, TestFlight notes, known limitations)
+- Local debug screen (db version, template/session/subsession counts)
+
+See `docs/private/ios-port-plan.md` Phase 5 for execution details.
 
 ### Out of Scope
 - Nostr
@@ -122,25 +133,24 @@ This roadmap defines how those layers are added **without breaking Phase 0**.
 - Uses existing Phase 0 kernel as-is
 
 ### Success Criteria
-- Non-technical users can analyze sessions end-to-end — ✅ (pending Milestone C polish)
-- Spreadsheet workflow fully replaced — ✅ (pending export/share in Milestone C)
+- Non-technical users can analyze sessions end-to-end — ✅ (pending Phase 5 polish)
+- Spreadsheet workflow fully replaced — ✅ (pending export/share in Phase 5)
 
 ---
 
-## Milestone 1.5 — Shot Persistence (Explainability Foundation)
+## Milestone 1.5 — Shot Persistence (Explainability Foundation) ✅ COMPLETE
+
+> Completed as part of iOS port Phase 2.3b + Phase 4C (2026-02-06/07).
 
 **Goal:** Enable explainability and trustworthy trends.
 
 ### New Capabilities
-- Shot-level persistence (append-only)
-- Session ↔ club ↔ shot relationships
-- Per-shot fact storage:
-  - session_id, subsession_id, shot_index
-  - club, raw measured metrics
-  - template_hash used for evaluation
+- Shot-level persistence (append-only) — ✅ `shots` table with immutability triggers
+- Session ↔ club ↔ shot relationships — ✅ FK to sessions, indexed by club
+- Per-shot fact storage — ✅ All 14 normalized metrics + raw_json + provenance fields
 
 ### Constraints
-- Shots are immutable facts
+- Shots are immutable facts — ✅ BEFORE UPDATE/DELETE triggers
 - Corrections occur via append-only annotations
 - Subsessions remain derived views
 - No per-shot UI or replay features yet
@@ -150,14 +160,10 @@ This roadmap defines how those layers are added **without breaking Phase 0**.
 - Adds new fact tables only (additive, non-kernel change)
 
 ### Unlocks
-- Explainable A/B/C distributions
+- Explainable A/B/C distributions — ✅ (via worst_metric classification on shot data)
 - Dominant failure mode identification
 - Template validation with confidence
-- Foundation for trustworthy trends
-
-**Why This Comes Before Trends:**
-Aggregate trends without shot persistence are numerically correct but semantically weak.
-Shot persistence ensures trends are explainable and trustworthy before they are emphasized.
+- Foundation for trustworthy trends — ✅ (A-only trends use shot-level classification)
 
 ---
 

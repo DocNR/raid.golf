@@ -28,7 +28,7 @@
 
 ---
 
-**Current Next Milestone: Milestone C — User Testing Readiness**
+**Current Next Phase: Phase 5 — Production Hardening**
 
 Practice MVP is feature-complete. Phase 4B v2 (analysis-context linkage) and
 Phase 4D (KPI Template UX sprint) are both complete and merged to main.
@@ -40,12 +40,12 @@ session detail with persisted analyses, trends template filtering, and scorecard
 96 unit/integration tests passing. UX Contract v1.1 locked (A.1-A.10).
 
 Focus shifts to production-readiness for user testing:
-- C1: Release build sanity (archive, physical device, file import permissions)
-- C2: Export/share foundation (session summary JSON, share sheet)
-- C3: Error handling polish (replace silent `try?` with actionable messages)
-- C4: First-run experience (empty states, template explanation, import CTA)
-- C5: UX contract + docs (user-facing README, TestFlight notes, known limitations)
-- C6: Local debug screen (db version, template/session/subsession counts)
+- 5.1: Release build sanity (archive, physical device, file import permissions)
+- 5.2: Export/share foundation (session summary JSON, share sheet)
+- 5.3: Error handling polish (replace silent `try?` with actionable messages)
+- 5.4: First-run experience (empty states, template explanation, import CTA)
+- 5.5: UX contract + docs (user-facing README, TestFlight notes, known limitations)
+- 5.6: Local debug screen (db version, template/session/subsession counts)
 
 ---
 
@@ -78,9 +78,11 @@ This matches the Python `canonicaljson` library behavior.
 ## Execution Phases
 
 > **Phase Naming Note**
-> This document uses Phases 1–4 for iOS port / implementation milestones.
-> Product-level phases use 4A / 4B naming (e.g., Phase 4A = Data Confidence).
-> "Phase 4" may refer to different concepts depending on context.
+> This document uses Phases 1–5 for iOS execution milestones.
+> Phases 1–4D cover the kernel port through KPI Template UX.
+> Phase 5 covers production hardening for user testing.
+> Product-level milestones (Milestone 1, 2, 3...) are in `ROADMAP_LONG_TERM.md`.
+> Python implementation phases (A–F) are in `docs/implementation_phases.md`.
 
 ### Phase 1: Project Setup
 
@@ -464,9 +466,9 @@ If pausing, note which phase you're in:
   - Trends template filter (All / Active Only / Specific)
   - Session detail refactor (reads persisted `club_subsessions`)
   - 20 new tests (16 KernelTests, 4 BootstrapTests) — 96 total
-- [ ] **Milestone C: User Testing Readiness** — NEXT
+- [ ] **Phase 5: Production Hardening** — NEXT
 
-Current status: **Practice MVP feature-complete — Next: Milestone C (User Testing Readiness)**
+Current status: **Practice MVP feature-complete — Next: Phase 5 (Production Hardening)**
 
 ### Phase 1 Completion Notes (2026-02-05)
 
