@@ -54,6 +54,15 @@
 
 ## Recent Updates
 
+### 2026-02-12: Phase 5.2 Nostr Login + Round Sharing Documentation (COMPLETE)
+- **CHANGELOG.md:** Added Phase 5.2 entry to [Unreleased] section with full feature detail
+- **Test count:** 8 new RoundShareBuilder tests → 105 total project tests (all passing)
+- **Scope:** Nostr keypair generation (Keychain), kind 1 note publishing, profile view, share actions
+- **Implementation:** rust-nostr-swift v0.44.2 via SPM, fire-and-forget pattern, no kernel changes
+- **NIP-101g status:** Remains deferred (docs/nips/nip101g_round_wip.md unchanged per constraint)
+- **BACKLOG.md:** No changes needed (Phase 5.2 does not affect club normalization B-001)
+- **Agent memory:** Updated test count evolution and recent updates section
+
 ### 2026-02-10: KPI Template UX Sprint Task 10 Documentation Review (COMPLETE)
 - **Sprint scope:** Tasks 1-9 implementation + Task 10 documentation hardening
 - **Test count:** 20 new tests added (16 in KernelTests, 4 in BootstrapTests) → 96 total project tests
@@ -87,6 +96,8 @@
   - Covers: immutability, hash-once, latest-wins, FK integrity, nested-read safety, default-value persistence
 - KPI Template UX sprint: +20 tests (16 KernelTests, 4 BootstrapTests) → 96 total project tests
   - Covers: v4 migration, preference CRUD, FK enforcement, active uniqueness, list methods, bootstrap idempotency, active/hidden semantics
+- Phase 5.2 Nostr sprint: +8 tests (RoundShareBuilderTests) → 105 total project tests
+  - Covers: round summary formatting, par-relative display, highlights (eagles/birdies/bogeys/pars), edge cases (empty round, no highlights)
 
 ## Cross-Reference Map
 

@@ -15,6 +15,11 @@ struct RoundDetailView: View {
     @State private var holes: [CourseHoleRecord] = []
     @State private var scores: [Int: Int] = [:] // holeNumber -> strokes
 
+    // Share state
+    @State private var isPublishing = false
+    @State private var errorMessage: String?
+    @State private var showPublishSuccess = false
+
     var body: some View {
         Group {
             if let course = courseSnapshot {
@@ -24,6 +29,26 @@ struct RoundDetailView: View {
                 ProgressView()
                     .navigationTitle("Scorecard")
             }
+        }
+        .toolbar {
+            if courseSnapshot != nil, !scores.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    shareMenu
+                }
+            }
+        }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .alert("Posted!", isPresented: $showPublishSuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your round has been posted to Nostr.")
         }
         .task { loadData() }
     }
@@ -132,18 +157,89 @@ struct RoundDetailView: View {
         }
     }
 
+    // MARK: - Share
+
+    private var shareMenu: some View {
+        Menu {
+            Button {
+                Task { await publishToNostr() }
+            } label: {
+                Label(isPublishing ? "Posting..." : "Post to Nostr", systemImage: "paperplane")
+            }
+            .disabled(isPublishing)
+
+            Button {
+                copySummary()
+            } label: {
+                Label("Copy Summary", systemImage: "doc.on.doc")
+            }
+        } label: {
+            if isPublishing {
+                ProgressView()
+            } else {
+                Image(systemName: "square.and.arrow.up")
+            }
+        }
+    }
+
+    private func publishToNostr() async {
+        guard let course = courseSnapshot else { return }
+
+        isPublishing = true
+        defer { isPublishing = false }
+
+        do {
+            let keyManager = try KeyManager.loadOrCreate()
+            let text = RoundShareBuilder.noteText(
+                course: course.courseName,
+                tees: course.teeSet,
+                holes: holes,
+                scores: scores
+            )
+            try await NostrClient.publishRoundNote(
+                keys: keyManager.signingKeys(),
+                text: text
+            )
+            showPublishSuccess = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func copySummary() {
+        guard let course = courseSnapshot else { return }
+
+        let text = RoundShareBuilder.summaryText(
+            course: course.courseName,
+            tees: course.teeSet,
+            date: round?.roundDate ?? "",
+            holes: holes,
+            scores: scores
+        )
+        UIPasteboard.general.string = text
+    }
+
+    // MARK: - Data Loading
+
     private func loadData() {
         do {
-            // Fetch courseHash — standalone read, no nesting
-            let courseHashValue = try dbQueue.read { db in
-                try String.fetchOne(
+            // Fetch round record — standalone read, no nesting
+            let fetchedRound = try dbQueue.read { db in
+                try Row.fetchOne(
                     db,
-                    sql: "SELECT course_hash FROM rounds WHERE round_id = ?",
+                    sql: "SELECT round_id, course_hash, round_date, created_at FROM rounds WHERE round_id = ?",
                     arguments: [roundId]
                 )
             }
 
-            guard let courseHash = courseHashValue else { return }
+            guard let row = fetchedRound else { return }
+            let courseHash: String = row["course_hash"]
+            round = RoundRecord(
+                roundId: row["round_id"],
+                courseHash: courseHash,
+                roundDate: row["round_date"],
+                createdAt: row["created_at"]
+            )
 
             // Sequential repo calls — each owns its own dbQueue.read
             let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)

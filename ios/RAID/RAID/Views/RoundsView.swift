@@ -15,6 +15,7 @@ struct RoundsView: View {
     @State private var navigationTarget: NavigationTarget?
     @State private var activeRoundStore: ActiveRoundStore?
     @State private var errorMessage: String?
+    @State private var showNostrProfile = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,13 @@ struct RoundsView: View {
             }
             .navigationTitle("Rounds")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showNostrProfile = true
+                    } label: {
+                        Image(systemName: "person.circle")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingCreateRound = true
@@ -34,6 +42,9 @@ struct RoundsView: View {
                         Label("New Round", systemImage: "plus")
                     }
                 }
+            }
+            .sheet(isPresented: $showNostrProfile) {
+                NostrProfileView()
             }
             .sheet(isPresented: $showingCreateRound) {
                 CreateRoundView(dbQueue: dbQueue) { roundId, courseHash in

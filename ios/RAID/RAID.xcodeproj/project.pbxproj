@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EF52A0032F5200010032E6A0 /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EF52A0022F5200010032E6A0 /* NostrSDK */; };
 		EFB69B842F35690B0032E6A0 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EFB69B832F35690B0032E6A0 /* GRDB */; };
 		EFB69B922F356A060032E6A0 /* .gitkeep in Resources */ = {isa = PBXBuildFile; fileRef = EFB69B902F356A060032E6A0 /* .gitkeep */; };
 		EFB69B932F356A060032E6A0 /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8A2F356A060032E6A0 /* Schema.swift */; };
@@ -73,6 +74,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EFB69B842F35690B0032E6A0 /* GRDB in Frameworks */,
+				EF52A0032F5200010032E6A0 /* NostrSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -178,6 +180,7 @@
 			name = RAID;
 			packageProductDependencies = (
 				EFB69B832F35690B0032E6A0 /* GRDB */,
+				EF52A0022F5200010032E6A0 /* NostrSDK */,
 			);
 			productName = RAID;
 			productReference = EFB69B2A2F3562C10032E6A0 /* RAID.app */;
@@ -263,6 +266,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				EF52A0012F5200010032E6A0 /* XCRemoteSwiftPackageReference "nostr-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EFB69B2B2F3562C10032E6A0 /* Products */;
@@ -639,6 +643,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		EF52A0012F5200010032E6A0 /* XCRemoteSwiftPackageReference "nostr-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/rust-nostr/nostr-sdk-swift.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.44.0;
+			};
+		};
 		EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift.git";
@@ -650,6 +662,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		EF52A0022F5200010032E6A0 /* NostrSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EF52A0012F5200010032E6A0 /* XCRemoteSwiftPackageReference "nostr-sdk-swift" */;
+			productName = NostrSDK;
+		};
 		EFB69B832F35690B0032E6A0 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EFB69B822F35690B0032E6A0 /* XCRemoteSwiftPackageReference "GRDB.swift" */;

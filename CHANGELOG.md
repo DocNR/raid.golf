@@ -31,6 +31,26 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 5.2: Nostr Login + Round Sharing**
+  - Added rust-nostr-swift (NostrSDK v0.44.2) as Swift Package Manager dependency
+  - Auto-generate Nostr keypair on first use, stored securely in iOS Keychain
+  - Fire-and-forget kind 1 note publishing from completed round scorecards
+  - "Post to Nostr" and "Copy Summary" share actions on `RoundDetailView`
+  - `NostrProfileView` sheet with npub display, nsec copy (with confirmation), relay list
+  - Profile button on Rounds tab (person.circle icon, top-right)
+  - Default relay: wss://relay.damus.io
+  - Event tags: `["t","golf"]`, `["t","gambitgolf"]`, `["client","gambit-golf-ios"]`
+  - Round summary format: course name, date, holes, score (with par-relative display), highlights (eagles/birdies/bogeys)
+  - 8 new unit tests in `RoundShareBuilderTests` (105 total project tests, 0 failures)
+  - No kernel changes, no schema changes
+
+- **iOS Phase 5.4: First-Run Experience**
+  - Added one-time welcome sheet (`FirstRunSheetView`) shown on first launch via `@AppStorage("hasSeenFirstRun")`
+  - Welcome sheet explains Practice, Rounds, and Templates with 3-card layout
+  - Enhanced empty state copy in all 4 tabs (Trends, Sessions, Rounds, Templates)
+  - Added action button to Templates empty state for discoverability
+  - Added `BACKLOG.md` with B-001 (club name normalization) and TODO markers in code
+
 - **iOS Phase 5.3: Error Handling Polish**
   - Added user-facing error alerts to 9 error sites across 5 files (user-facing flows only)
   - TemplateDetailView: 4 error sites (loadTemplate, setActive, saveDisplayName, toggleHidden) now show alerts

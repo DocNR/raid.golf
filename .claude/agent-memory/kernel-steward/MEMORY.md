@@ -362,6 +362,35 @@ Scorecard v0 correctly updated both documents.
 - Test coverage proves rollback correctness (testMalformedNineHoleSetRejected)
 - Scorecard domain is kernel-adjacent (not frozen)
 
+### Nostr Round Sharing (2026-02-12)
+**Status**: APPROVED as KERNEL-ADJACENT
+**Classification**: Ephemeral social sharing (output-only, no feedback loop)
+
+**What was added:**
+- Nostr/KeyManager.swift: iOS Keychain-backed nsec storage (no SQLite interaction)
+- Nostr/NostrClient.swift: Fire-and-forget kind 1 note publisher (no persistence, no subscriptions)
+- Nostr/RoundShareBuilder.swift: Pure formatting (receives RoundRecord/CourseSnapshot/HoleScore, returns strings)
+- Views/NostrProfileView.swift: npub display, nsec copy, relay info (read-only)
+- RoundDetailView: Added share toolbar, changed loadData to fetch full RoundRecord instead of just course_hash
+- RoundsView: Added profile button on toolbar
+
+**Why approved:**
+1. Zero writes to kernel or kernel-adjacent tables (Nostr publishing is ephemeral)
+2. No new schema, no migrations, no repository modifications
+3. Read path expansion (course_hash → full RoundRecord) is safe widening for presentation
+4. RoundShareBuilder is pure formatting layer (no DB access, 8 tests)
+5. NostrClient has no durable state, no "posted" flags, no FK constraints (correct pattern)
+6. No feedback loop: data flows OUT (read → format → publish), never IN from Nostr to SQLite
+7. All kernel invariants preserved (immutability, hash-once, schema stability, determinism)
+
+**Pattern: Ephemeral Social Sharing**
+- Read immutable data from kernel-adjacent layer (scorecard)
+- Format for external platform (Nostr, Twitter, etc.) in pure presentation layer
+- Fire-and-forget publish with no persistence of "posted" state
+- No feedback loop into data layer
+- Analogous to PDF export, email, etc.
+- Safe to replicate for future integrations (webhooks, social APIs)
+
 ## Review Lessons
 
 ### Template Preferences Review (2026-02-10)
