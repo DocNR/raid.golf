@@ -55,7 +55,11 @@ struct TemplateListView: View {
         ContentUnavailableView {
             Label("No Templates", systemImage: "list.clipboard")
         } description: {
-            Text("Templates define A/B/C grade thresholds for shot classification.")
+            Text("Templates define what makes an A, B, or C shot. Tap + to create one.")
+        } actions: {
+            Button("Create Template") {
+                showingCreateTemplate = true
+            }
         }
     }
 

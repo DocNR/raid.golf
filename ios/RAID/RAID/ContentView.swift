@@ -9,6 +9,9 @@ import GRDB
 struct ContentView: View {
     let dbQueue: DatabaseQueue
 
+    @AppStorage("hasSeenFirstRun") private var hasSeenFirstRun = false
+    @State private var showFirstRun = false
+
     var body: some View {
         TabView {
             TrendsView(dbQueue: dbQueue)
@@ -30,6 +33,16 @@ struct ContentView: View {
                 .tabItem {
                     Label("Templates", systemImage: "list.clipboard")
                 }
+        }
+        .sheet(isPresented: $showFirstRun, onDismiss: {
+            hasSeenFirstRun = true
+        }) {
+            FirstRunSheetView()
+        }
+        .onAppear {
+            if !hasSeenFirstRun {
+                showFirstRun = true
+            }
         }
     }
 }

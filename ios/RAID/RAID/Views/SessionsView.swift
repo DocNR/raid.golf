@@ -73,7 +73,7 @@ struct SessionsView: View {
         ContentUnavailableView {
             Label("No Sessions", systemImage: "tray")
         } description: {
-            Text("Import a Rapsodo CSV to get started.")
+            Text("Import a Rapsodo CSV from your range session. Shots will be graded against your active KPI template.")
         } actions: {
             Button("Import CSV") {
                 showingImporter = true

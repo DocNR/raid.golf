@@ -68,7 +68,7 @@ struct RoundsView: View {
         ContentUnavailableView {
             Label("No Rounds", systemImage: "tray")
         } description: {
-            Text("Start a new round to track your scores.")
+            Text("Track your on-course scores hole-by-hole. Tap + to start a new round.")
         } actions: {
             Button("New Round") {
                 showingCreateRound = true

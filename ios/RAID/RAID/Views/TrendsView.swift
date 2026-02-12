@@ -33,7 +33,7 @@ struct TrendsView: View {
                     ContentUnavailableView {
                         Label("No Trends Yet", systemImage: "chart.line.uptrend.xyaxis")
                     } description: {
-                        Text("Import a session from the Sessions tab to see trends.")
+                        Text("Trends appear after you import practice sessions. Head to the Sessions tab to import a Rapsodo CSV.")
                     }
                 } else {
                     trendsList
