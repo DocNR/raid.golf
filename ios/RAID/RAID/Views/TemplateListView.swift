@@ -17,6 +17,10 @@ struct TemplateListView: View {
     @State private var templates: [TemplateRecord] = []
     @State private var preferences: [String: TemplatePreference] = [:] // keyed by hash
     @State private var showingCreateTemplate = false
+    @State private var showingAbout = false
+    #if DEBUG
+    @State private var showingDebugView = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -28,12 +32,30 @@ struct TemplateListView: View {
                 }
             }
             .navigationTitle("Templates")
+            #if DEBUG
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Templates")
+                        .font(.headline)
+                        .onLongPressGesture {
+                            showingDebugView = true
+                        }
+                }
+            }
+            #endif
             .navigationDestination(for: String.self) { hash in
                 TemplateDetailView(templateHash: hash, dbQueue: dbQueue) {
                     loadTemplates()
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingAbout = true
+                    } label: {
+                        Label("About", systemImage: "info.circle")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingCreateTemplate = true
@@ -47,6 +69,14 @@ struct TemplateListView: View {
                     loadTemplates()
                 }
             }
+            .sheet(isPresented: $showingAbout) {
+                AboutView()
+            }
+            #if DEBUG
+            .sheet(isPresented: $showingDebugView) {
+                DebugView(dbQueue: dbQueue)
+            }
+            #endif
             .task { loadTemplates() }
         }
     }

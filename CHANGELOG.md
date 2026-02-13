@@ -31,6 +31,20 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 5.5: UX Contract + Docs**
+  - Added `README_USER.md` (user-facing quick start guide for GitHub repo visitors)
+  - Added `TESTFLIGHT_NOTES.md` (TestFlight beta tester instructions)
+  - Added `AboutView.swift` (in-app about screen with app name, version, tagline, and privacy notes)
+  - AboutView accessible via info.circle button on Templates tab (top-right toolbar)
+  - Updated `BACKLOG.md` with B-002 (template versioning), B-003 (shot editing), B-004 (course editing)
+  - All documentation minimal and production-ready (no legal docs, no FAQs)
+
+- **iOS Phase 5.6: Debug Screen**
+  - Read-only diagnostic screen showing kernel facts, scorecard counts, product state, Nostr identity, and build info
+  - Accessible via long-press on Templates tab title (debug builds only)
+  - All diagnostic data loaded via simple SQL COUNT queries
+  - Gated behind `#if DEBUG` — no debug code in release builds
+
 - **iOS Phase 5.2: Nostr Login + Round Sharing**
   - Added rust-nostr-swift (NostrSDK v0.44.2) as Swift Package Manager dependency
   - Auto-generate Nostr keypair on first use, stored securely in iOS Keychain

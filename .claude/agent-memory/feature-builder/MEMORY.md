@@ -121,6 +121,17 @@
 - Use 64-char hex template hashes (e.g., `"a" + String(repeating: "1", count: 63)`)
 - Avoid duplicate variable names in same scope (use `shotRepo2`, `templateRepo2` if needed)
 
+## Debug Screen (Phase 5.6)
+- **Location:** `/Users/danielwyler/raid.golf/ios/RAID/RAID/Views/DebugView.swift`
+- **Access:** Long-press on "Templates" title in TemplateListView (4th tab)
+- **Gating:** Entire DebugView wrapped in `#if DEBUG` — no debug code in release builds
+- **Data loading:** Single `dbQueue.read` block with COUNT queries for all tables
+- **DB file size:** Get from FileManager attributes of `ApplicationSupport/raid_ios.sqlite`
+- **Nostr identity:** Use `KeyManager.loadOrCreate()` + `publicKeyBech32()` + `toHex()` methods
+- **Build info:** Use `Bundle.main.object(forInfoDictionaryKey:)` for version/build number
+- **Pattern:** Read-only diagnostics, no write operations, no separate repository file
+- **Long-press gesture:** Added to `.toolbar` with `.principal` placement in TemplateListView
+
 ## File Organization
 - Views go in `/Users/danielwyler/raid.golf/ios/RAID/RAID/Views/`
 - Blue folder references: files in directory tree are auto-included in Xcode
