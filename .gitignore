@@ -28,6 +28,7 @@ docs/private/
 
 # Claude Code agent scratch space
 ios/RAID/.claude/
+.claude/agent-memory/
 
 # Test databases
 test_cli.db
