@@ -31,6 +31,19 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 6A: NIP-101g Event Builder**
+  - Replaced kind 1 plain-text round sharing with structured NIP-101g events
+  - Round Initiation (kind 1501): immutable event with embedded course_snapshot + rules_template + hashes
+  - Final Round Record (kind 1502): immutable event referencing initiation, per-hole scores, total
+  - `NIP101gEventBuilder`: pure transformation from local DB models to Nostr event structures
+  - Hash computation uses kernel canonicalization (RAIDCanonicalizer + RAIDHasher) for parity
+  - `course_hash = SHA-256(UTF-8(JCS(course_snapshot_json)))`, `rules_hash` same pattern
+  - NostrClient.publishEvent: generic EventBuilder publisher that returns event ID for cross-referencing
+  - Removed old `publishRoundNote` (kind 1) method
+  - 12 new unit tests in `NIP101gEventBuilderTests` including hash parity verification
+  - "Copy Summary" (plain text) still uses RoundShareBuilder — unchanged
+  - No schema changes, no kernel changes
+
 - **iOS Phase 5.5: UX Contract + Docs**
   - Added `README_USER.md` (user-facing quick start guide for GitHub repo visitors)
   - Added `TESTFLIGHT_NOTES.md` (TestFlight beta tester instructions)

@@ -64,6 +64,39 @@
 4. FK integrity: All foreign keys with ON DELETE RESTRICT
 5. Content-addressing: course_hash uses same JCS canonicalization as kpi_templates
 
+### NIP-101g Event Builder (2026-02-12)
+**Status**: APPROVED as KERNEL-ADJACENT
+**Classification**: Product layer extension (read-only kernel consumer)
+**Files**: Nostr/NIP101gEvent.swift, Nostr/NIP101gEventBuilder.swift, NIP101gEventBuilderTests.swift
+
+**What was added:**
+- NIP-101g structured events (kind 1501 round initiation, kind 1502 final record)
+- Pure transformation: CourseSnapshotRecord + holes → Nostr events with content-addressed hashes
+- Hash parity: NIP-101g course_hash matches CourseSnapshotRepository hash for equivalent data
+- 12 new tests including explicit hash parity verification
+
+**Why approved:**
+- Zero kernel modifications (no Schema, Repository, Canonical, Hashing changes)
+- Read-only consumer: accepts already-fetched data, never calls repository methods
+- Uses RAIDCanonicalizer + RAIDHasher via protocol DI (default args, no implementation changes)
+- Hash parity test proves Codable encoding → JCS → hash matches dict-based approach
+- All code in Nostr/ product layer (no kernel coupling)
+- Deterministic at all layers (sorted holes, scores, JSON keys + JCS)
+
+**Key invariants verified:**
+1. Immutability: Zero writes to any kernel or scorecard tables
+2. Hash-once: No kernel hash computation modified; builder uses kernel as read-only service
+3. Deterministic ordering: Explicit sorts + .sortedKeys + JCS canonicalization
+4. Schema stability: No kernel method signatures changed
+5. Semantic drift: NONE — hash parity test proves equivalent JSON → equivalent hash
+
+**Pattern: Read-Only Kernel Consumer**
+- Product layer accepts already-fetched records (no repository coupling)
+- Rebuilds canonical JSON structure using same frozen keys
+- Calls kernel canonicalizer + hasher via protocol abstraction (no modification)
+- Hash parity test verifies no semantic divergence
+- Pure transformation with no side effects
+
 ## Common Safe Patterns
 
 ### Sprint Finalization (Regression Test Lock-In) — Task 10 (2026-02-10)

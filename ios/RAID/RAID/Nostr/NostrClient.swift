@@ -12,9 +12,9 @@ enum NostrClient {
         "wss://relay.nostr.band"
     ]
 
-    /// Publish a kind 1 text note to default relays.
-    /// Creates a fresh client per call: connect → sign → publish → disconnect.
-    static func publishRoundNote(keys: Keys, text: String) async throws {
+    /// Publish a pre-built EventBuilder and return its event ID.
+    /// Used for NIP-101g events where we need the ID for cross-referencing.
+    static func publishEvent(keys: Keys, builder: EventBuilder) async throws -> String {
         let signer = NostrSigner.keys(keys: keys)
         let client = Client(signer: signer)
 
@@ -25,20 +25,16 @@ enum NostrClient {
 
         await client.connect()
 
-        let builder = EventBuilder.textNote(content: text)
-            .tags(tags: [
-                Tag.hashtag(hashtag: "golf"),
-                Tag.hashtag(hashtag: "gambitgolf"),
-                try Tag.parse(data: ["client", "gambit-golf-ios"])
-            ])
-
         let output = try await client.sendEventBuilder(builder: builder)
 
         if output.success.isEmpty {
+            await client.disconnect()
             throw NostrPublishError.allRelaysFailed
         }
 
+        let eventId = output.id.toHex()
         await client.disconnect()
+        return eventId
     }
 }
 

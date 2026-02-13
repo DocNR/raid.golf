@@ -190,16 +190,53 @@ struct RoundDetailView: View {
 
         do {
             let keyManager = try KeyManager.loadOrCreate()
-            let text = RoundShareBuilder.noteText(
-                course: course.courseName,
-                tees: course.teeSet,
-                holes: holes,
-                scores: scores
+            let keys = keyManager.signingKeys()
+            let pubkey = try keys.publicKey().toHex()
+
+            // Build NIP-101g initiation content
+            let content = NIP101gEventBuilder.buildInitiationContent(
+                snapshot: course,
+                holes: holes
             )
-            try await NostrClient.publishRoundNote(
-                keys: keyManager.signingKeys(),
-                text: text
+            let courseHash = try NIP101gEventBuilder.computeCourseHash(content: content)
+            let rulesHash = try NIP101gEventBuilder.computeRulesHash(content: content)
+
+            let dateString = round?.roundDate ?? ISO8601DateFormatter().string(from: Date())
+
+            // 1) Publish round initiation (kind 1501) — get back event ID
+            let initiationBuilder = try NIP101gEventBuilder.buildInitiationEvent(
+                content: content,
+                courseHash: courseHash,
+                rulesHash: rulesHash,
+                playerPubkeys: [pubkey],
+                date: dateString
             )
+            let initiationEventId = try await NostrClient.publishEvent(
+                keys: keys,
+                builder: initiationBuilder
+            )
+
+            // 2) Publish final round record (kind 1502) — references initiation
+            let scoreList = holes
+                .sorted { $0.holeNumber < $1.holeNumber }
+                .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
+                    guard let strokes = scores[hole.holeNumber] else { return nil }
+                    return (holeNumber: hole.holeNumber, strokes: strokes)
+                }
+            let total = scoreList.reduce(0) { $0 + $1.strokes }
+
+            let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
+                initiationEventId: initiationEventId,
+                scores: scoreList,
+                total: total,
+                playerPubkeys: [pubkey],
+                notes: nil
+            )
+            _ = try await NostrClient.publishEvent(
+                keys: keys,
+                builder: finalBuilder
+            )
+
             showPublishSuccess = true
         } catch {
             errorMessage = error.localizedDescription
