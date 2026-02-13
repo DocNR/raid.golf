@@ -5,6 +5,7 @@
 
 import SwiftUI
 import GRDB
+import NostrSDK
 
 struct RoundDetailView: View {
     let roundId: Int64
@@ -193,30 +194,48 @@ struct RoundDetailView: View {
             let keys = keyManager.signingKeys()
             let pubkey = try keys.publicKey().toHex()
 
-            // Build NIP-101g initiation content
-            let content = NIP101gEventBuilder.buildInitiationContent(
-                snapshot: course,
-                holes: holes
-            )
-            let courseHash = try NIP101gEventBuilder.computeCourseHash(content: content)
-            let rulesHash = try NIP101gEventBuilder.computeRulesHash(content: content)
+            // Check for stored initiation (published at round creation)
+            let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            let existingInitiation = try nostrRepo.fetchInitiation(forRound: roundId)
 
-            let dateString = round?.roundDate ?? ISO8601DateFormatter().string(from: Date())
+            // Get player pubkeys: from round_players if available, else solo
+            var playerPubkeys = try playerRepo.fetchPlayerPubkeys(forRound: roundId)
+            if playerPubkeys.isEmpty {
+                playerPubkeys = [pubkey]
+            }
 
-            // 1) Publish round initiation (kind 1501) — get back event ID
-            let initiationBuilder = try NIP101gEventBuilder.buildInitiationEvent(
-                content: content,
-                courseHash: courseHash,
-                rulesHash: rulesHash,
-                playerPubkeys: [pubkey],
-                date: dateString
-            )
-            let initiationEventId = try await NostrClient.publishEvent(
-                keys: keys,
-                builder: initiationBuilder
-            )
+            let initiationEventId: String
+            if let existing = existingInitiation {
+                // Initiation already published at round creation — use stored event ID
+                initiationEventId = existing.initiationEventId
+            } else {
+                // Fallback: publish initiation now (offline round or failed background publish)
+                let content = NIP101gEventBuilder.buildInitiationContent(
+                    snapshot: course,
+                    holes: holes
+                )
+                let courseHash = try NIP101gEventBuilder.computeCourseHash(content: content)
+                let rulesHash = try NIP101gEventBuilder.computeRulesHash(content: content)
+                let dateString = round?.roundDate ?? ISO8601DateFormatter().string(from: Date())
 
-            // 2) Publish final round record (kind 1502) — references initiation
+                let initiationBuilder = try NIP101gEventBuilder.buildInitiationEvent(
+                    content: content,
+                    courseHash: courseHash,
+                    rulesHash: rulesHash,
+                    playerPubkeys: playerPubkeys,
+                    date: dateString
+                )
+                initiationEventId = try await NostrClient.publishEvent(
+                    keys: keys,
+                    builder: initiationBuilder
+                )
+
+                // Store for future reference
+                try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: initiationEventId)
+            }
+
+            // Publish final round record (kind 1502) — references initiation
             let scoreList = holes
                 .sorted { $0.holeNumber < $1.holeNumber }
                 .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
@@ -229,13 +248,50 @@ struct RoundDetailView: View {
                 initiationEventId: initiationEventId,
                 scores: scoreList,
                 total: total,
-                playerPubkeys: [pubkey],
+                playerPubkeys: playerPubkeys,
                 notes: nil
             )
-            _ = try await NostrClient.publishEvent(
+            let finalEventId = try await NostrClient.publishEvent(
                 keys: keys,
                 builder: finalBuilder
             )
+
+            // Publish companion kind 1 social note with njump link
+            let noteText = RoundShareBuilder.noteText(
+                course: course.courseName,
+                tees: course.teeSet,
+                holes: holes,
+                scores: scores
+            )
+            let eventId1502 = try EventId.parse(id: finalEventId)
+            let nevent = try Nip19Event(eventId: eventId1502).toBech32()
+
+            // Mention other players via nostr:npub1... (clients render as profile links)
+            let otherPubkeys = playerPubkeys.filter { $0 != pubkey }
+            var socialContent = noteText
+            if !otherPubkeys.isEmpty {
+                let mentions = try otherPubkeys.map { hex in
+                    let pk = try PublicKey.parse(publicKey: hex)
+                    return "nostr:\(try pk.toBech32())"
+                }
+                socialContent += "\n\nPlayed with \(mentions.joined(separator: " "))"
+            }
+            socialContent += "\n\nhttps://njump.me/\(nevent)"
+
+            var socialTagArrays: [[String]] = [
+                ["e", finalEventId],
+                ["t", "golf"],
+                ["t", "gambitgolf"],
+                ["client", "gambit-golf-ios"]
+            ]
+            for pk in playerPubkeys {
+                socialTagArrays.append(["p", pk])
+            }
+            let socialTags = try socialTagArrays.map { try Tag.parse(data: $0) }
+
+            let socialBuilder = EventBuilder(kind: Kind(kind: 1), content: socialContent)
+                .tags(tags: socialTags)
+            _ = try await NostrClient.publishEvent(keys: keys, builder: socialBuilder)
 
             showPublishSuccess = true
         } catch {

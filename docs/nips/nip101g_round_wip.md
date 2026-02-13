@@ -94,6 +94,8 @@ This is the **authoritative declaration** of:
 - the **rule set** used for evaluation,
 - the participants and basic round metadata.
 
+**Timing:** The initiation event MUST be published when the round begins (at round creation time), not at round completion. This ensures participants are declared upfront and the course snapshot is immutable from the start.
+
 ## Key Design Rule (Critical)
 
 If both are present:

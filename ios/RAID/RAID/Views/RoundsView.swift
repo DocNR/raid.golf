@@ -47,10 +47,21 @@ struct RoundsView: View {
                 NostrProfileView()
             }
             .sheet(isPresented: $showingCreateRound) {
-                CreateRoundView(dbQueue: dbQueue) { roundId, courseHash in
+                CreateRoundView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys in
                     showingCreateRound = false
                     loadRounds()
                     navigateToScoreEntry(roundId: roundId, courseHash: courseHash)
+
+                    // Fire-and-forget: publish kind 1501 initiation in background
+                    if !playerPubkeys.isEmpty {
+                        Task {
+                            await publishInitiation(
+                                roundId: roundId,
+                                courseHash: courseHash,
+                                playerPubkeys: playerPubkeys
+                            )
+                        }
+                    }
                 }
             }
             .navigationDestination(item: $navigationTarget) { target in
@@ -144,6 +155,53 @@ struct RoundsView: View {
             activeRoundStore = store
         }
         navigationTarget = .scoreEntry(roundId: roundId)
+    }
+
+    // MARK: - Nostr Publishing
+
+    /// Publish kind 1501 (round initiation) in the background after round creation.
+    /// Best-effort: failure is logged but does not affect the round.
+    /// If publish fails, RoundDetailView handles fallback (publishes both 1501 + 1502 at share time).
+    private func publishInitiation(roundId: Int64, courseHash: String, playerPubkeys: [String]) async {
+        do {
+            let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+            guard let snapshot = try courseRepo.fetchCourseSnapshot(byHash: courseHash) else {
+                print("[Gambit] Initiation publish skipped: course snapshot not found")
+                return
+            }
+            let holes = try courseRepo.fetchHoles(forCourse: courseHash)
+
+            let content = NIP101gEventBuilder.buildInitiationContent(snapshot: snapshot, holes: holes)
+            let computedCourseHash = try NIP101gEventBuilder.computeCourseHash(content: content)
+            let rulesHash = try NIP101gEventBuilder.computeRulesHash(content: content)
+
+            let roundDate: String = try await dbQueue.read { db in
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT round_date FROM rounds WHERE round_id = ?",
+                    arguments: [roundId]
+                )
+            } ?? ISO8601DateFormatter().string(from: Date())
+
+            let keyManager = try KeyManager.loadOrCreate()
+            let keys = keyManager.signingKeys()
+
+            let builder = try NIP101gEventBuilder.buildInitiationEvent(
+                content: content,
+                courseHash: computedCourseHash,
+                rulesHash: rulesHash,
+                playerPubkeys: playerPubkeys,
+                date: roundDate
+            )
+
+            let eventId = try await NostrClient.publishEvent(keys: keys, builder: builder)
+
+            let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+            try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId)
+            print("[Gambit] Kind 1501 published for round \(roundId): \(eventId)")
+        } catch {
+            print("[Gambit] Kind 1501 publish failed for round \(roundId): \(error)")
+        }
     }
 
     // MARK: - Data Loading

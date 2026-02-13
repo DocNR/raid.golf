@@ -31,6 +31,17 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 6C: Player Model + Initiation Timing**
+  - Schema v5: `round_players` table (immutable player roster per round) and `round_nostr` table (initiation event ID storage)
+  - `RoundPlayerRepository` and `RoundNostrRepository`: new repositories for player and Nostr metadata
+  - Player selection UI in `CreateRoundView`: follow list multi-select + manual npub entry with validation
+  - Kind 1501 (round initiation) now published at round creation time (background, fire-and-forget) with all player `p` tags
+  - `RoundDetailView` conditional publishing: reuses stored initiation, only publishes kind 1502 + companion kind 1 social note
+  - Companion kind 1 social note: includes `nostr:npub1...` mentions for other players and njump.me link to nevent
+  - `NostrProfile: Identifiable` conformance for SwiftUI list usage
+  - 15 new tests: immutability triggers, repository CRUD, constraint validation (146 total)
+  - `DebugView` updated with round_players and round_nostr table counts
+
 - **iOS Phase 6B: Relay Read Infrastructure**
   - One-shot relay reads via `client.fetchEvents()` with EOSE exit policy
   - `fetchFollowList(pubkey:)`: kind 3 query, extracts followed pubkeys from `p` tags (NIP-02)

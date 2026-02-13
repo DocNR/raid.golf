@@ -14,6 +14,7 @@
 // - v2_add_shots: shots table with FK to sessions
 // - v3_create_scorecard_schema: scorecard tables (kernel-adjacent)
 // - v4_create_template_preferences: template_preferences (mutable preference table)
+// - v5_create_multiplayer_schema: round_players + round_nostr (Phase 6C)
 //
 // Invariant: All authoritative tables are immutable at creation time
 // Design rule: No table ever transitions from mutable → immutable in-place
@@ -459,9 +460,90 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v5_create_multiplayer_schema: Round Players + Nostr Metadata
+        //
+        // round_players: tracks which Nostr pubkeys participate in a round.
+        // Composite PK (round_id, player_pubkey). player_index orders them
+        // (0 = creator). Immutable after creation.
+        //
+        // round_nostr: stores the Nostr initiation event ID for a round.
+        // Separate table because rounds has immutability triggers (no UPDATE).
+        // One row per round, inserted after successful kind 1501 publish.
+        // ============================================================
+        migrator.registerMigration("v5_create_multiplayer_schema") { db in
+            // Round Players (immutable)
+            try db.execute(sql: """
+                CREATE TABLE round_players (
+                    round_id INTEGER NOT NULL,
+                    player_pubkey TEXT NOT NULL,
+                    player_index INTEGER NOT NULL,
+                    added_at TEXT NOT NULL,
+
+                    PRIMARY KEY (round_id, player_pubkey),
+
+                    FOREIGN KEY (round_id) REFERENCES rounds(round_id)
+                        ON DELETE RESTRICT,
+
+                    CHECK (player_index >= 0),
+                    CHECK (length(player_pubkey) = 64),
+                    CHECK (player_pubkey GLOB '[0-9a-f]*')
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_round_players_round ON round_players(round_id)")
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_players_no_update
+                BEFORE UPDATE ON round_players
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round players are immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_players_no_delete
+                BEFORE DELETE ON round_players
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round players are immutable after creation');
+                END
+                """)
+
+            // Round Nostr Metadata (immutable, one row per round)
+            try db.execute(sql: """
+                CREATE TABLE round_nostr (
+                    round_id INTEGER PRIMARY KEY,
+                    initiation_event_id TEXT NOT NULL,
+                    published_at TEXT NOT NULL,
+
+                    FOREIGN KEY (round_id) REFERENCES rounds(round_id)
+                        ON DELETE RESTRICT,
+
+                    CHECK (length(initiation_event_id) = 64),
+                    CHECK (initiation_event_id GLOB '[0-9a-f]*')
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_nostr_no_update
+                BEFORE UPDATE ON round_nostr
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round Nostr metadata is immutable after creation');
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER round_nostr_no_delete
+                BEFORE DELETE ON round_nostr
+                BEGIN
+                    SELECT RAISE(ABORT, 'Round Nostr metadata is immutable after creation');
+                END
+                """)
+        }
+
         return migrator
     }
-    
+
     /// Install schema using migrator (runs all pending migrations)
     /// - Parameter writer: GRDB database writer (e.g., DatabaseQueue)
     /// - Throws: Database error if migration fails

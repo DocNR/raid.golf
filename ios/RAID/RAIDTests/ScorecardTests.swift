@@ -881,4 +881,307 @@ final class ScorecardTests: XCTestCase {
         let resumeIndex = allScoredResume ?? (holes.count - 1)
         XCTAssertEqual(resumeIndex, 8, "Should resume at last hole (index 8) when all scored")
     }
+
+    // MARK: - Schema Immutability: round_players
+
+    func testRoundPlayerUpdateRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+        let pubkey = "b" + String(repeating: "1", count: 63)
+
+        try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_players (round_id, player_pubkey, player_index, added_at)
+                VALUES (?, ?, 0, ?)
+                """, arguments: [roundId, pubkey, "2026-02-13T12:00:00Z"])
+        }
+
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "UPDATE round_players SET player_index = 1 WHERE player_pubkey = ?",
+                              arguments: [pubkey])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            XCTAssertTrue(error.message?.lowercased().contains("immutable") == true)
+        }
+    }
+
+    func testRoundPlayerDeleteRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+        let pubkey = "b" + String(repeating: "1", count: 63)
+
+        try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_players (round_id, player_pubkey, player_index, added_at)
+                VALUES (?, ?, 0, ?)
+                """, arguments: [roundId, pubkey, "2026-02-13T12:00:00Z"])
+        }
+
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM round_players WHERE player_pubkey = ?",
+                              arguments: [pubkey])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            XCTAssertTrue(error.message?.lowercased().contains("immutable") == true)
+        }
+    }
+
+    // MARK: - Schema Immutability: round_nostr
+
+    func testRoundNostrUpdateRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+        let eventId = "c" + String(repeating: "2", count: 63)
+
+        var roundId: Int64 = 0
+        try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_nostr (round_id, initiation_event_id, published_at)
+                VALUES (?, ?, ?)
+                """, arguments: [roundId, eventId, "2026-02-13T12:00:00Z"])
+        }
+
+        do {
+            try dbQueue.write { db in
+                let newEventId = "d" + String(repeating: "3", count: 63)
+                try db.execute(sql: "UPDATE round_nostr SET initiation_event_id = ? WHERE round_id = ?",
+                              arguments: [newEventId, roundId])
+            }
+            XCTFail("UPDATE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            XCTAssertTrue(error.message?.lowercased().contains("immutable") == true)
+        }
+    }
+
+    func testRoundNostrDeleteRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+        let eventId = "c" + String(repeating: "2", count: 63)
+
+        var roundId: Int64 = 0
+        try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_nostr (round_id, initiation_event_id, published_at)
+                VALUES (?, ?, ?)
+                """, arguments: [roundId, eventId, "2026-02-13T12:00:00Z"])
+        }
+
+        do {
+            try dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM round_nostr WHERE round_id = ?", arguments: [roundId])
+            }
+            XCTFail("DELETE should have been rejected by trigger")
+        } catch let error as DatabaseError {
+            XCTAssertTrue(error.message?.lowercased().contains("immutable") == true)
+        }
+    }
+
+    // MARK: - RoundPlayerRepository
+
+    func testInsertPlayersCreatorAndOthers() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let creator = "a" + String(repeating: "1", count: 63)
+        let player2 = "b" + String(repeating: "2", count: 63)
+        let player3 = "c" + String(repeating: "3", count: 63)
+
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creator, otherPubkeys: [player2, player3])
+
+        let players = try playerRepo.fetchPlayers(forRound: round.roundId)
+        XCTAssertEqual(players.count, 3)
+        XCTAssertEqual(players[0].playerPubkey, creator)
+        XCTAssertEqual(players[0].playerIndex, 0)
+        XCTAssertEqual(players[1].playerPubkey, player2)
+        XCTAssertEqual(players[1].playerIndex, 1)
+        XCTAssertEqual(players[2].playerPubkey, player3)
+        XCTAssertEqual(players[2].playerIndex, 2)
+    }
+
+    func testInsertPlayersCreatorOnly() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let creator = "a" + String(repeating: "1", count: 63)
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creator, otherPubkeys: [])
+
+        let players = try playerRepo.fetchPlayers(forRound: round.roundId)
+        XCTAssertEqual(players.count, 1)
+        XCTAssertEqual(players[0].playerPubkey, creator)
+        XCTAssertEqual(players[0].playerIndex, 0)
+    }
+
+    func testInsertPlayersDuplicateIgnored() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let creator = "a" + String(repeating: "1", count: 63)
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creator, otherPubkeys: [])
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creator, otherPubkeys: [])
+
+        let count = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM round_players WHERE round_id = ?",
+                            arguments: [round.roundId])
+        }
+        XCTAssertEqual(count, 1, "Duplicate insert should be ignored (INSERT OR IGNORE)")
+    }
+
+    func testFetchPlayerPubkeysOrdering() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let creator = "a" + String(repeating: "1", count: 63)
+        let player2 = "b" + String(repeating: "2", count: 63)
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creator, otherPubkeys: [player2])
+
+        let pubkeys = try playerRepo.fetchPlayerPubkeys(forRound: round.roundId)
+        XCTAssertEqual(pubkeys, [creator, player2], "Pubkeys should be ordered by player_index")
+    }
+
+    func testFetchPlayerPubkeysEmptyForNoPlayers() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let pubkeys = try playerRepo.fetchPlayerPubkeys(forRound: round.roundId)
+        XCTAssertEqual(pubkeys, [], "Should return empty array for rounds without players")
+    }
+
+    // MARK: - RoundNostrRepository
+
+    func testInsertAndFetchInitiation() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let eventId = "e" + String(repeating: "4", count: 63)
+        try nostrRepo.insertInitiation(roundId: round.roundId, initiationEventId: eventId)
+
+        let record = try nostrRepo.fetchInitiation(forRound: round.roundId)
+        XCTAssertNotNil(record)
+        XCTAssertEqual(record?.roundId, round.roundId)
+        XCTAssertEqual(record?.initiationEventId, eventId)
+    }
+
+    func testInsertInitiationDuplicateRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let eventId = "e" + String(repeating: "4", count: 63)
+        try nostrRepo.insertInitiation(roundId: round.roundId, initiationEventId: eventId)
+
+        let eventId2 = "f" + String(repeating: "5", count: 63)
+        XCTAssertThrowsError(try nostrRepo.insertInitiation(roundId: round.roundId, initiationEventId: eventId2)) { error in
+            guard let dbError = error as? DatabaseError else {
+                XCTFail("Expected DatabaseError, got: \(error)")
+                return
+            }
+            XCTAssertEqual(dbError.resultCode, .SQLITE_CONSTRAINT)
+        }
+    }
+
+    func testFetchInitiationNilForUnpublished() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        let record = try nostrRepo.fetchInitiation(forRound: round.roundId)
+        XCTAssertNil(record, "Should return nil for rounds without published initiation")
+    }
+
+    // MARK: - Constraint Validation: round_players
+
+    func testRoundPlayerInvalidPubkeyTooShort() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+
+        XCTAssertThrowsError(try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_players (round_id, player_pubkey, player_index, added_at)
+                VALUES (?, ?, 0, ?)
+                """, arguments: [roundId, "tooshort", "2026-02-13T12:00:00Z"])
+        })
+    }
+
+    func testRoundPlayerInvalidPubkeyUppercase() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+        let uppercasePubkey = "A" + String(repeating: "1", count: 63) // uppercase A
+
+        XCTAssertThrowsError(try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_players (round_id, player_pubkey, player_index, added_at)
+                VALUES (?, ?, 0, ?)
+                """, arguments: [roundId, uppercasePubkey, "2026-02-13T12:00:00Z"])
+        })
+    }
+
+    // MARK: - Constraint Validation: round_nostr
+
+    func testRoundNostrInvalidEventIdTooShort() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+
+        XCTAssertThrowsError(try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO round_nostr (round_id, initiation_event_id, published_at)
+                VALUES (?, ?, ?)
+                """, arguments: [roundId, "tooshort", "2026-02-13T12:00:00Z"])
+        })
+    }
 }

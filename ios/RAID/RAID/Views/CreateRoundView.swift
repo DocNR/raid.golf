@@ -1,14 +1,15 @@
 // CreateRoundView.swift
 // Gambit Golf
 //
-// Create new round form
+// Create new round form with optional player selection from Nostr follow list.
 
 import SwiftUI
 import GRDB
+import NostrSDK
 
 struct CreateRoundView: View {
     let dbQueue: DatabaseQueue
-    let onRoundCreated: (Int64, String) -> Void
+    let onRoundCreated: (Int64, String, [String]) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -18,6 +19,17 @@ struct CreateRoundView: View {
     @State private var pars: [Int] = Array(repeating: 4, count: 18)
     @State private var isCreating = false
     @State private var errorMessage: String?
+
+    // Player selection state
+    @State private var hasNostrKeys = false
+    @State private var creatorPubkeyHex: String?
+    @State private var selectedPlayers: [String: NostrProfile] = [:]
+    @State private var followProfiles: [String: NostrProfile] = [:]
+    @State private var followOrder: [String] = []
+    @State private var isLoadingFollows = false
+    @State private var followLoadError: String?
+    @State private var npubInput = ""
+    @State private var npubError: String?
 
     var body: some View {
         NavigationStack {
@@ -34,6 +46,8 @@ struct CreateRoundView: View {
                         adjustParsArray(to: newValue.holeCount)
                     }
                 }
+
+                playersSection
 
                 Section("Par for Each Hole") {
                     ForEach(0..<holeSelection.holeCount, id: \.self) { index in
@@ -82,8 +96,184 @@ struct CreateRoundView: View {
                     Text(error)
                 }
             }
+            .task { checkNostrKeys() }
         }
     }
+
+    // MARK: - Players Section
+
+    @ViewBuilder
+    private var playersSection: some View {
+        Section {
+            if !hasNostrKeys {
+                Text("Set up Nostr identity to invite players")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            } else {
+                // Manual npub entry
+                HStack {
+                    TextField("Add player by npub...", text: $npubInput)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { addPlayerByNpub() }
+                    Button("Add") { addPlayerByNpub() }
+                        .disabled(npubInput.isEmpty)
+                }
+                if let npubError {
+                    Text(npubError)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+
+                // Follow list loading
+                if followOrder.isEmpty && !isLoadingFollows {
+                    Button {
+                        Task { await loadFollowList() }
+                    } label: {
+                        Label("Load Follow List", systemImage: "person.2")
+                    }
+                }
+
+                if isLoadingFollows {
+                    HStack {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading follows...")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let followLoadError {
+                    Text(followLoadError)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+
+                // Follow list (selectable)
+                ForEach(followOrder, id: \.self) { pubkeyHex in
+                    if let profile = followProfiles[pubkeyHex] {
+                        let isSelected = selectedPlayers[pubkeyHex] != nil
+                        Button {
+                            togglePlayer(pubkeyHex: pubkeyHex, profile: profile)
+                        } label: {
+                            HStack {
+                                Text(profile.displayLabel)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Selected players (including manually added)
+                let manuallyAdded = selectedPlayers.filter { followProfiles[$0.key] == nil }
+                ForEach(Array(manuallyAdded.values)) { profile in
+                    HStack {
+                        Text(profile.displayLabel)
+                        Spacer()
+                        Button {
+                            selectedPlayers.removeValue(forKey: profile.pubkeyHex)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        } header: {
+            HStack {
+                Text("Players")
+                if !selectedPlayers.isEmpty {
+                    Text("(\(selectedPlayers.count))")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } footer: {
+            if hasNostrKeys {
+                Text("Optional. Select playing partners or add by npub.")
+            }
+        }
+    }
+
+    // MARK: - Player Actions
+
+    private func checkNostrKeys() {
+        do {
+            let keyManager = try KeyManager.loadOrCreate()
+            let keys = keyManager.signingKeys()
+            creatorPubkeyHex = try keys.publicKey().toHex()
+            hasNostrKeys = true
+        } catch {
+            hasNostrKeys = false
+        }
+    }
+
+    private func loadFollowList() async {
+        guard let creatorHex = creatorPubkeyHex else { return }
+        isLoadingFollows = true
+        followLoadError = nil
+
+        do {
+            let pubkey = try PublicKey.parse(publicKey: creatorHex)
+            let result = try await NostrClient.fetchFollowListWithProfiles(pubkey: pubkey)
+            followOrder = result.follows
+            followProfiles = result.profiles
+            // Fill in profiles for follows that had no kind 0
+            for hex in result.follows where followProfiles[hex] == nil {
+                followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+            }
+        } catch {
+            followLoadError = "Could not load follow list."
+            print("[Gambit] Follow list load failed: \(error)")
+        }
+
+        isLoadingFollows = false
+    }
+
+    private func togglePlayer(pubkeyHex: String, profile: NostrProfile) {
+        if selectedPlayers[pubkeyHex] != nil {
+            selectedPlayers.removeValue(forKey: pubkeyHex)
+        } else {
+            selectedPlayers[pubkeyHex] = profile
+        }
+    }
+
+    private func addPlayerByNpub() {
+        npubError = nil
+        let input = npubInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return }
+
+        do {
+            let pubkey = try PublicKey.parse(publicKey: input)
+            let hex = pubkey.toHex()
+
+            // Prevent adding self
+            if hex == creatorPubkeyHex {
+                npubError = "That's your own key."
+                return
+            }
+
+            // Prevent duplicate
+            if selectedPlayers[hex] != nil {
+                npubError = "Player already added."
+                return
+            }
+
+            // Use existing profile if we have it, otherwise create minimal one
+            let profile = followProfiles[hex] ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+            selectedPlayers[hex] = profile
+            npubInput = ""
+        } catch {
+            npubError = "Invalid npub or hex key."
+        }
+    }
+
+    // MARK: - Round Creation
 
     private func adjustParsArray(to newCount: Int) {
         if pars.count < newCount {
@@ -117,7 +307,20 @@ struct CreateRoundView: View {
                 roundDate: roundDate
             )
 
-            onRoundCreated(round.roundId, courseSnapshot.courseHash)
+            // Insert round players if Nostr keys are available
+            var allPlayerPubkeys: [String] = []
+            if let creatorHex = creatorPubkeyHex {
+                let otherPubkeys = Array(selectedPlayers.keys)
+                let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+                try playerRepo.insertPlayers(
+                    roundId: round.roundId,
+                    creatorPubkey: creatorHex,
+                    otherPubkeys: otherPubkeys
+                )
+                allPlayerPubkeys = [creatorHex] + otherPubkeys
+            }
+
+            onRoundCreated(round.roundId, courseSnapshot.courseHash, allPlayerPubkeys)
 
         } catch {
             isCreating = false

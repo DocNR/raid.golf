@@ -75,3 +75,18 @@ struct HoleScoreRecord {
     let strokes: Int
     let recordedAt: String
 }
+
+/// Stored round player record (immutable, ordered by player_index)
+struct RoundPlayerRecord {
+    let roundId: Int64
+    let playerPubkey: String
+    let playerIndex: Int
+    let addedAt: String
+}
+
+/// Stored round Nostr metadata (initiation event ID, one per round)
+struct RoundNostrRecord {
+    let roundId: Int64
+    let initiationEventId: String
+    let publishedAt: String
+}

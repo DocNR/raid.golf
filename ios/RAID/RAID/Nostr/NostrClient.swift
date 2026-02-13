@@ -194,7 +194,9 @@ enum NostrClient {
 // MARK: - Data Types
 
 /// Profile metadata parsed from kind 0 events (NIP-01).
-struct NostrProfile {
+struct NostrProfile: Identifiable {
+    var id: String { pubkeyHex }
+
     let pubkeyHex: String
     let name: String?
     let displayName: String?

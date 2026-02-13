@@ -65,6 +65,8 @@ struct DebugView: View {
                 DiagnosticRow(label: "Course Snapshots", value: "\(diag.courseSnapshotCount)")
                 DiagnosticRow(label: "Hole Scores", value: "\(diag.holeScoreCount)")
                 DiagnosticRow(label: "Round Events", value: "\(diag.roundEventCount)")
+                DiagnosticRow(label: "Round Players", value: "\(diag.roundPlayerCount)")
+                DiagnosticRow(label: "Round Nostr", value: "\(diag.roundNostrCount)")
             }
 
             Section("Product State") {
@@ -102,6 +104,8 @@ struct DebugView: View {
                 diag.courseSnapshotCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM course_snapshots") ?? 0
                 diag.holeScoreCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM hole_scores") ?? 0
                 diag.roundEventCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM round_events") ?? 0
+                diag.roundPlayerCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM round_players") ?? 0
+                diag.roundNostrCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM round_nostr") ?? 0
 
                 diag.preferenceCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM template_preferences") ?? 0
             }
@@ -170,6 +174,8 @@ private struct Diagnostics {
     var courseSnapshotCount: Int = 0
     var holeScoreCount: Int = 0
     var roundEventCount: Int = 0
+    var roundPlayerCount: Int = 0
+    var roundNostrCount: Int = 0
 
     var preferenceCount: Int = 0
     var dbFileSizeMB: String = "Unknown"

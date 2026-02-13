@@ -6,6 +6,8 @@
 // CourseSnapshotRepository: content-addressed insert (canonicalize + hash once)
 // RoundRepository: round lifecycle (create + complete via events)
 // HoleScoreRepository: append-only scores with latest-wins corrections
+// RoundPlayerRepository: immutable player roster per round (Phase 6C)
+// RoundNostrRepository: Nostr initiation event ID per round (Phase 6C)
 //
 // Invariants:
 // - Hash computed ONLY on insert, never on read (RTM-04 equivalent)
@@ -340,6 +342,124 @@ class HoleScoreRepository {
                     recordedAt: row["recorded_at"]
                 )
             }
+        }
+    }
+}
+
+// MARK: - Round Player Repository
+
+class RoundPlayerRepository {
+    private let dbQueue: DatabaseQueue
+
+    init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    /// Insert players for a round in a single transaction.
+    /// Creator gets player_index 0; others get 1, 2, ... in order provided.
+    func insertPlayers(roundId: Int64, creatorPubkey: String, otherPubkeys: [String]) throws {
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        try dbQueue.write { db in
+            // Creator is always player_index 0
+            try db.execute(
+                sql: """
+                INSERT OR IGNORE INTO round_players (round_id, player_pubkey, player_index, added_at)
+                VALUES (?, ?, 0, ?)
+                """,
+                arguments: [roundId, creatorPubkey, now]
+            )
+
+            // Other players get sequential indices starting at 1
+            for (offset, pubkey) in otherPubkeys.enumerated() {
+                try db.execute(
+                    sql: """
+                    INSERT OR IGNORE INTO round_players (round_id, player_pubkey, player_index, added_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    arguments: [roundId, pubkey, offset + 1, now]
+                )
+            }
+        }
+    }
+
+    /// Fetch all player pubkeys for a round, ordered by player_index.
+    /// Returns hex pubkey strings suitable for NIP-101g p tags.
+    func fetchPlayerPubkeys(forRound roundId: Int64) throws -> [String] {
+        return try dbQueue.read { db in
+            try String.fetchAll(db,
+                sql: """
+                SELECT player_pubkey FROM round_players
+                WHERE round_id = ?
+                ORDER BY player_index ASC
+                """,
+                arguments: [roundId])
+        }
+    }
+
+    /// Fetch full player records for a round, ordered by player_index.
+    func fetchPlayers(forRound roundId: Int64) throws -> [RoundPlayerRecord] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db,
+                sql: """
+                SELECT round_id, player_pubkey, player_index, added_at
+                FROM round_players
+                WHERE round_id = ?
+                ORDER BY player_index ASC
+                """,
+                arguments: [roundId])
+
+            return rows.map { row in
+                RoundPlayerRecord(
+                    roundId: row["round_id"],
+                    playerPubkey: row["player_pubkey"],
+                    playerIndex: row["player_index"],
+                    addedAt: row["added_at"]
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Round Nostr Repository
+
+class RoundNostrRepository {
+    private let dbQueue: DatabaseQueue
+
+    init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    /// Store the Nostr initiation event ID for a round.
+    /// PK constraint prevents duplicate inserts for the same round.
+    func insertInitiation(roundId: Int64, initiationEventId: String) throws {
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO round_nostr (round_id, initiation_event_id, published_at)
+                VALUES (?, ?, ?)
+                """,
+                arguments: [roundId, initiationEventId, now]
+            )
+        }
+    }
+
+    /// Fetch the stored initiation event ID for a round, or nil if not yet published.
+    func fetchInitiation(forRound roundId: Int64) throws -> RoundNostrRecord? {
+        return try dbQueue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT round_id, initiation_event_id, published_at FROM round_nostr WHERE round_id = ?",
+                arguments: [roundId]) else {
+                return nil
+            }
+
+            return RoundNostrRecord(
+                roundId: row["round_id"],
+                initiationEventId: row["initiation_event_id"],
+                publishedAt: row["published_at"]
+            )
         }
     }
 }
