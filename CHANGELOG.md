@@ -31,6 +31,17 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 6B: Relay Read Infrastructure**
+  - One-shot relay reads via `client.fetchEvents()` with EOSE exit policy
+  - `fetchFollowList(pubkey:)`: kind 3 query, extracts followed pubkeys from `p` tags (NIP-02)
+  - `fetchProfiles(pubkeyHexes:)`: batch kind 0 query, parses display_name/name/picture (NIP-01)
+  - `fetchFollowListWithProfiles(pubkey:)`: combined single-connection method (~2s vs ~20s separate)
+  - `NostrProfile` struct with `displayLabel` fallback chain (displayName > name > truncated pubkey)
+  - `NostrReadError` enum with user-facing error messages
+  - Dedicated `readRelays` list (damus.io, nos.lol, purplepag.es) with 5s timeout
+  - 14 new tests: 11 unit (profile parsing, display label, edge cases) + 3 live relay integration
+  - No schema changes, no kernel changes
+
 - **iOS Phase 6A: NIP-101g Event Builder**
   - Replaced kind 1 plain-text round sharing with structured NIP-101g events
   - Round Initiation (kind 1501): immutable event with embedded course_snapshot + rules_template + hashes
