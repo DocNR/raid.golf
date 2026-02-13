@@ -71,6 +71,7 @@ struct RoundListItem {
 struct HoleScoreRecord {
     let scoreId: Int64
     let roundId: Int64
+    let playerIndex: Int
     let holeNumber: Int
     let strokes: Int
     let recordedAt: String

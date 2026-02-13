@@ -14,12 +14,23 @@ struct RoundDetailView: View {
     @State private var round: RoundRecord?
     @State private var courseSnapshot: CourseSnapshotRecord?
     @State private var holes: [CourseHoleRecord] = []
-    @State private var scores: [Int: Int] = [:] // holeNumber -> strokes
+    @State private var allPlayerScores: [Int: [Int: Int]] = [:] // playerIndex -> (holeNumber -> strokes)
+    @State private var players: [RoundPlayerRecord] = []
+    @State private var selectedPlayerIndex: Int = 0
 
     // Share state
     @State private var isPublishing = false
     @State private var errorMessage: String?
     @State private var showPublishSuccess = false
+
+    // Derived scores for the currently selected player
+    private var scores: [Int: Int] {
+        allPlayerScores[selectedPlayerIndex] ?? [:]
+    }
+
+    private var isMultiplayer: Bool {
+        players.count > 1
+    }
 
     var body: some View {
         Group {
@@ -56,6 +67,17 @@ struct RoundDetailView: View {
 
     private var scorecardView: some View {
         List {
+            if isMultiplayer {
+                Section {
+                    Picker("Player", selection: $selectedPlayerIndex) {
+                        ForEach(players.indices, id: \.self) { index in
+                            Text("P\(index + 1)").tag(index)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
             if holes.count == 18 {
                 nineHoleSection(title: "Front 9", holes: Array(holes.prefix(9)))
                 nineHoleSection(title: "Back 9", holes: Array(holes.suffix(9)))
@@ -207,7 +229,6 @@ struct RoundDetailView: View {
 
             let initiationEventId: String
             if let existing = existingInitiation {
-                // Initiation already published at round creation — use stored event ID
                 initiationEventId = existing.initiationEventId
             } else {
                 // Fallback: publish initiation now (offline round or failed background publish)
@@ -230,40 +251,85 @@ struct RoundDetailView: View {
                     keys: keys,
                     builder: initiationBuilder
                 )
-
-                // Store for future reference
                 try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: initiationEventId)
             }
 
-            // Publish final round record (kind 1502) — references initiation
-            let scoreList = holes
-                .sorted { $0.holeNumber < $1.holeNumber }
-                .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
-                    guard let strokes = scores[hole.holeNumber] else { return nil }
-                    return (holeNumber: hole.holeNumber, strokes: strokes)
-                }
-            let total = scoreList.reduce(0) { $0 + $1.strokes }
+            // Publish final round records (kind 1502)
+            var creatorFinalEventId: String = ""
 
-            let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
-                initiationEventId: initiationEventId,
-                scores: scoreList,
-                total: total,
-                playerPubkeys: playerPubkeys,
-                notes: nil
-            )
-            let finalEventId = try await NostrClient.publishEvent(
-                keys: keys,
-                builder: finalBuilder
-            )
+            if isMultiplayer {
+                // One 1502 per player, all signed by creator (same-device trust model)
+                for player in players {
+                    let playerScores = allPlayerScores[player.playerIndex] ?? [:]
+                    let scoreList = holes
+                        .sorted { $0.holeNumber < $1.holeNumber }
+                        .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
+                            guard let strokes = playerScores[hole.holeNumber] else { return nil }
+                            return (holeNumber: hole.holeNumber, strokes: strokes)
+                        }
+                    let total = scoreList.reduce(0) { $0 + $1.strokes }
+
+                    let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
+                        initiationEventId: initiationEventId,
+                        scores: scoreList,
+                        total: total,
+                        scoredPlayerPubkey: player.playerPubkey,
+                        playerPubkeys: playerPubkeys,
+                        notes: nil
+                    )
+                    let eventId = try await NostrClient.publishEvent(
+                        keys: keys,
+                        builder: finalBuilder
+                    )
+                    if player.playerIndex == 0 {
+                        creatorFinalEventId = eventId
+                    }
+                }
+            } else {
+                // Solo: single 1502
+                let scoreList = holes
+                    .sorted { $0.holeNumber < $1.holeNumber }
+                    .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
+                        guard let strokes = scores[hole.holeNumber] else { return nil }
+                        return (holeNumber: hole.holeNumber, strokes: strokes)
+                    }
+                let total = scoreList.reduce(0) { $0 + $1.strokes }
+
+                let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
+                    initiationEventId: initiationEventId,
+                    scores: scoreList,
+                    total: total,
+                    playerPubkeys: playerPubkeys,
+                    notes: nil
+                )
+                creatorFinalEventId = try await NostrClient.publishEvent(
+                    keys: keys,
+                    builder: finalBuilder
+                )
+            }
 
             // Publish companion kind 1 social note with njump link
-            let noteText = RoundShareBuilder.noteText(
-                course: course.courseName,
-                tees: course.teeSet,
-                holes: holes,
-                scores: scores
-            )
-            let eventId1502 = try EventId.parse(id: finalEventId)
+            let noteText: String
+            if isMultiplayer {
+                let playerScoreList = players.map { player in
+                    (label: "P\(player.playerIndex + 1)", scores: allPlayerScores[player.playerIndex] ?? [:])
+                }
+                noteText = RoundShareBuilder.noteText(
+                    course: course.courseName,
+                    tees: course.teeSet,
+                    holes: holes,
+                    playerScores: playerScoreList
+                )
+            } else {
+                noteText = RoundShareBuilder.noteText(
+                    course: course.courseName,
+                    tees: course.teeSet,
+                    holes: holes,
+                    scores: scores
+                )
+            }
+
+            let eventId1502 = try EventId.parse(id: creatorFinalEventId)
             let nevent = try Nip19Event(eventId: eventId1502).toBech32()
 
             // Mention other players via nostr:npub1... (clients render as profile links)
@@ -279,7 +345,7 @@ struct RoundDetailView: View {
             socialContent += "\n\nhttps://njump.me/\(nevent)"
 
             var socialTagArrays: [[String]] = [
-                ["e", finalEventId],
+                ["e", creatorFinalEventId],
                 ["t", "golf"],
                 ["t", "gambitgolf"],
                 ["client", "gambit-golf-ios"]
@@ -302,13 +368,27 @@ struct RoundDetailView: View {
     private func copySummary() {
         guard let course = courseSnapshot else { return }
 
-        let text = RoundShareBuilder.summaryText(
-            course: course.courseName,
-            tees: course.teeSet,
-            date: round?.roundDate ?? "",
-            holes: holes,
-            scores: scores
-        )
+        let text: String
+        if isMultiplayer {
+            let playerScoreList = players.map { player in
+                (label: "P\(player.playerIndex + 1)", scores: allPlayerScores[player.playerIndex] ?? [:])
+            }
+            text = RoundShareBuilder.summaryText(
+                course: course.courseName,
+                tees: course.teeSet,
+                date: round?.roundDate ?? "",
+                holes: holes,
+                playerScores: playerScoreList
+            )
+        } else {
+            text = RoundShareBuilder.summaryText(
+                course: course.courseName,
+                tees: course.teeSet,
+                date: round?.roundDate ?? "",
+                holes: holes,
+                scores: scores
+            )
+        }
         UIPasteboard.general.string = text
     }
 
@@ -340,9 +420,25 @@ struct RoundDetailView: View {
             holes = try courseRepo.fetchHoles(forCourse: courseHash)
 
             let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
-            let scoreRecords = try scoreRepo.fetchLatestScores(forRound: roundId)
-            for score in scoreRecords {
-                scores[score.holeNumber] = score.strokes
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            players = try playerRepo.fetchPlayers(forRound: roundId)
+
+            if players.count > 1 {
+                // Multiplayer: load all players' scores
+                let allScores = try scoreRepo.fetchAllPlayersLatestScores(forRound: roundId)
+                for (playerIndex, playerScores) in allScores {
+                    allPlayerScores[playerIndex] = [:]
+                    for score in playerScores {
+                        allPlayerScores[playerIndex]?[score.holeNumber] = score.strokes
+                    }
+                }
+            } else {
+                // Solo or pre-6C: load player 0 only
+                let scoreRecords = try scoreRepo.fetchLatestScores(forRound: roundId)
+                allPlayerScores[0] = [:]
+                for score in scoreRecords {
+                    allPlayerScores[0]?[score.holeNumber] = score.strokes
+                }
             }
         } catch {
             print("[Gambit] Failed to load round detail: \(error)")

@@ -2,14 +2,15 @@
 // Gambit Golf
 //
 // Long-lived view model for active round scoring state.
-// Owns holes, scores, navigation index, and persistence logic.
+// Owns holes, scores, navigation index, player state, and persistence logic.
 // Created at the RoundsView level so state survives view recreation.
 //
 // Invariants:
 // - Append-only inserts into hole_scores (no UPDATE/DELETE)
 // - saveCurrentScore() always persists the displayed value (including default par)
 // - Rehydrates from DB on configure() — resume from first unscored hole
-// - No new schema; uses existing ScorecardRepository methods
+// - Supports multi-player scoring: scores keyed by playerIndex -> holeNumber -> strokes
+// - Backward compat: solo rounds (no round_players rows) use playerIndex 0
 
 import Foundation
 import GRDB
@@ -19,8 +20,10 @@ class ActiveRoundStore {
     // MARK: - Published State
 
     var holes: [CourseHoleRecord] = []
-    var scores: [Int: Int] = [:]  // holeNumber -> strokes
+    var scores: [Int: [Int: Int]] = [:]  // playerIndex -> (holeNumber -> strokes)
+    var players: [RoundPlayerRecord] = []
     var currentHoleIndex: Int = 0
+    var currentPlayerIndex: Int = 0
     var isCompleting: Bool = false
     var isLoaded: Bool = false
     var errorMessage: String?
@@ -38,18 +41,22 @@ class ActiveRoundStore {
         return holes[currentHoleIndex]
     }
 
+    var isMultiplayer: Bool {
+        players.count > 1
+    }
+
     var currentStrokes: Int {
         guard let hole = currentHole else { return 0 }
-        return scores[hole.holeNumber] ?? hole.par
+        return scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
     }
 
     var holesScored: Int {
-        holes.filter { scores[$0.holeNumber] != nil }.count
+        holes.filter { scores[currentPlayerIndex]?[$0.holeNumber] != nil }.count
     }
 
     var totalStrokes: Int {
         holes.reduce(0) { sum, hole in
-            sum + (scores[hole.holeNumber] ?? 0)
+            sum + (scores[currentPlayerIndex]?[hole.holeNumber] ?? 0)
         }
     }
 
@@ -64,11 +71,31 @@ class ActiveRoundStore {
     }
 
     var isFinishEnabled: Bool {
-        !holes.isEmpty && holesScored >= holes.count && !isCompleting
+        guard !holes.isEmpty, !isCompleting else { return false }
+
+        // If multiplayer, all players must have all holes scored
+        if isMultiplayer {
+            for player in players {
+                let playerHolesScored = holes.filter { scores[player.playerIndex]?[$0.holeNumber] != nil }.count
+                if playerHolesScored < holes.count {
+                    return false
+                }
+            }
+            return true
+        } else {
+            // Solo: only player 0 needs all holes scored
+            let player0HolesScored = holes.filter { scores[0]?[$0.holeNumber] != nil }.count
+            return player0HolesScored >= holes.count
+        }
     }
 
     var isOnLastHole: Bool {
         !holes.isEmpty && currentHoleIndex == holes.count - 1
+    }
+
+    /// Short label for player (P1, P2, etc.) for segmented picker
+    func playerLabel(for index: Int) -> String {
+        "P\(index + 1)"
     }
 
     // MARK: - Configuration
@@ -91,17 +118,29 @@ class ActiveRoundStore {
 
     func incrementStrokes() {
         guard let hole = currentHole else { return }
-        let current = scores[hole.holeNumber] ?? hole.par
+
+        // Ensure player's scores dict exists
+        if scores[currentPlayerIndex] == nil {
+            scores[currentPlayerIndex] = [:]
+        }
+
+        let current = scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
         if current < 20 {
-            scores[hole.holeNumber] = current + 1
+            scores[currentPlayerIndex]?[hole.holeNumber] = current + 1
         }
     }
 
     func decrementStrokes() {
         guard let hole = currentHole else { return }
-        let current = scores[hole.holeNumber] ?? hole.par
+
+        // Ensure player's scores dict exists
+        if scores[currentPlayerIndex] == nil {
+            scores[currentPlayerIndex] = [:]
+        }
+
+        let current = scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
         if current > 1 {
-            scores[hole.holeNumber] = current - 1
+            scores[currentPlayerIndex]?[hole.holeNumber] = current - 1
         }
     }
 
@@ -119,6 +158,12 @@ class ActiveRoundStore {
             currentHoleIndex -= 1
             ensureCurrentHoleHasDefault()
         }
+    }
+
+    func switchPlayer(to index: Int) {
+        saveCurrentScore()
+        currentPlayerIndex = index
+        ensureCurrentHoleHasDefault()
     }
 
     func finishRound(dismiss: @escaping () -> Void) {
@@ -153,8 +198,17 @@ class ActiveRoundStore {
     /// This ensures holesScored and isFinishEnabled reflect the current hole
     /// immediately on arrival, not just after navigating away.
     private func ensureCurrentHoleHasDefault() {
-        guard let hole = currentHole, scores[hole.holeNumber] == nil else { return }
-        scores[hole.holeNumber] = hole.par
+        guard let hole = currentHole else { return }
+
+        // Ensure player's scores dict exists
+        if scores[currentPlayerIndex] == nil {
+            scores[currentPlayerIndex] = [:]
+        }
+
+        // Populate default if not already scored
+        if scores[currentPlayerIndex]?[hole.holeNumber] == nil {
+            scores[currentPlayerIndex]?[hole.holeNumber] = hole.par
+        }
     }
 
     /// Always persist the displayed value — including default par.
@@ -162,13 +216,18 @@ class ActiveRoundStore {
     private func saveCurrentScore() {
         guard let dbQueue = dbQueue, let hole = currentHole else { return }
 
-        let strokes = scores[hole.holeNumber] ?? hole.par
-        scores[hole.holeNumber] = strokes  // Mark as scored in memory
+        let strokes = scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
+
+        // Ensure player's scores dict exists and mark as scored
+        if scores[currentPlayerIndex] == nil {
+            scores[currentPlayerIndex] = [:]
+        }
+        scores[currentPlayerIndex]?[hole.holeNumber] = strokes
 
         do {
             let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
             let input = HoleScoreInput(holeNumber: hole.holeNumber, strokes: strokes)
-            _ = try scoreRepo.recordScore(roundId: roundId, score: input)
+            _ = try scoreRepo.recordScore(roundId: roundId, playerIndex: currentPlayerIndex, score: input)
         } catch {
             print("[Gambit] Failed to save score: \(error)")
             errorMessage = "Could not save score for this hole."
@@ -176,24 +235,43 @@ class ActiveRoundStore {
     }
 
     /// Load state from DB. Sequential repo calls — no nested reads.
-    /// Resumes at first unscored hole, or last hole if all scored.
+    /// Resumes at first unscored hole for player 0, or last hole if all scored.
     private func loadData() {
         guard let dbQueue = dbQueue else { return }
 
         do {
+            // Load course holes
             let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)
             holes = try courseRepo.fetchHoles(forCourse: courseHash)
 
-            let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
-            let existingScores = try scoreRepo.fetchLatestScores(forRound: roundId)
+            // Load players (ordered by player_index)
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            players = try playerRepo.fetchPlayers(forRound: roundId)
 
+            // Load scores
+            let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
             scores = [:]
-            for score in existingScores {
-                scores[score.holeNumber] = score.strokes
+
+            if players.count > 1 {
+                // Multiplayer: load all players' scores
+                let allScores = try scoreRepo.fetchAllPlayersLatestScores(forRound: roundId)
+                for (playerIndex, playerScores) in allScores {
+                    scores[playerIndex] = [:]
+                    for score in playerScores {
+                        scores[playerIndex]?[score.holeNumber] = score.strokes
+                    }
+                }
+            } else {
+                // Solo or pre-6C rounds: load player 0 only
+                let existingScores = try scoreRepo.fetchLatestScores(forRound: roundId, playerIndex: 0)
+                scores[0] = [:]
+                for score in existingScores {
+                    scores[0]?[score.holeNumber] = score.strokes
+                }
             }
 
-            // Resume at first unscored hole; if all scored, stay at last hole
-            if let firstUnscored = holes.firstIndex(where: { scores[$0.holeNumber] == nil }) {
+            // Resume at first unscored hole for player 0; if all scored, stay at last hole
+            if let firstUnscored = holes.firstIndex(where: { scores[0]?[$0.holeNumber] == nil }) {
                 currentHoleIndex = firstUnscored
             } else if !holes.isEmpty {
                 currentHoleIndex = holes.count - 1

@@ -240,7 +240,7 @@ class RoundRepository {
                      FROM (
                          SELECT hs.hole_number, hs.strokes
                          FROM hole_scores hs
-                         WHERE hs.round_id = r.round_id
+                         WHERE hs.round_id = r.round_id AND hs.player_index = 0
                          GROUP BY hs.hole_number
                          HAVING hs.recorded_at = MAX(hs.recorded_at)
                             AND hs.score_id = MAX(hs.score_id)
@@ -248,7 +248,7 @@ class RoundRepository {
                     ) AS total_strokes,
                     (SELECT COUNT(DISTINCT hs2.hole_number)
                      FROM hole_scores hs2
-                     WHERE hs2.round_id = r.round_id
+                     WHERE hs2.round_id = r.round_id AND hs2.player_index = 0
                     ) AS holes_scored
                 FROM rounds r
                 INNER JOIN course_snapshots cs ON cs.course_hash = r.course_hash
@@ -289,16 +289,17 @@ class HoleScoreRepository {
 
     /// Record a score for a hole (append-only).
     /// Corrections are new inserts; the latest by recorded_at wins.
-    func recordScore(roundId: Int64, score: HoleScoreInput) throws -> HoleScoreRecord {
+    /// playerIndex defaults to 0 (creator) for backward compat.
+    func recordScore(roundId: Int64, playerIndex: Int = 0, score: HoleScoreInput) throws -> HoleScoreRecord {
         let now = ISO8601DateFormatter().string(from: Date())
 
         let scoreId = try dbQueue.write { db -> Int64 in
             try db.execute(
                 sql: """
-                INSERT INTO hole_scores (round_id, hole_number, strokes, recorded_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO hole_scores (round_id, player_index, hole_number, strokes, recorded_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                arguments: [roundId, score.holeNumber, score.strokes, now]
+                arguments: [roundId, playerIndex, score.holeNumber, score.strokes, now]
             )
             return db.lastInsertedRowID
         }
@@ -306,42 +307,83 @@ class HoleScoreRepository {
         return HoleScoreRecord(
             scoreId: scoreId,
             roundId: roundId,
+            playerIndex: playerIndex,
             holeNumber: score.holeNumber,
             strokes: score.strokes,
             recordedAt: now
         )
     }
 
-    /// Fetch latest scores for all holes in a round (latest-wins resolved).
+    /// Fetch latest scores for a specific player in a round (latest-wins resolved).
     /// Deterministic: MAX(recorded_at), tie-break MAX(score_id).
-    func fetchLatestScores(forRound roundId: Int64) throws -> [HoleScoreRecord] {
+    /// playerIndex defaults to 0 (creator) for backward compat.
+    func fetchLatestScores(forRound roundId: Int64, playerIndex: Int = 0) throws -> [HoleScoreRecord] {
         return try dbQueue.read { db in
             let rows = try Row.fetchAll(db,
                 sql: """
-                SELECT hs.score_id, hs.round_id, hs.hole_number, hs.strokes, hs.recorded_at
+                SELECT hs.score_id, hs.round_id, hs.player_index, hs.hole_number, hs.strokes, hs.recorded_at
                 FROM hole_scores hs
                 INNER JOIN (
                     SELECT hole_number, MAX(recorded_at) AS max_ra, MAX(score_id) AS max_id
                     FROM hole_scores
-                    WHERE round_id = ?
+                    WHERE round_id = ? AND player_index = ?
                     GROUP BY hole_number
                 ) latest ON hs.hole_number = latest.hole_number
                        AND hs.recorded_at = latest.max_ra
                        AND hs.score_id = latest.max_id
-                WHERE hs.round_id = ?
+                WHERE hs.round_id = ? AND hs.player_index = ?
                 ORDER BY hs.hole_number ASC
                 """,
-                arguments: [roundId, roundId])
+                arguments: [roundId, playerIndex, roundId, playerIndex])
 
             return rows.map { row in
                 HoleScoreRecord(
                     scoreId: row["score_id"],
                     roundId: row["round_id"],
+                    playerIndex: row["player_index"],
                     holeNumber: row["hole_number"],
                     strokes: row["strokes"],
                     recordedAt: row["recorded_at"]
                 )
             }
+        }
+    }
+
+    /// Fetch latest scores for ALL players in a round, grouped by player_index.
+    /// Returns playerIndex -> [HoleScoreRecord] dictionary.
+    func fetchAllPlayersLatestScores(forRound roundId: Int64) throws -> [Int: [HoleScoreRecord]] {
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db,
+                sql: """
+                SELECT hs.score_id, hs.round_id, hs.player_index, hs.hole_number, hs.strokes, hs.recorded_at
+                FROM hole_scores hs
+                INNER JOIN (
+                    SELECT player_index, hole_number, MAX(recorded_at) AS max_ra, MAX(score_id) AS max_id
+                    FROM hole_scores
+                    WHERE round_id = ?
+                    GROUP BY player_index, hole_number
+                ) latest ON hs.player_index = latest.player_index
+                       AND hs.hole_number = latest.hole_number
+                       AND hs.recorded_at = latest.max_ra
+                       AND hs.score_id = latest.max_id
+                WHERE hs.round_id = ?
+                ORDER BY hs.player_index ASC, hs.hole_number ASC
+                """,
+                arguments: [roundId, roundId])
+
+            var result: [Int: [HoleScoreRecord]] = [:]
+            for row in rows {
+                let record = HoleScoreRecord(
+                    scoreId: row["score_id"],
+                    roundId: row["round_id"],
+                    playerIndex: row["player_index"],
+                    holeNumber: row["hole_number"],
+                    strokes: row["strokes"],
+                    recordedAt: row["recorded_at"]
+                )
+                result[record.playerIndex, default: []].append(record)
+            }
+            return result
         }
     }
 }

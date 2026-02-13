@@ -76,6 +76,74 @@ enum RoundShareBuilder {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Multi-Player Variants
+
+    /// Build a human-readable note for posting to Nostr (kind 1) — multiplayer.
+    static func noteText(
+        course: String,
+        tees: String,
+        holes: [CourseHoleRecord],
+        playerScores: [(label: String, scores: [Int: Int])]
+    ) -> String {
+        let totalPar = holes.reduce(0) { $0 + $1.par }
+        let holeCount = holes.count
+
+        let scoreSummaries = playerScores.map { player in
+            let total = holes.compactMap { player.scores[$0.holeNumber] }.reduce(0, +)
+            let diff = total - totalPar
+            return "\(player.label): \(total) (\(formatScoreToPar(diff)))"
+        }
+
+        let totals = playerScores.map { player in
+            String(holes.compactMap { player.scores[$0.holeNumber] }.reduce(0, +))
+        }
+
+        if holeCount <= 9 {
+            let label = nineLabel(for: holes)
+            return "Shot \(totals.joined(separator: "/")) on \(label) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #gambitgolf"
+        }
+
+        return "Shot \(totals.joined(separator: "/")) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #gambitgolf"
+    }
+
+    /// Build a plain-text summary for the share sheet / clipboard — multiplayer.
+    static func summaryText(
+        course: String,
+        tees: String,
+        date: String,
+        holes: [CourseHoleRecord],
+        playerScores: [(label: String, scores: [Int: Int])]
+    ) -> String {
+        let totalPar = holes.reduce(0) { $0 + $1.par }
+
+        var lines: [String] = []
+        lines.append("Gambit Golf — Round Summary")
+        lines.append("")
+        lines.append("Course: \(course)")
+        lines.append("Tees: \(tees)")
+        lines.append("Date: \(date)")
+        lines.append("Holes: \(holes.count)")
+        lines.append("Players: \(playerScores.count)")
+        lines.append("")
+
+        let playerLabels = playerScores.map(\.label).joined(separator: "/")
+        for hole in holes.sorted(by: { $0.holeNumber < $1.holeNumber }) {
+            let strokesText = playerScores.map { player in
+                player.scores[hole.holeNumber].map(String.init) ?? "-"
+            }.joined(separator: "/")
+            lines.append("Hole \(hole.holeNumber): Par \(hole.par), Scores (\(playerLabels)) \(strokesText)")
+        }
+
+        lines.append("")
+        for player in playerScores {
+            let total = holes.compactMap { player.scores[$0.holeNumber] }.reduce(0, +)
+            let diff = total - totalPar
+            lines.append("\(player.label) Total: \(total) (Par \(totalPar), \(formatScoreToPar(diff)))")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Helpers
 
     private static func formatScoreToPar(_ scoreToPar: Int) -> String {

@@ -17,6 +17,20 @@ struct ScoreEntryView: View {
             if !store.isLoaded {
                 ProgressView()
             } else if let currentHole = store.currentHole {
+                // Player picker (multiplayer only)
+                if store.isMultiplayer {
+                    Picker("Player", selection: Binding(
+                        get: { store.currentPlayerIndex },
+                        set: { store.switchPlayer(to: $0) }
+                    )) {
+                        ForEach(store.players.indices, id: \.self) { index in
+                            Text(store.playerLabel(for: index)).tag(index)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                }
+
                 VStack(spacing: 8) {
                     Text("Par \(currentHole.par)")
                         .font(.title2)

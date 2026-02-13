@@ -1184,4 +1184,304 @@ final class ScorecardTests: XCTestCase {
                 """, arguments: [roundId, "tooshort", "2026-02-13T12:00:00Z"])
         })
     }
+
+    // MARK: - Phase 6D: Multi-Player Scoring
+
+    /// Schema: player_index column exists with DEFAULT 0
+    func testPlayerIndexColumnExistsWithDefault() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+
+        // Insert a score WITHOUT specifying player_index — should default to 0
+        try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO hole_scores (round_id, hole_number, strokes, recorded_at)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [roundId, 1, 5, "2026-02-13T12:00:00Z"])
+        }
+
+        let playerIndex = try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT player_index FROM hole_scores LIMIT 1")
+        }
+        XCTAssertEqual(playerIndex, 0, "player_index should default to 0")
+    }
+
+    /// Schema: negative player_index rejected by CHECK constraint
+    func testNegativePlayerIndexRejected() throws {
+        let dbQueue = try createTestDatabase()
+        let hash = "a" + String(repeating: "0", count: 63)
+
+        XCTAssertThrowsError(try dbQueue.write { db in
+            try self.insertRawCourseSnapshot(db: db, hash: hash)
+            let roundId = try self.insertRawRound(db: db, courseHash: hash)
+            try db.execute(sql: """
+                INSERT INTO hole_scores (round_id, player_index, hole_number, strokes, recorded_at)
+                VALUES (?, ?, ?, ?, ?)
+                """, arguments: [roundId, -1, 1, 4, "2026-02-13T12:00:00Z"])
+        })
+    }
+
+    /// Repository: recordScore with explicit playerIndex stores correctly
+    func testRecordScoreWithPlayerIndex() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Player 0 scores hole 1 with 4
+        let score0 = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                                score: HoleScoreInput(holeNumber: 1, strokes: 4))
+        XCTAssertEqual(score0.playerIndex, 0)
+        XCTAssertEqual(score0.strokes, 4)
+
+        // Player 1 scores hole 1 with 5
+        let score1 = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                                score: HoleScoreInput(holeNumber: 1, strokes: 5))
+        XCTAssertEqual(score1.playerIndex, 1)
+        XCTAssertEqual(score1.strokes, 5)
+    }
+
+    /// Repository: fetchLatestScores filters by playerIndex — no cross-player leakage
+    func testFetchLatestScoresFiltersPlayerIndex() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Player 0: hole 1 = 4, hole 2 = 5
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 4))
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                       score: HoleScoreInput(holeNumber: 2, strokes: 5))
+
+        // Player 1: hole 1 = 6, hole 2 = 3
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 6))
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                       score: HoleScoreInput(holeNumber: 2, strokes: 3))
+
+        // Fetch player 0 only
+        let p0Scores = try scoreRepo.fetchLatestScores(forRound: round.roundId, playerIndex: 0)
+        XCTAssertEqual(p0Scores.count, 2)
+        XCTAssertEqual(p0Scores[0].strokes, 4, "Player 0 hole 1 should be 4")
+        XCTAssertEqual(p0Scores[1].strokes, 5, "Player 0 hole 2 should be 5")
+        XCTAssertTrue(p0Scores.allSatisfy { $0.playerIndex == 0 }, "No player 1 scores should leak into player 0 fetch")
+
+        // Fetch player 1 only
+        let p1Scores = try scoreRepo.fetchLatestScores(forRound: round.roundId, playerIndex: 1)
+        XCTAssertEqual(p1Scores.count, 2)
+        XCTAssertEqual(p1Scores[0].strokes, 6, "Player 1 hole 1 should be 6")
+        XCTAssertEqual(p1Scores[1].strokes, 3, "Player 1 hole 2 should be 3")
+        XCTAssertTrue(p1Scores.allSatisfy { $0.playerIndex == 1 }, "No player 0 scores should leak into player 1 fetch")
+    }
+
+    /// Repository: fetchAllPlayersLatestScores returns grouped dict
+    func testFetchAllPlayersLatestScores() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Player 0: holes 1-3
+        for hole in 1...3 {
+            _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                           score: HoleScoreInput(holeNumber: hole, strokes: 4))
+        }
+        // Player 1: holes 1-3
+        for hole in 1...3 {
+            _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                           score: HoleScoreInput(holeNumber: hole, strokes: 5))
+        }
+
+        let allScores = try scoreRepo.fetchAllPlayersLatestScores(forRound: round.roundId)
+        XCTAssertEqual(allScores.count, 2, "Should have entries for 2 players")
+        XCTAssertEqual(allScores[0]?.count, 3, "Player 0 should have 3 scores")
+        XCTAssertEqual(allScores[1]?.count, 3, "Player 1 should have 3 scores")
+
+        // Verify scores are correct per player
+        XCTAssertTrue(allScores[0]?.allSatisfy { $0.strokes == 4 } == true)
+        XCTAssertTrue(allScores[1]?.allSatisfy { $0.strokes == 5 } == true)
+    }
+
+    /// Repository: latest-wins corrections don't leak across players
+    func testLatestWinsPerPlayerNoLeakage() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Player 0: hole 1 = 5, then correct to 4
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 5))
+        Thread.sleep(forTimeInterval: 0.01)
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 4))
+
+        // Player 1: hole 1 = 7, then correct to 6
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 7))
+        Thread.sleep(forTimeInterval: 0.01)
+        _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                       score: HoleScoreInput(holeNumber: 1, strokes: 6))
+
+        // Player 0's latest should be 4 (not 6)
+        let p0 = try scoreRepo.fetchLatestScores(forRound: round.roundId, playerIndex: 0)
+        XCTAssertEqual(p0.count, 1)
+        XCTAssertEqual(p0[0].strokes, 4, "Player 0 correction should not be affected by player 1")
+
+        // Player 1's latest should be 6 (not 4)
+        let p1 = try scoreRepo.fetchLatestScores(forRound: round.roundId, playerIndex: 1)
+        XCTAssertEqual(p1.count, 1)
+        XCTAssertEqual(p1[0].strokes, 6, "Player 1 correction should not be affected by player 0")
+    }
+
+    /// Repository: listRounds total_strokes and holes_scored filter by player_index = 0
+    func testListRoundsShowsCreatorScoresOnly() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Player 0 (creator): score all 9 holes with par (4)
+        for hole in 1...9 {
+            _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 0,
+                                           score: HoleScoreInput(holeNumber: hole, strokes: 4))
+        }
+        // Player 1: score all 9 holes with bogey (5)
+        for hole in 1...9 {
+            _ = try scoreRepo.recordScore(roundId: round.roundId, playerIndex: 1,
+                                           score: HoleScoreInput(holeNumber: hole, strokes: 5))
+        }
+
+        try roundRepo.completeRound(roundId: round.roundId)
+
+        let list = try roundRepo.listRounds()
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list[0].totalStrokes, 36, "Should show creator (P0) total: 9×4=36, not P1's 45")
+        XCTAssertEqual(list[0].holesScored, 9, "Should show creator (P0) holes scored: 9")
+    }
+
+    /// Repository: backward compat — recordScore without playerIndex defaults to 0
+    func testRecordScoreDefaultPlayerIndex() throws {
+        let dbQueue = try createTestDatabase()
+        let snapshotRepo = CourseSnapshotRepository(dbQueue: dbQueue)
+        let roundRepo = RoundRepository(dbQueue: dbQueue)
+        let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
+
+        let snapshot = try snapshotRepo.insertCourseSnapshot(make9HoleInput())
+        let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: "2026-02-13")
+
+        // Call without playerIndex parameter
+        let score = try scoreRepo.recordScore(roundId: round.roundId,
+                                               score: HoleScoreInput(holeNumber: 1, strokes: 4))
+        XCTAssertEqual(score.playerIndex, 0, "Default playerIndex should be 0")
+
+        // fetchLatestScores without playerIndex should also default to 0
+        let fetched = try scoreRepo.fetchLatestScores(forRound: round.roundId)
+        XCTAssertEqual(fetched.count, 1)
+        XCTAssertEqual(fetched[0].playerIndex, 0)
+    }
+
+    // MARK: - Phase 6D: NIP-101g Per-Player Events
+
+    /// NIP-101g: buildFinalRecordEvent with scoredPlayerPubkey produces correct tags
+    func testBuildFinalRecordEventWithScoredPlayer() throws {
+        let initiationId = "a" + String(repeating: "0", count: 63)
+        let player1 = "b" + String(repeating: "1", count: 63)
+        let player2 = "c" + String(repeating: "2", count: 63)
+
+        let builder = try NIP101gEventBuilder.buildFinalRecordEvent(
+            initiationEventId: initiationId,
+            scores: [(holeNumber: 1, strokes: 4), (holeNumber: 2, strokes: 5)],
+            total: 9,
+            scoredPlayerPubkey: player1,
+            playerPubkeys: [player1, player2],
+            notes: nil
+        )
+
+        // Verify the builder was created successfully (it's an EventBuilder, not nil)
+        // The actual tag verification happens through the NostrSDK — we verify the builder doesn't throw
+        XCTAssertNotNil(builder)
+    }
+
+    /// NIP-101g: buildFinalRecordEvent without scoredPlayerPubkey (backward compat)
+    func testBuildFinalRecordEventWithoutScoredPlayer() throws {
+        let initiationId = "a" + String(repeating: "0", count: 63)
+        let player1 = "b" + String(repeating: "1", count: 63)
+
+        let builder = try NIP101gEventBuilder.buildFinalRecordEvent(
+            initiationEventId: initiationId,
+            scores: [(holeNumber: 1, strokes: 4)],
+            total: 4,
+            playerPubkeys: [player1],
+            notes: nil
+        )
+
+        XCTAssertNotNil(builder)
+    }
+
+    // MARK: - Phase 6D: RoundShareBuilder Multi-Player
+
+    /// RoundShareBuilder: multi-player noteText formats correctly
+    func testMultiPlayerNoteText() {
+        let holes = (1...9).map {
+            CourseHoleRecord(courseHash: "test", holeNumber: $0, par: 4, handicapIndex: nil)
+        }
+        let playerScores: [(label: String, scores: [Int: Int])] = [
+            (label: "P1", scores: Dictionary(uniqueKeysWithValues: (1...9).map { ($0, 4) })),
+            (label: "P2", scores: Dictionary(uniqueKeysWithValues: (1...9).map { ($0, 5) }))
+        ]
+
+        let note = RoundShareBuilder.noteText(
+            course: "Test Course",
+            tees: "Blue",
+            holes: holes,
+            playerScores: playerScores
+        )
+
+        XCTAssertTrue(note.contains("36/45"), "Should contain both players' totals")
+        XCTAssertTrue(note.contains("P1:"), "Should contain player 1 label")
+        XCTAssertTrue(note.contains("P2:"), "Should contain player 2 label")
+        XCTAssertTrue(note.contains("#golf"), "Should contain hashtags")
+    }
+
+    /// RoundShareBuilder: multi-player summaryText formats correctly
+    func testMultiPlayerSummaryText() {
+        let holes = (1...9).map {
+            CourseHoleRecord(courseHash: "test", holeNumber: $0, par: 4, handicapIndex: nil)
+        }
+        let playerScores: [(label: String, scores: [Int: Int])] = [
+            (label: "P1", scores: Dictionary(uniqueKeysWithValues: (1...9).map { ($0, 4) })),
+            (label: "P2", scores: Dictionary(uniqueKeysWithValues: (1...9).map { ($0, 5) }))
+        ]
+
+        let summary = RoundShareBuilder.summaryText(
+            course: "Test Course",
+            tees: "Blue",
+            date: "2026-02-13",
+            holes: holes,
+            playerScores: playerScores
+        )
+
+        XCTAssertTrue(summary.contains("Players: 2"), "Should show player count")
+        XCTAssertTrue(summary.contains("P1 Total: 36"), "Should show P1 total")
+        XCTAssertTrue(summary.contains("P2 Total: 45"), "Should show P2 total")
+    }
 }

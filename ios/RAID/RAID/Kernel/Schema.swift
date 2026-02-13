@@ -541,6 +541,32 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v6_add_player_index_to_hole_scores: Multi-player Scoring
+        //
+        // Adds player_index column to hole_scores for same-device
+        // multiplayer scoring. player_index maps to round_players
+        // ordering (0 = creator, 1+ = other players).
+        //
+        // DEFAULT 0 retroactively applies to all existing rows,
+        // making pre-6D scores automatically attributed to creator.
+        // ALTER TABLE ADD COLUMN is safe with existing immutability
+        // triggers (triggers fire on row ops, not DDL).
+        // ============================================================
+        migrator.registerMigration("v6_add_player_index_to_hole_scores") { db in
+            try db.execute(sql: """
+                ALTER TABLE hole_scores
+                ADD COLUMN player_index INTEGER NOT NULL DEFAULT 0 CHECK (player_index >= 0)
+                """)
+
+            // Recreate index to include player_index dimension
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_hole_scores_round_hole")
+            try db.execute(sql: """
+                CREATE INDEX idx_hole_scores_round_hole_player
+                ON hole_scores(round_id, player_index, hole_number, recorded_at DESC)
+                """)
+        }
+
         return migrator
     }
 

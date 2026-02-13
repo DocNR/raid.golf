@@ -109,10 +109,13 @@ enum NIP101gEventBuilder {
 
     /// Build a kind 1502 Final Round Record EventBuilder.
     /// References the initiation event by ID via `e` tag.
+    /// For multiplayer: `scoredPlayerPubkey` identifies whose scores these are.
+    /// The scored player's `p` tag comes first; a `scored_by` tag is added for unambiguous attribution.
     static func buildFinalRecordEvent(
         initiationEventId: String,
         scores: [(holeNumber: Int, strokes: Int)],
         total: Int,
+        scoredPlayerPubkey: String? = nil,
         playerPubkeys: [String],
         notes: String?
     ) throws -> EventBuilder {
@@ -128,8 +131,17 @@ enum NIP101gEventBuilder {
             tagArrays.append(["score", String(score.holeNumber), String(score.strokes)])
         }
 
-        for pubkey in playerPubkeys {
-            tagArrays.append(["p", pubkey])
+        if let scored = scoredPlayerPubkey {
+            tagArrays.append(["scored_by", scored])
+            // Scored player first, then others
+            tagArrays.append(["p", scored])
+            for pubkey in playerPubkeys where pubkey != scored {
+                tagArrays.append(["p", pubkey])
+            }
+        } else {
+            for pubkey in playerPubkeys {
+                tagArrays.append(["p", pubkey])
+            }
         }
 
         let tags = try tagArrays.map { try Tag.parse(data: $0) }
