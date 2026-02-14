@@ -10,7 +10,7 @@ Practice analytics for golfers. Import Rapsodo CSV files, track your range sessi
 
 3. **Manage Templates**: Tap the Templates tab to view, create, or customize KPI templates. Templates define what makes an A, B, or C shot for each club. A starter 7-iron template is included.
 
-4. **Record Rounds**: Tap the Rounds tab to score rounds hole-by-hole. Track your scores over time. Optionally post your scorecards to Nostr.
+4. **Record Rounds**: Tap the Rounds tab to score rounds hole-by-hole, solo or with other players. Add players from your Nostr follow list or by npub. Track your scores over time. Optionally post your scorecards to Nostr.
 
 ## Nostr Integration
 
@@ -24,7 +24,7 @@ To view your Nostr identity and relay settings, tap the profile button (person i
 
 - **Local-first by design**: All data is stored locally in SQLite on your device. There is no cloud sync. Deleting the app deletes your data.
 
-- **Single-player only**: Rounds and practice data are personal. Multiplayer scorecards and social features are not yet implemented.
+- **Same-device multiplayer**: Multiplayer rounds are scored on a single device (pass-and-play). Multi-device score sync is not yet implemented.
 
 ## Requirements
 

@@ -31,6 +31,26 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **Scoring UX Polish Sprint**
+  - Prominent hole number display (48pt bold rounded font, replaces inline navigation title)
+  - Navigation haptics: light impact on prev/next, medium on finish
+  - Round-robin multiplayer navigation: Next cycles P1 → P2 per hole before advancing to next hole
+  - Per-player progress indicator (e.g., "P1: 9/9, P2: 7/9") with finish-gating feedback text
+  - End-of-round review scorecard sheet (`RoundReviewView`) replaces simple confirmation alert
+  - `isOnFirstPosition`, `playerProgress`, `finishBlockedReason` computed properties on ActiveRoundStore
+
+- **iOS Phase 6D: Multi-Player Scoring**
+  - Schema v6: `player_index INTEGER NOT NULL DEFAULT 0 CHECK (player_index >= 0)` on `hole_scores`
+  - `ActiveRoundStore`: multi-player state with `switchPlayer(to:)`, per-player scores dict `[Int: [Int: Int]]`
+  - `ScoreEntryView`: segmented player picker (multiplayer only), auto-hidden for solo rounds
+  - `HoleScoreRepository`: `recordScore`/`fetchLatestScores` accept `playerIndex` (default 0), `fetchAllPlayersLatestScores()` returns grouped dict
+  - `listRounds()` filters by `player_index = 0` (rounds list shows creator's score only)
+  - NIP-101g: `buildFinalRecordEvent` gains `scoredPlayerPubkey` param — one kind 1502 per player in multiplayer
+  - `RoundShareBuilder`: multi-player `noteText`/`summaryText` overloads ("Shot 82/78 at...")
+  - Companion kind 1 social note: includes all player scores in multiplayer
+  - UX Contract A.11 added (rounds list shows creator score only for multiplayer)
+  - 14 new tests (160 total)
+
 - **iOS Phase 6C: Player Model + Initiation Timing**
   - Schema v5: `round_players` table (immutable player roster per round) and `round_nostr` table (initiation event ID storage)
   - `RoundPlayerRepository` and `RoundNostrRepository`: new repositories for player and Nostr metadata

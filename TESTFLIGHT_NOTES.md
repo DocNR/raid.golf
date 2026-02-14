@@ -10,15 +10,17 @@ Thank you for testing Gambit Golf.
 
 3. **Templates**: Create, rename, hide, and duplicate templates. Set active templates per club. Verify templates affect shot grading.
 
-4. **Scorecard**: Create a round, enter scores hole-by-hole, and complete the round. Verify scores save correctly and appear in round history.
+4. **Scorecard**: Create a round (solo or multiplayer), enter scores hole-by-hole, and complete the round. In multiplayer, verify the round-robin flow (P1 then P2 per hole) and the review screen showing all players' scores. Verify scores save correctly and appear in round history.
 
 5. **Nostr Posting**: Complete a round and tap "Post to Nostr". Verify the note appears on a Nostr client (e.g., Damus, Primal). Check your profile view for npub/nsec.
+
+6. **Multiplayer Rounds**: Create a round and add players from your Nostr follow list or by entering their npub. Score for all players using the round-robin flow. Verify per-player progress tracking and the review scorecard before finishing.
 
 ## Known Issues
 
 - **B-001: Club name normalization**: If your CSV uses "7 Iron" and your template uses "7i", they won't match. This will be addressed in a future update. For now, use the club picker when creating templates to ensure exact matches.
 
-- **No multiplayer**: Rounds are single-player only. Multiplayer scorecards are not implemented yet.
+- **Same-device multiplayer only**: Multiplayer rounds are scored on a single device. Multi-device score sync is not yet implemented.
 
 - **No cloud sync**: All data is local. Deleting the app deletes your data.
 
