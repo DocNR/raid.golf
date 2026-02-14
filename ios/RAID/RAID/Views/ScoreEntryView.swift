@@ -17,6 +17,16 @@ struct ScoreEntryView: View {
             if !store.isLoaded {
                 ProgressView()
             } else if let currentHole = store.currentHole {
+                // Prominent hole number
+                VStack(spacing: 2) {
+                    Text("Hole \(currentHole.holeNumber)")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                    Text("of \(store.holes.count)")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+
                 // Player picker (multiplayer only)
                 if store.isMultiplayer {
                     Picker("Player", selection: Binding(
@@ -63,15 +73,25 @@ struct ScoreEntryView: View {
                     }
                     .padding(.horizontal, 40)
                 }
-                .padding(.vertical, 40)
+                .padding(.vertical, 20)
 
-                // Running total
+                // Per-player progress
                 VStack(spacing: 4) {
                     Text("Total: \(store.totalStrokes) (\(store.scoreToPar))")
                         .font(.headline)
-                    Text("\(store.holesScored) of \(store.holes.count) holes scored")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        ForEach(Array(store.playerProgress.enumerated()), id: \.offset) { _, progress in
+                            HStack(spacing: 4) {
+                                Text(progress.label)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Text("\(progress.scored)/\(progress.total)")
+                                    .font(.caption)
+                                    .foregroundStyle(progress.scored >= progress.total ? .green : .secondary)
+                            }
+                        }
+                    }
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -80,19 +100,29 @@ struct ScoreEntryView: View {
 
                 Spacer()
 
+                // Finish gating feedback
+                if store.isOnLastHole, let reason = store.finishBlockedReason {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal)
+                }
+
                 // Navigation buttons
                 HStack(spacing: 20) {
                     Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         store.retreatHole()
                     } label: {
                         Label("Previous", systemImage: "chevron.left")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(store.currentHoleIndex == 0)
+                    .disabled(store.isOnFirstPosition)
 
                     if store.isOnLastHole {
                         Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             store.requestFinish()
                         } label: {
                             Label("Finish Round", systemImage: "checkmark")
@@ -102,6 +132,7 @@ struct ScoreEntryView: View {
                         .disabled(!store.isFinishEnabled)
                     } else {
                         Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             store.advanceHole()
                         } label: {
                             HStack {
@@ -117,15 +148,10 @@ struct ScoreEntryView: View {
                 .padding(.bottom, 20)
             }
         }
-        .navigationTitle("Hole \(store.currentHoleIndex + 1) of \(store.holes.count)")
+        .navigationTitle("Scoring")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Finish Round", isPresented: Bindable(store).showFinishConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Finish") {
-                store.finishRound { dismiss() }
-            }
-        } message: {
-            Text("Are you sure you want to end your round?")
+        .sheet(isPresented: Bindable(store).showReviewSheet) {
+            RoundReviewView(store: store, onFinish: dismiss)
         }
         .alert("Error", isPresented: Binding(
             get: { store.errorMessage != nil },

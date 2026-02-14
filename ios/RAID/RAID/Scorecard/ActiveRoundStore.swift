@@ -90,7 +90,40 @@ class ActiveRoundStore {
     }
 
     var isOnLastHole: Bool {
-        !holes.isEmpty && currentHoleIndex == holes.count - 1
+        guard !holes.isEmpty else { return false }
+        if isMultiplayer {
+            return currentHoleIndex == holes.count - 1 && currentPlayerIndex == players.count - 1
+        }
+        return currentHoleIndex == holes.count - 1
+    }
+
+    var isOnFirstPosition: Bool {
+        currentHoleIndex == 0 && currentPlayerIndex == 0
+    }
+
+    var playerProgress: [(label: String, scored: Int, total: Int)] {
+        if isMultiplayer {
+            return players.map { player in
+                let scored = holes.filter { scores[player.playerIndex]?[$0.holeNumber] != nil }.count
+                return (label: playerLabel(for: player.playerIndex), scored: scored, total: holes.count)
+            }
+        } else {
+            return [(label: "You", scored: holesScored, total: holes.count)]
+        }
+    }
+
+    var finishBlockedReason: String? {
+        guard !holes.isEmpty, !isCompleting else { return nil }
+        if isMultiplayer {
+            let incomplete = players.compactMap { player -> String? in
+                let scored = holes.filter { scores[player.playerIndex]?[$0.holeNumber] != nil }.count
+                guard scored < holes.count else { return nil }
+                return "\(playerLabel(for: player.playerIndex)): \(scored)/\(holes.count)"
+            }
+            return incomplete.isEmpty ? nil : "Missing scores: \(incomplete.joined(separator: ", "))"
+        } else {
+            return holesScored < holes.count ? "\(holesScored) of \(holes.count) holes scored" : nil
+        }
     }
 
     /// Short label for player (P1, P2, etc.) for segmented picker
@@ -146,18 +179,24 @@ class ActiveRoundStore {
 
     func advanceHole() {
         saveCurrentScore()
-        if currentHoleIndex < holes.count - 1 {
+        if isMultiplayer && currentPlayerIndex < players.count - 1 {
+            currentPlayerIndex += 1
+        } else if currentHoleIndex < holes.count - 1 {
             currentHoleIndex += 1
-            ensureCurrentHoleHasDefault()
+            currentPlayerIndex = 0
         }
+        ensureCurrentHoleHasDefault()
     }
 
     func retreatHole() {
         saveCurrentScore()
-        if currentHoleIndex > 0 {
+        if isMultiplayer && currentPlayerIndex > 0 {
+            currentPlayerIndex -= 1
+        } else if currentHoleIndex > 0 {
             currentHoleIndex -= 1
-            ensureCurrentHoleHasDefault()
+            currentPlayerIndex = isMultiplayer ? players.count - 1 : 0
         }
+        ensureCurrentHoleHasDefault()
     }
 
     func switchPlayer(to index: Int) {
@@ -183,13 +222,13 @@ class ActiveRoundStore {
         }
     }
 
-    /// Whether the finish confirmation alert should be shown.
-    var showFinishConfirmation: Bool = false
+    /// Whether the review sheet should be shown before finishing.
+    var showReviewSheet: Bool = false
 
-    /// Called when user taps Finish — shows confirmation first.
+    /// Called when user taps Finish — shows review scorecard first.
     func requestFinish() {
         saveCurrentScore()
-        showFinishConfirmation = true
+        showReviewSheet = true
     }
 
     // MARK: - Persistence
