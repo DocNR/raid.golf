@@ -23,6 +23,15 @@ struct RoundDetailView: View {
     @State private var errorMessage: String?
     @State private var showPublishSuccess = false
 
+    // Multi-device state
+    @State private var nostrRecord: RoundNostrRecord?
+    @State private var isFetchingRemote = false
+    @State private var remoteFetchDone = false
+
+    private var isJoinedRound: Bool {
+        nostrRecord?.joinedVia == "joined"
+    }
+
     // Derived scores for the currently selected player
     private var scores: [Int: Int] {
         allPlayerScores[selectedPlayerIndex] ?? [:]
@@ -75,6 +84,27 @@ struct RoundDetailView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                }
+            }
+
+            // Fetch remote scores for joined rounds
+            if isJoinedRound {
+                Section {
+                    Button {
+                        Task { await fetchRemoteFinalRecords() }
+                    } label: {
+                        HStack {
+                            Label("Fetch Other Players' Scores", systemImage: "arrow.triangle.2.circlepath")
+                            Spacer()
+                            if isFetchingRemote {
+                                ProgressView()
+                            } else if remoteFetchDone {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                    }
+                    .disabled(isFetchingRemote)
                 }
             }
 
@@ -255,10 +285,33 @@ struct RoundDetailView: View {
             }
 
             // Publish final round records (kind 1502)
-            var creatorFinalEventId: String = ""
+            var myFinalEventId: String = ""
 
-            if isMultiplayer {
-                // One 1502 per player, all signed by creator (same-device trust model)
+            if isJoinedRound {
+                // Multi-device: publish only MY kind 1502, signed by my key
+                let myScores = allPlayerScores[0] ?? [:] // Local player uses index 0
+                let scoreList = holes
+                    .sorted { $0.holeNumber < $1.holeNumber }
+                    .compactMap { hole -> (holeNumber: Int, strokes: Int)? in
+                        guard let strokes = myScores[hole.holeNumber] else { return nil }
+                        return (holeNumber: hole.holeNumber, strokes: strokes)
+                    }
+                let total = scoreList.reduce(0) { $0 + $1.strokes }
+
+                let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
+                    initiationEventId: initiationEventId,
+                    scores: scoreList,
+                    total: total,
+                    scoredPlayerPubkey: pubkey,
+                    playerPubkeys: playerPubkeys,
+                    notes: nil
+                )
+                myFinalEventId = try await NostrClient.publishEvent(
+                    keys: keys,
+                    builder: finalBuilder
+                )
+            } else if isMultiplayer {
+                // Same-device: one 1502 per player, all signed by creator
                 for player in players {
                     let playerScores = allPlayerScores[player.playerIndex] ?? [:]
                     let scoreList = holes
@@ -282,7 +335,7 @@ struct RoundDetailView: View {
                         builder: finalBuilder
                     )
                     if player.playerIndex == 0 {
-                        creatorFinalEventId = eventId
+                        myFinalEventId = eventId
                     }
                 }
             } else {
@@ -302,7 +355,7 @@ struct RoundDetailView: View {
                     playerPubkeys: playerPubkeys,
                     notes: nil
                 )
-                creatorFinalEventId = try await NostrClient.publishEvent(
+                myFinalEventId = try await NostrClient.publishEvent(
                     keys: keys,
                     builder: finalBuilder
                 )
@@ -329,7 +382,7 @@ struct RoundDetailView: View {
                 )
             }
 
-            let eventId1502 = try EventId.parse(id: creatorFinalEventId)
+            let eventId1502 = try EventId.parse(id: myFinalEventId)
             let nevent = try Nip19Event(eventId: eventId1502).toBech32()
 
             // Mention other players via nostr:npub1... (clients render as profile links)
@@ -345,7 +398,7 @@ struct RoundDetailView: View {
             socialContent += "\n\nhttps://njump.me/\(nevent)"
 
             var socialTagArrays: [[String]] = [
-                ["e", creatorFinalEventId],
+                ["e", myFinalEventId],
                 ["t", "golf"],
                 ["t", "gambitgolf"],
                 ["client", "gambit-golf-ios"]
@@ -392,6 +445,78 @@ struct RoundDetailView: View {
         UIPasteboard.general.string = text
     }
 
+    // MARK: - Remote Final Records
+
+    /// Fetch other players' kind 1502 final records from relays.
+    /// Merges remote scores into allPlayerScores by matching pubkey → player_index.
+    private func fetchRemoteFinalRecords() async {
+        guard let record = nostrRecord else { return }
+
+        isFetchingRemote = true
+        defer {
+            isFetchingRemote = false
+            remoteFetchDone = true
+        }
+
+        do {
+            let events = try await NostrClient.fetchFinalRecords(
+                initiationEventId: record.initiationEventId
+            )
+
+            // Build pubkey → player_index lookup from round_players
+            var pubkeyToIndex: [String: Int] = [:]
+            for player in players {
+                pubkeyToIndex[player.playerPubkey] = player.playerIndex
+            }
+
+            // Parse each event and merge into allPlayerScores
+            for event in events {
+                let authorHex = event.author().toHex()
+                let tags = event.tags().toVec().map { $0.asVec() }
+
+                guard let finalData = NIP101gEventParser.parseFinalRecord(
+                    tagArrays: tags,
+                    authorPubkeyHex: authorHex,
+                    content: event.content()
+                ) else { continue }
+
+                // Find this author's player_index
+                guard let playerIndex = pubkeyToIndex[authorHex] else { continue }
+
+                // Skip if we already have local scores for this player (creator's same-device scores)
+                if !isJoinedRound && allPlayerScores[playerIndex] != nil { continue }
+
+                // Merge remote scores
+                var remoteScores: [Int: Int] = [:]
+                for score in finalData.scores {
+                    remoteScores[score.holeNumber] = score.strokes
+                }
+                allPlayerScores[playerIndex] = remoteScores
+            }
+
+            // Also cache in remote_scores_cache for offline viewing
+            let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
+            for event in events {
+                let authorHex = event.author().toHex()
+                let tags = event.tags().toVec().map { $0.asVec() }
+                guard let finalData = NIP101gEventParser.parseFinalRecord(
+                    tagArrays: tags,
+                    authorPubkeyHex: authorHex,
+                    content: event.content()
+                ) else { continue }
+
+                var scoreDict: [Int: Int] = [:]
+                for score in finalData.scores {
+                    scoreDict[score.holeNumber] = score.strokes
+                }
+                try remoteRepo.upsertScores(roundId: roundId, playerPubkey: authorHex, scores: scoreDict)
+            }
+        } catch {
+            errorMessage = "Could not fetch remote scores. Check your connection."
+            print("[Gambit] Failed to fetch remote final records: \(error)")
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
@@ -414,6 +539,10 @@ struct RoundDetailView: View {
                 createdAt: row["created_at"]
             )
 
+            // Load round_nostr record (if any) to detect joined vs created
+            let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+            nostrRecord = try nostrRepo.fetchInitiation(forRound: roundId)
+
             // Sequential repo calls — each owns its own dbQueue.read
             let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)
             courseSnapshot = try courseRepo.fetchCourseSnapshot(byHash: courseHash)
@@ -423,8 +552,28 @@ struct RoundDetailView: View {
             let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
             players = try playerRepo.fetchPlayers(forRound: roundId)
 
-            if players.count > 1 {
-                // Multiplayer: load all players' scores
+            if isJoinedRound {
+                // Joined round: load player_index 0 (my local scores)
+                let myScores = try scoreRepo.fetchLatestScores(forRound: roundId, playerIndex: 0)
+                allPlayerScores[0] = [:]
+                for score in myScores {
+                    allPlayerScores[0]?[score.holeNumber] = score.strokes
+                }
+
+                // Load cached remote scores (if previously fetched)
+                let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
+                let cached = try remoteRepo.fetchRemoteScores(forRound: roundId)
+                var pubkeyToIndex: [String: Int] = [:]
+                for player in players {
+                    pubkeyToIndex[player.playerPubkey] = player.playerIndex
+                }
+                for (pubkey, remoteScores) in cached {
+                    if let index = pubkeyToIndex[pubkey] {
+                        allPlayerScores[index] = remoteScores
+                    }
+                }
+            } else if players.count > 1 {
+                // Same-device multiplayer: load all players' scores
                 let allScores = try scoreRepo.fetchAllPlayersLatestScores(forRound: roundId)
                 for (playerIndex, playerScores) in allScores {
                     allPlayerScores[playerIndex] = [:]

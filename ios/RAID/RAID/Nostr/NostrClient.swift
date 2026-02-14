@@ -139,6 +139,77 @@ enum NostrClient {
         return (follows: followedHexes, profiles: parseProfileEvents(profileEvents))
     }
 
+    // MARK: - Live Scorecard Fetch
+
+    /// Fetch kind 30501 live scorecard events for a round (by initiation event ID).
+    /// Returns all matching events — caller deduplicates (keep latest per author).
+    static func fetchLiveScorecards(initiationEventId: String) async throws -> [Event] {
+        let client = try await connectReadClient()
+
+        // Filter by kind 30501 with e tag matching initiation event ID
+        let eventId = try EventId.parse(id: initiationEventId)
+        let filter = Filter()
+            .kind(kind: Kind(kind: NIP101gKind.liveScorecard))
+            .event(eventId: eventId)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return try events.toVec()
+    }
+
+    /// Fetch kind 1502 final record events for a round (by initiation event ID).
+    /// Returns all matching events — each player publishes their own.
+    static func fetchFinalRecords(initiationEventId: String) async throws -> [Event] {
+        let client = try await connectReadClient()
+
+        let eventId = try EventId.parse(id: initiationEventId)
+        let filter = Filter()
+            .kind(kind: Kind(kind: NIP101gKind.finalRoundRecord))
+            .event(eventId: eventId)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return try events.toVec()
+    }
+
+    // MARK: - Event Fetch by ID
+
+    /// Fetch a single event by its hex ID from read relays.
+    /// Returns nil if the event is not found on any relay.
+    static func fetchEvent(eventIdHex: String) async throws -> Event? {
+        let eventId = try EventId.parse(id: eventIdHex)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .id(id: eventId)
+            .limit(limit: 1)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return events.first()
+    }
+
     // MARK: - Private Helpers
 
     private static func connectReadClient() async throws -> Client {

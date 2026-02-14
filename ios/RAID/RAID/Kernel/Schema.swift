@@ -567,6 +567,55 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v7_add_join_support: Multi-device round join infrastructure
+        //
+        // 1. Unique index on round_nostr.initiation_event_id for
+        //    deduplication when joining a round from relay data.
+        // 2. joined_via column to distinguish creator vs joiner:
+        //    'created' = round creator (default, matches existing rows)
+        //    'joined' = remote player who joined via invite
+        // ============================================================
+        migrator.registerMigration("v7_add_join_support") { db in
+            // Unique index for join deduplication (lookup by initiation event ID)
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX idx_round_nostr_initiation ON round_nostr(initiation_event_id)
+                """)
+
+            // Distinguish creator vs joiner
+            try db.execute(sql: """
+                ALTER TABLE round_nostr ADD COLUMN joined_via TEXT NOT NULL DEFAULT 'created'
+                """)
+        }
+
+        // ============================================================
+        // v8_create_remote_scores_cache: Remote Player Score Cache
+        //
+        // Non-authoritative MUTABLE cache for remote players' scores
+        // fetched from Nostr relays (kind 30501 live scorecards).
+        // No immutability triggers — scores are upserted on each fetch.
+        // PK: (round_id, player_pubkey, hole_number)
+        // ============================================================
+        migrator.registerMigration("v8_create_remote_scores_cache") { db in
+            try db.execute(sql: """
+                CREATE TABLE remote_scores_cache (
+                    round_id INTEGER NOT NULL,
+                    player_pubkey TEXT NOT NULL,
+                    hole_number INTEGER NOT NULL,
+                    strokes INTEGER NOT NULL,
+                    fetched_at TEXT NOT NULL,
+
+                    PRIMARY KEY (round_id, player_pubkey, hole_number),
+
+                    FOREIGN KEY (round_id) REFERENCES rounds(round_id)
+                        ON DELETE RESTRICT,
+
+                    CHECK (hole_number >= 1 AND hole_number <= 18),
+                    CHECK (strokes >= 1 AND strokes <= 20)
+                )
+            """)
+        }
+
         return migrator
     }
 

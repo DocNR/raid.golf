@@ -12,6 +12,7 @@ struct RoundsView: View {
 
     @State private var rounds: [RoundListItem] = []
     @State private var showingCreateRound = false
+    @State private var showingJoinRound = false
     @State private var navigationTarget: NavigationTarget?
     @State private var activeRoundStore: ActiveRoundStore?
     @State private var errorMessage: String?
@@ -36,10 +37,19 @@ struct RoundsView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingCreateRound = true
+                    Menu {
+                        Button {
+                            showingCreateRound = true
+                        } label: {
+                            Label("New Round", systemImage: "plus")
+                        }
+                        Button {
+                            showingJoinRound = true
+                        } label: {
+                            Label("Join Round", systemImage: "person.badge.plus")
+                        }
                     } label: {
-                        Label("New Round", systemImage: "plus")
+                        Image(systemName: "plus")
                     }
                 }
             }
@@ -62,6 +72,12 @@ struct RoundsView: View {
                             )
                         }
                     }
+                }
+            }
+            .sheet(isPresented: $showingJoinRound) {
+                JoinRoundView(dbQueue: dbQueue) { roundId, courseHash in
+                    loadRounds()
+                    navigateToScoreEntry(roundId: roundId, courseHash: courseHash)
                 }
             }
             .navigationDestination(item: $navigationTarget) { target in

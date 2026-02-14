@@ -11,6 +11,7 @@ import NostrSDK
 enum NIP101gKind {
     static let roundInitiation: UInt16 = 1501
     static let finalRoundRecord: UInt16 = 1502
+    static let liveScorecard: UInt16 = 30501  // Addressable replaceable (30000-39999)
 }
 
 // MARK: - Builder
@@ -148,6 +149,61 @@ enum NIP101gEventBuilder {
         let content = notes ?? ""
 
         return EventBuilder(kind: Kind(kind: NIP101gKind.finalRoundRecord), content: content)
+            .tags(tags: tags)
+    }
+
+    // MARK: - Live Scorecard (kind 30501)
+
+    /// Build tag arrays for a kind 30501 live scorecard event (for testing/inspection).
+    /// Exposed separately from `buildLiveScorecardEvent` so tests can verify tag structure
+    /// without needing to sign the event.
+    static func buildLiveScorecardTagArrays(
+        initiationEventId: String,
+        scores: [Int: Int],
+        status: String,
+        playerPubkeys: [String]
+    ) -> [[String]] {
+        var tagArrays: [[String]] = [
+            ["d", initiationEventId],
+            ["e", initiationEventId],
+            ["status", status],
+            ["t", "golf"],
+            ["t", "gambitgolf"],
+            ["client", "gambit-golf-ios"]
+        ]
+
+        for holeNumber in scores.keys.sorted() {
+            if let strokes = scores[holeNumber] {
+                tagArrays.append(["score", String(holeNumber), String(strokes)])
+            }
+        }
+
+        for pubkey in playerPubkeys {
+            tagArrays.append(["p", pubkey])
+        }
+
+        return tagArrays
+    }
+
+    /// Build a kind 30501 Live Scorecard EventBuilder.
+    /// Addressable replaceable: relay deduplicates on (kind + pubkey + d tag).
+    /// Content is empty — all data lives in tags.
+    static func buildLiveScorecardEvent(
+        initiationEventId: String,
+        scores: [Int: Int],
+        status: String,
+        playerPubkeys: [String]
+    ) throws -> EventBuilder {
+        let tagArrays = buildLiveScorecardTagArrays(
+            initiationEventId: initiationEventId,
+            scores: scores,
+            status: status,
+            playerPubkeys: playerPubkeys
+        )
+
+        let tags = try tagArrays.map { try Tag.parse(data: $0) }
+
+        return EventBuilder(kind: Kind(kind: NIP101gKind.liveScorecard), content: "")
             .tags(tags: tags)
     }
 

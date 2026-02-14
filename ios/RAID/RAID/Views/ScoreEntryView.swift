@@ -98,7 +98,52 @@ struct ScoreEntryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .padding(.horizontal)
 
+                // Remote scores (multi-device rounds)
+                if !store.remoteScores.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("Other Players")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(Array(store.remoteScores.keys.sorted()), id: \.self) { pubkey in
+                            if let playerScores = store.remoteScores[pubkey] {
+                                let total = playerScores.values.reduce(0, +)
+                                let holesCompleted = playerScores.count
+                                HStack {
+                                    Text(String(pubkey.prefix(8)) + "...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(total) (\(holesCompleted)/\(store.holes.count) holes)")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal)
+                }
+
                 Spacer()
+
+                // Refresh button for multi-device rounds
+                if store.inviteNevent != nil {
+                    Button {
+                        Task { await store.fetchRemoteScores() }
+                    } label: {
+                        HStack {
+                            if store.isFetchingRemoteScores {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text("Refresh Scores")
+                        }
+                    }
+                    .disabled(store.isFetchingRemoteScores)
+                    .padding(.bottom, 4)
+                }
 
                 // Finish gating feedback
                 if store.isOnLastHole, let reason = store.finishBlockedReason {
@@ -150,6 +195,23 @@ struct ScoreEntryView: View {
         }
         .navigationTitle("Scoring")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if store.inviteNevent != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        store.showInviteSheet = true
+                    } label: {
+                        Image(systemName: "qrcode")
+                    }
+                }
+            }
+        }
+        .task { store.loadInviteNevent() }
+        .sheet(isPresented: Bindable(store).showInviteSheet) {
+            if let nevent = store.inviteNevent {
+                RoundInviteSheet(nevent: nevent)
+            }
+        }
         .sheet(isPresented: Bindable(store).showReviewSheet) {
             RoundReviewView(store: store, onFinish: dismiss)
         }

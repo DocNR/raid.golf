@@ -90,4 +90,5 @@ struct RoundNostrRecord {
     let roundId: Int64
     let initiationEventId: String
     let publishedAt: String
+    let joinedVia: String  // "created" or "joined"
 }

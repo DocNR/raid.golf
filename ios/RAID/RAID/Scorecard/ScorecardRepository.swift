@@ -474,16 +474,17 @@ class RoundNostrRepository {
 
     /// Store the Nostr initiation event ID for a round.
     /// PK constraint prevents duplicate inserts for the same round.
-    func insertInitiation(roundId: Int64, initiationEventId: String) throws {
+    /// joinedVia: "created" (default, round creator) or "joined" (remote player).
+    func insertInitiation(roundId: Int64, initiationEventId: String, joinedVia: String = "created") throws {
         let now = ISO8601DateFormatter().string(from: Date())
 
         try dbQueue.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO round_nostr (round_id, initiation_event_id, published_at)
-                VALUES (?, ?, ?)
+                INSERT INTO round_nostr (round_id, initiation_event_id, published_at, joined_via)
+                VALUES (?, ?, ?, ?)
                 """,
-                arguments: [roundId, initiationEventId, now]
+                arguments: [roundId, initiationEventId, now, joinedVia]
             )
         }
     }
@@ -492,7 +493,7 @@ class RoundNostrRepository {
     func fetchInitiation(forRound roundId: Int64) throws -> RoundNostrRecord? {
         return try dbQueue.read { db in
             guard let row = try Row.fetchOne(db,
-                sql: "SELECT round_id, initiation_event_id, published_at FROM round_nostr WHERE round_id = ?",
+                sql: "SELECT round_id, initiation_event_id, published_at, joined_via FROM round_nostr WHERE round_id = ?",
                 arguments: [roundId]) else {
                 return nil
             }
@@ -500,7 +501,27 @@ class RoundNostrRepository {
             return RoundNostrRecord(
                 roundId: row["round_id"],
                 initiationEventId: row["initiation_event_id"],
-                publishedAt: row["published_at"]
+                publishedAt: row["published_at"],
+                joinedVia: row["joined_via"]
+            )
+        }
+    }
+
+    /// Fetch a round by its initiation event ID (for join deduplication).
+    /// Uses the unique index on initiation_event_id (v7 migration).
+    func fetchRound(byInitiationEventId eventId: String) throws -> RoundNostrRecord? {
+        return try dbQueue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT round_id, initiation_event_id, published_at, joined_via FROM round_nostr WHERE initiation_event_id = ?",
+                arguments: [eventId]) else {
+                return nil
+            }
+
+            return RoundNostrRecord(
+                roundId: row["round_id"],
+                initiationEventId: row["initiation_event_id"],
+                publishedAt: row["published_at"],
+                joinedVia: row["joined_via"]
             )
         }
     }

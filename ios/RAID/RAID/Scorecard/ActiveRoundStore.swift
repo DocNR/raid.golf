@@ -225,10 +225,138 @@ class ActiveRoundStore {
     /// Whether the review sheet should be shown before finishing.
     var showReviewSheet: Bool = false
 
+    /// Whether the invite sheet should be shown.
+    var showInviteSheet: Bool = false
+
+    /// The nevent string for round invite sharing, nil if no initiation published yet.
+    var inviteNevent: String?
+
     /// Called when user taps Finish — shows review scorecard first.
     func requestFinish() {
         saveCurrentScore()
         showReviewSheet = true
+    }
+
+    // MARK: - Invite
+
+    /// Load the invite nevent for this round (if initiation was published).
+    func loadInviteNevent() {
+        guard let dbQueue = dbQueue, inviteNevent == nil else { return }
+
+        do {
+            let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+            guard let record = try nostrRepo.fetchInitiation(forRound: roundId) else { return }
+
+            inviteNevent = try RoundInviteBuilder.buildNevent(
+                eventIdHex: record.initiationEventId,
+                relays: NostrClient.defaultRelays
+            )
+        } catch {
+            print("[Gambit] Failed to build invite nevent: \(error)")
+        }
+    }
+
+    // MARK: - Remote Score Sync
+
+    /// Remote players' scores fetched from relays, keyed by pubkey -> (hole -> strokes).
+    var remoteScores: [String: [Int: Int]] = [:]
+
+    /// Whether a remote score fetch is in progress.
+    var isFetchingRemoteScores: Bool = false
+
+    /// Fetch remote players' live scorecard events from relays and cache locally.
+    /// Manual refresh — called from UI "Refresh" button.
+    func fetchRemoteScores() async {
+        guard let dbQueue = dbQueue else { return }
+
+        // Need round_nostr record with initiation_event_id
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+        guard let record = try? nostrRepo.fetchInitiation(forRound: roundId) else { return }
+
+        isFetchingRemoteScores = true
+
+        do {
+            let events = try await NostrClient.fetchLiveScorecards(
+                initiationEventId: record.initiationEventId
+            )
+
+            let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
+
+            // Parse and cache each player's scores
+            // Keep newest per author (addressable replaceable — relay should dedup, but be safe)
+            var newestByAuthor: [String: (scores: [Int: Int], createdAt: UInt64)] = [:]
+
+            for event in events {
+                let authorHex = event.author().toHex()
+                let tags = event.tags().toVec().map { $0.asVec() }
+                guard let data = NIP101gEventParser.parseLiveScorecard(
+                    tagArrays: tags,
+                    authorPubkeyHex: authorHex
+                ) else { continue }
+
+                let createdAt = event.createdAt().asSecs()
+                if let existing = newestByAuthor[authorHex], existing.createdAt >= createdAt {
+                    continue  // Keep newer
+                }
+                newestByAuthor[authorHex] = (scores: data.scores, createdAt: createdAt)
+            }
+
+            // Cache to local DB and update in-memory state
+            var fetched: [String: [Int: Int]] = [:]
+            for (pubkey, entry) in newestByAuthor {
+                try remoteRepo.upsertScores(roundId: roundId, playerPubkey: pubkey, scores: entry.scores)
+                fetched[pubkey] = entry.scores
+            }
+
+            remoteScores = fetched
+            isFetchingRemoteScores = false
+        } catch {
+            print("[Gambit] Failed to fetch remote scores: \(error)")
+            isFetchingRemoteScores = false
+        }
+    }
+
+    /// Publish the current player's live scorecard to relays (fire-and-forget, debounce-friendly).
+    /// Called after score save. Only publishes if this is a multi-device round (joined_via != nil).
+    func publishLiveScorecard() async {
+        guard let dbQueue = dbQueue else { return }
+
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+        guard let record = try? nostrRepo.fetchInitiation(forRound: roundId) else { return }
+
+        // Only publish for multi-device rounds
+        guard record.joinedVia == "joined" else { return }
+
+        // Get my scores for player 0 (the local player in a joined round)
+        // In a joined round, the local device always uses player_index 0 in hole_scores
+        // (the player_index in the initiation's p tags determines Nostr identity, not local scoring)
+        let myScores = scores[0] ?? [:]
+        guard !myScores.isEmpty else { return }
+
+        let playerPubkeys: [String]
+        do {
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            playerPubkeys = try playerRepo.fetchPlayerPubkeys(forRound: roundId)
+        } catch {
+            return
+        }
+
+        do {
+            let keyManager = try KeyManager.loadOrCreate()
+            let keys = keyManager.signingKeys()
+
+            let builder = try NIP101gEventBuilder.buildLiveScorecardEvent(
+                initiationEventId: record.initiationEventId,
+                scores: myScores,
+                status: "in_progress",
+                playerPubkeys: playerPubkeys
+            )
+
+            _ = try await NostrClient.publishEvent(keys: keys, builder: builder)
+            print("[Gambit] Kind 30501 live scorecard published for round \(roundId)")
+        } catch {
+            print("[Gambit] Kind 30501 publish failed: \(error)")
+        }
     }
 
     // MARK: - Persistence
