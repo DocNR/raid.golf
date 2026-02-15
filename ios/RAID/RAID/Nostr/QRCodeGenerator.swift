@@ -26,6 +26,8 @@ enum QRCodeGenerator {
         let scaleY = size / ciImage.extent.size.height
         let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
 
-        return UIImage(ciImage: scaledImage)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 }

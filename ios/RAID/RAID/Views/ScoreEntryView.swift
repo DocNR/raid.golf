@@ -11,6 +11,7 @@ struct ScoreEntryView: View {
     var store: ActiveRoundStore
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showScorecard = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -27,8 +28,8 @@ struct ScoreEntryView: View {
                 }
                 .padding(.top, 8)
 
-                // Player picker (multiplayer only)
-                if store.isMultiplayer {
+                // Player picker (same-device multiplayer only)
+                if store.isMultiplayer && !store.multiDeviceMode {
                     Picker("Player", selection: Binding(
                         get: { store.currentPlayerIndex },
                         set: { store.switchPlayer(to: $0) }
@@ -98,52 +99,7 @@ struct ScoreEntryView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .padding(.horizontal)
 
-                // Remote scores (multi-device rounds)
-                if !store.remoteScores.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("Other Players")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ForEach(Array(store.remoteScores.keys.sorted()), id: \.self) { pubkey in
-                            if let playerScores = store.remoteScores[pubkey] {
-                                let total = playerScores.values.reduce(0, +)
-                                let holesCompleted = playerScores.count
-                                HStack {
-                                    Text(String(pubkey.prefix(8)) + "...")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text("\(total) (\(holesCompleted)/\(store.holes.count) holes)")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal)
-                }
-
                 Spacer()
-
-                // Refresh button for multi-device rounds
-                if store.inviteNevent != nil {
-                    Button {
-                        Task { await store.fetchRemoteScores() }
-                    } label: {
-                        HStack {
-                            if store.isFetchingRemoteScores {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            Text("Refresh Scores")
-                        }
-                    }
-                    .disabled(store.isFetchingRemoteScores)
-                    .padding(.bottom, 4)
-                }
 
                 // Finish gating feedback
                 if store.isOnLastHole, let reason = store.finishBlockedReason {
@@ -196,17 +152,26 @@ struct ScoreEntryView: View {
         .navigationTitle("Scoring")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if store.inviteNevent != nil {
-                ToolbarItem(placement: .topBarTrailing) {
+            if store.multiDeviceMode {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        store.showInviteSheet = true
+                        showScorecard = true
                     } label: {
-                        Image(systemName: "qrcode")
+                        Image(systemName: "list.number")
+                    }
+                }
+                if store.inviteNevent != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            store.showInviteSheet = true
+                        } label: {
+                            Image(systemName: "qrcode")
+                        }
                     }
                 }
             }
         }
-        .task { store.loadInviteNevent() }
+        .task { await store.loadInviteNevent() }
         .sheet(isPresented: Bindable(store).showInviteSheet) {
             if let nevent = store.inviteNevent {
                 RoundInviteSheet(nevent: nevent)
@@ -214,6 +179,9 @@ struct ScoreEntryView: View {
         }
         .sheet(isPresented: Bindable(store).showReviewSheet) {
             RoundReviewView(store: store, onFinish: dismiss)
+        }
+        .sheet(isPresented: $showScorecard) {
+            LiveScorecardSheet(store: store)
         }
         .alert("Error", isPresented: Binding(
             get: { store.errorMessage != nil },

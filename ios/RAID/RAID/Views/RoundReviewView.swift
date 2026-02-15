@@ -20,7 +20,7 @@ struct RoundReviewView: View {
     var body: some View {
         NavigationStack {
             List {
-                if store.isMultiplayer {
+                if store.isMultiplayer && !store.multiDeviceMode {
                     Section {
                         Picker("Player", selection: $selectedPlayerIndex) {
                             ForEach(store.players.indices, id: \.self) { index in
@@ -40,7 +40,7 @@ struct RoundReviewView: View {
 
                 totalSection
 
-                if store.isMultiplayer {
+                if store.isMultiplayer && !store.multiDeviceMode {
                     allPlayersSummary
                 }
             }

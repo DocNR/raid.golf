@@ -58,11 +58,12 @@ class RoundJoinService {
         let roundRepo = RoundRepository(dbQueue: dbQueue)
         let round = try roundRepo.createRound(courseHash: snapshot.courseHash, roundDate: date)
 
-        // 3. Insert players (preserving p-tag order from initiation)
+        // 3. Insert players — joiner is always index 0 locally (matches hole_scores convention)
+        // The p-tag order from the 1501 event is preserved in Nostr events themselves;
+        // the local index is purely for local scoring and display.
         let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
-        let creatorPubkey = playerPubkeys[0]
-        let otherPubkeys = Array(playerPubkeys.dropFirst())
-        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: creatorPubkey, otherPubkeys: otherPubkeys)
+        let otherPubkeys = playerPubkeys.filter { $0 != myPubkey }
+        try playerRepo.insertPlayers(roundId: round.roundId, creatorPubkey: myPubkey, otherPubkeys: otherPubkeys)
 
         // 4. Store round_nostr with joined_via = "joined"
         try nostrRepo.insertInitiation(roundId: round.roundId, initiationEventId: initiationEventId, joinedVia: "joined")

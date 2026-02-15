@@ -32,6 +32,10 @@ struct RoundDetailView: View {
         nostrRecord?.joinedVia == "joined"
     }
 
+    private var isMultiDeviceRound: Bool {
+        nostrRecord?.joinedVia == "joined" || nostrRecord?.joinedVia == "created_multi"
+    }
+
     // Derived scores for the currently selected player
     private var scores: [Int: Int] {
         allPlayerScores[selectedPlayerIndex] ?? [:]
@@ -66,12 +70,17 @@ struct RoundDetailView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .alert("Posted!", isPresented: $showPublishSuccess) {
+        .alert("Shared!", isPresented: $showPublishSuccess) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Your round has been posted to Nostr.")
+            Text("Your round has been shared on Nostr.")
         }
-        .task { loadData() }
+        .task {
+            loadData()
+            if isMultiDeviceRound {
+                await fetchRemoteFinalRecords()
+            }
+        }
     }
 
     private var scorecardView: some View {
@@ -87,8 +96,8 @@ struct RoundDetailView: View {
                 }
             }
 
-            // Fetch remote scores for joined rounds
-            if isJoinedRound {
+            // Fetch remote scores for multi-device rounds
+            if isMultiDeviceRound {
                 Section {
                     Button {
                         Task { await fetchRemoteFinalRecords() }
@@ -270,13 +279,14 @@ struct RoundDetailView: View {
                 let rulesHash = try NIP101gEventBuilder.computeRulesHash(content: content)
                 let dateString = round?.roundDate ?? ISO8601DateFormatter().string(from: Date())
 
-                let initiationBuilder = try NIP101gEventBuilder.buildInitiationEvent(
+                var initiationBuilder = try NIP101gEventBuilder.buildInitiationEvent(
                     content: content,
                     courseHash: courseHash,
                     rulesHash: rulesHash,
                     playerPubkeys: playerPubkeys,
                     date: dateString
                 )
+                initiationBuilder = initiationBuilder.allowSelfTagging()
                 initiationEventId = try await NostrClient.publishEvent(
                     keys: keys,
                     builder: initiationBuilder
@@ -284,10 +294,14 @@ struct RoundDetailView: View {
                 try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: initiationEventId)
             }
 
-            // Publish final round records (kind 1502)
+            // Publish final round records (kind 1502) — skip if already auto-published from finishRound()
+            let cached1502Key = "1502_event_\(roundId)"
             var myFinalEventId: String = ""
 
-            if isJoinedRound {
+            if let cached1502EventId = UserDefaults.standard.string(forKey: cached1502Key) {
+                myFinalEventId = cached1502EventId
+                print("[Gambit][Post] Using cached 1502 event ID for round \(roundId)")
+            } else if isMultiDeviceRound {
                 // Multi-device: publish only MY kind 1502, signed by my key
                 let myScores = allPlayerScores[0] ?? [:] // Local player uses index 0
                 let scoreList = holes
@@ -310,6 +324,7 @@ struct RoundDetailView: View {
                     keys: keys,
                     builder: finalBuilder
                 )
+                UserDefaults.standard.set(myFinalEventId, forKey: cached1502Key)
             } else if isMultiplayer {
                 // Same-device: one 1502 per player, all signed by creator
                 for player in players {
@@ -338,6 +353,7 @@ struct RoundDetailView: View {
                         myFinalEventId = eventId
                     }
                 }
+                UserDefaults.standard.set(myFinalEventId, forKey: cached1502Key)
             } else {
                 // Solo: single 1502
                 let scoreList = holes
@@ -359,6 +375,7 @@ struct RoundDetailView: View {
                     keys: keys,
                     builder: finalBuilder
                 )
+                UserDefaults.standard.set(myFinalEventId, forKey: cached1502Key)
             }
 
             // Publish companion kind 1 social note with njump link
@@ -410,6 +427,7 @@ struct RoundDetailView: View {
 
             let socialBuilder = EventBuilder(kind: Kind(kind: 1), content: socialContent)
                 .tags(tags: socialTags)
+                .allowSelfTagging()
             _ = try await NostrClient.publishEvent(keys: keys, builder: socialBuilder)
 
             showPublishSuccess = true
@@ -463,6 +481,12 @@ struct RoundDetailView: View {
                 initiationEventId: record.initiationEventId
             )
 
+            // Get my pubkey to filter own events (local scores are authoritative)
+            let myPubkeyHex: String? = {
+                guard let km = try? KeyManager.loadOrCreate() else { return nil }
+                return try? km.signingKeys().publicKey().toHex()
+            }()
+
             // Build pubkey → player_index lookup from round_players
             var pubkeyToIndex: [String: Int] = [:]
             for player in players {
@@ -470,8 +494,16 @@ struct RoundDetailView: View {
             }
 
             // Parse each event and merge into allPlayerScores
+            let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
             for event in events {
                 let authorHex = event.author().toHex()
+
+                // Skip own events — local scores are authoritative
+                if authorHex == myPubkeyHex {
+                    print("[Gambit][Fetch1502] Skipped own 1502 from \(authorHex.prefix(8))...")
+                    continue
+                }
+
                 let tags = event.tags().toVec().map { $0.asVec() }
 
                 guard let finalData = NIP101gEventParser.parseFinalRecord(
@@ -484,7 +516,7 @@ struct RoundDetailView: View {
                 guard let playerIndex = pubkeyToIndex[authorHex] else { continue }
 
                 // Skip if we already have local scores for this player (creator's same-device scores)
-                if !isJoinedRound && allPlayerScores[playerIndex] != nil { continue }
+                if !isMultiDeviceRound && allPlayerScores[playerIndex] != nil { continue }
 
                 // Merge remote scores
                 var remoteScores: [Int: Int] = [:]
@@ -492,24 +524,11 @@ struct RoundDetailView: View {
                     remoteScores[score.holeNumber] = score.strokes
                 }
                 allPlayerScores[playerIndex] = remoteScores
-            }
+                let holeList = remoteScores.keys.sorted().map { "\($0):\(remoteScores[$0]!)" }.joined(separator: ", ")
+                print("[Gambit][Fetch1502] Player \(playerIndex) (\(authorHex.prefix(8))...): [\(holeList)]")
 
-            // Also cache in remote_scores_cache for offline viewing
-            let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
-            for event in events {
-                let authorHex = event.author().toHex()
-                let tags = event.tags().toVec().map { $0.asVec() }
-                guard let finalData = NIP101gEventParser.parseFinalRecord(
-                    tagArrays: tags,
-                    authorPubkeyHex: authorHex,
-                    content: event.content()
-                ) else { continue }
-
-                var scoreDict: [Int: Int] = [:]
-                for score in finalData.scores {
-                    scoreDict[score.holeNumber] = score.strokes
-                }
-                try remoteRepo.upsertScores(roundId: roundId, playerPubkey: authorHex, scores: scoreDict)
+                // Cache in remote_scores_cache for offline viewing
+                try remoteRepo.upsertScores(roundId: roundId, playerPubkey: authorHex, scores: remoteScores)
             }
         } catch {
             errorMessage = "Could not fetch remote scores. Check your connection."
@@ -552,15 +571,23 @@ struct RoundDetailView: View {
             let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
             players = try playerRepo.fetchPlayers(forRound: roundId)
 
-            if isJoinedRound {
-                // Joined round: load player_index 0 (my local scores)
+            if isMultiDeviceRound {
+                // Multi-device round: load player_index 0 (my local scores)
                 let myScores = try scoreRepo.fetchLatestScores(forRound: roundId, playerIndex: 0)
                 allPlayerScores[0] = [:]
                 for score in myScores {
                     allPlayerScores[0]?[score.holeNumber] = score.strokes
                 }
+                let localHoles = (allPlayerScores[0] ?? [:]).keys.sorted().map { "\($0):\(allPlayerScores[0]![$0]!)" }.joined(separator: ", ")
+                print("[Gambit][Detail] Local scores (player 0): [\(localHoles)]")
 
                 // Load cached remote scores (if previously fetched)
+                // Skip own pubkey — local scores are authoritative
+                let myPubkeyHex: String? = {
+                    guard let km = try? KeyManager.loadOrCreate() else { return nil }
+                    return try? km.signingKeys().publicKey().toHex()
+                }()
+
                 let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
                 let cached = try remoteRepo.fetchRemoteScores(forRound: roundId)
                 var pubkeyToIndex: [String: Int] = [:]
@@ -568,8 +595,16 @@ struct RoundDetailView: View {
                     pubkeyToIndex[player.playerPubkey] = player.playerIndex
                 }
                 for (pubkey, remoteScores) in cached {
+                    if pubkey == myPubkeyHex {
+                        print("[Gambit][Detail] Skipped cached remote \(pubkey.prefix(8))... (own pubkey)")
+                        continue
+                    }
                     if let index = pubkeyToIndex[pubkey] {
                         allPlayerScores[index] = remoteScores
+                        let remoteHoles = remoteScores.keys.sorted().map { "\($0):\(remoteScores[$0]!)" }.joined(separator: ", ")
+                        print("[Gambit][Detail] Cached remote \(pubkey.prefix(8))... → player \(index): [\(remoteHoles)]")
+                    } else {
+                        print("[Gambit][Detail] Skipped cached remote \(pubkey.prefix(8))... (unknown pubkey)")
                     }
                 }
             } else if players.count > 1 {

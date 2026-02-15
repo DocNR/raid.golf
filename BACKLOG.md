@@ -89,3 +89,73 @@ If a user creates a course with incorrect hole data, they cannot edit it.
 ### Proposed fix
 - Add hide/archive flag for course snapshots (similar to templates).
 - Alternatively: relax immutability for course snapshots (not recommended).
+
+---
+
+## B-005: Multi-Device Round Completion UX
+
+**Priority:** Medium (Phase 7+)
+**Area:** Scorecard, Multi-Device Rounds, Nostr
+
+When the round creator finishes before a joiner, `RoundReviewView` shows stale remote scores cached from kind 30501 live updates. Full final scores appear in `RoundDetailView` after both players finish (fetched via kind 1502 query).
+
+### Impact
+- Review screen may show incomplete remote scores if other player hasn't finished yet.
+- RoundDetailView eventually shows correct final scores after kind 1502 publish.
+- No data loss, but potentially confusing UX during transition.
+
+### Proposed fix
+- Detect "all players done" state via 1502 event count matching player count.
+- Live-fetch 1502 events in review screen, not just detail view.
+- Add "Waiting for other players..." UI when creator finishes first.
+- Future: subscribe to 1502 publishes in real-time instead of one-shot queries.
+
+### Code pointers
+- `ios/RAID/RAID/Views/RoundReviewView.swift` — review screen (currently uses ActiveRoundStore state)
+- `ios/RAID/RAID/Views/RoundDetailView.swift` — detail screen (fetches 1502 on load)
+- `ios/RAID/RAID/Nostr/NostrClient.swift` — `fetchFinalRecords()` method
+
+---
+
+## B-006: Camera QR Scanning for Round Join
+
+**Priority:** Low (Phase 7+)
+**Area:** Scorecard, Multi-Device Rounds, UX
+
+Round join flow currently requires pasting nevent URI. QR scanning with device camera would improve UX.
+
+### Impact
+- Users must manually copy/paste nevent strings from QR codes shown by round creator.
+- Extra friction compared to native camera scan.
+
+### Proposed fix
+- Add camera-based QR scanner using `DataScannerViewController` (iOS 16+).
+- Add `NSCameraUsageDescription` to Info.plist.
+- Detect nevent1 pattern in scanned data, parse and validate before join.
+
+### Code pointers
+- `ios/RAID/RAID/Views/JoinRoundView.swift` — nevent paste entry
+- Needs: `AVCaptureSession` or `DataScannerViewController` integration
+
+---
+
+## B-007: Signature Verification on Remote Events
+
+**Priority:** High (Phase 7+, security)
+**Area:** Scorecard, Multi-Device Rounds, Nostr
+
+Kind 1502 final records and kind 30501 live scorecards are accepted without verifying that the author's pubkey matches a player in the kind 1501 initiation event's `p` tags.
+
+### Impact
+- Malicious or accidental score publishes from non-players could be accepted.
+- No authentication of event authorship against round roster.
+
+### Proposed fix
+- On parse, verify `event.pubkey` is present in the stored `round_players` table for that round.
+- Reject events from non-rostered pubkeys with explicit error (do not cache).
+- Use rust-nostr-swift `event.verify()` to validate Nostr signature cryptographically.
+
+### Code pointers
+- `ios/RAID/RAID/Nostr/NIP101gEventParser.swift` — `parseLiveScorecard()` / `parseFinalRecord()`
+- `ios/RAID/RAID/Scorecard/RoundPlayerRepository.swift` — `fetchPlayers(forRound:)` for roster lookup
+- rust-nostr-swift: `Event.verify()` method

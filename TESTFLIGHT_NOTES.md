@@ -14,13 +14,19 @@ Thank you for testing Gambit Golf.
 
 5. **Nostr Posting**: Complete a round and tap "Post to Nostr". Verify the note appears on a Nostr client (e.g., Damus, Primal). Check your profile view for npub/nsec.
 
-6. **Multiplayer Rounds**: Create a round and add players from your Nostr follow list or by entering their npub. Score for all players using the round-robin flow. Verify per-player progress tracking and the review scorecard before finishing.
+6. **Multiplayer Rounds (Same-Device)**: Create a round and add players from your Nostr follow list or by entering their npub. Score for all players using the round-robin flow. Verify per-player progress tracking and the review scorecard before finishing.
+
+7. **Multi-Device Rounds**: Create a multi-device round (toggle on Create Round screen). After creating, a setup screen with QR code appears. Have a second player scan or paste the nevent invite on another device to join. Score on both devices independently. Verify live scorecard updates appear in the "View Scores" sheet (QR icon in toolbar). Verify final scores from both players appear in round detail after both finish.
 
 ## Known Issues
 
 - **B-001: Club name normalization**: If your CSV uses "7 Iron" and your template uses "7i", they won't match. This will be addressed in a future update. For now, use the club picker when creating templates to ensure exact matches.
 
-- **Same-device multiplayer only**: Multiplayer rounds are scored on a single device. Multi-device score sync is not yet implemented.
+- **B-005: Multi-device round completion UX**: If you finish a multi-device round before the other player, the review screen may show stale scores. The full final scores will appear correctly in the round detail view after both players finish.
+
+- **B-006: Camera QR scanning not yet implemented**: To join a multi-device round, you must paste the nevent invite text. Camera-based QR scanning will be added in a future update.
+
+- **B-007: No signature verification on remote scores**: Remote scores from kind 1502/30501 events are not yet verified against the round's player roster. This will be hardened in a future security update.
 
 - **No cloud sync**: All data is local. Deleting the app deletes your data.
 

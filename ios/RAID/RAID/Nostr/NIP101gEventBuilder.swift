@@ -106,6 +106,7 @@ enum NIP101gEventBuilder {
 
         return EventBuilder(kind: Kind(kind: NIP101gKind.roundInitiation), content: contentJSON)
             .tags(tags: tags)
+            .allowSelfTagging()
     }
 
     /// Build a kind 1502 Final Round Record EventBuilder.
@@ -150,6 +151,7 @@ enum NIP101gEventBuilder {
 
         return EventBuilder(kind: Kind(kind: NIP101gKind.finalRoundRecord), content: content)
             .tags(tags: tags)
+            .allowSelfTagging()
     }
 
     // MARK: - Live Scorecard (kind 30501)
@@ -205,6 +207,7 @@ enum NIP101gEventBuilder {
 
         return EventBuilder(kind: Kind(kind: NIP101gKind.liveScorecard), content: "")
             .tags(tags: tags)
+            .allowSelfTagging()
     }
 
     // MARK: - JSON Helpers

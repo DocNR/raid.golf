@@ -31,6 +31,30 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 7: Multi-Device Rounds**
+  - Schema v7: `remote_scores` table for caching remote player scores fetched from relay queries
+  - Kind 30501 addressable replaceable events for live scorecard sync (one per player per round)
+  - `RemoteScoresRepository` for local persistence of relay-fetched scores (update-or-insert pattern)
+  - `NIP101gEventParser.parseLiveScorecard()` / `parseFinalRecord()` for parsing 30501/1502 events
+  - `NostrClient.fetchLiveScorecards()` / `fetchFinalRecords()` one-shot relay queries with d-tag filters
+  - `RoundInviteBuilder` + `QRCodeGenerator` for generating QR-encoded nevent1 round invites
+  - `RoundInviteSheet` displays QR code + plain-text nevent URI for sharing (toolbar QR icon in ScoreEntryView)
+  - `RoundSetupSheet` loading UX: spinner ("Setting up your round...") → QR invite + "Start Scoring" button
+  - `JoinRoundView` for joining multi-device rounds via nevent paste (paste-only, camera scanning deferred)
+  - `RoundJoinService.joinRound()`: parses kind 1501 initiation event, creates local round, validates hashes
+  - Hash verification on join: recomputes `course_hash` and `rules_hash` from embedded JSON, asserts match
+  - Joiner always becomes local `player_index = 0` (local scoring convention)
+  - `RoundNostrRepository.fetchRound(byInitiationEventId:)` for idempotent join (prevents duplicate rounds)
+  - `fetchIsMultiDevice()` helper distinguishes single-device vs multi-device rounds for nav logic
+  - Live scorecard publish: fires on `advanceHole()` / `retreatHole()` / `requestFinish()` (confirmed scores only)
+  - Auto-publish kind 1502 final records on `finishRound()` via `publishFinalRecords()` (fire-and-forget)
+  - UserDefaults 1502 dedup: `"1502_event_\(roundId)"` cache prevents duplicate final record publishes
+  - RoundDetailView "Post to Nostr" reuses cached 1502 event ID, publishes only kind 1 social note if 1502 already published
+  - LiveScorecardSheet shows all player columns from `store.players` (not just those who published)
+  - RoundDetailView auto-fetches remote 1502 final records on load for multi-device rounds
+  - Invite nevent loading with polling: 5 retries × 2s delay, graceful cancellation on view dismiss
+  - 36 new tests in RoundJoinTests, LiveScorecardTests, RemoteFinalRecordTests (196 total)
+
 - **Scoring UX Polish Sprint**
   - Prominent hole number display (48pt bold rounded font, replaces inline navigation title)
   - Navigation haptics: light impact on prev/next, medium on finish

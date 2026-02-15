@@ -178,12 +178,12 @@ final class RoundJoinTests: XCTestCase {
         XCTAssertEqual(nostrRecord?.initiationEventId, "aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233")
         XCTAssertEqual(nostrRecord?.joinedVia, "joined")
 
-        // Verify players were created
+        // Verify players were created — joiner (myPubkey=B) is always index 0 locally
         let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
         let players = try playerRepo.fetchPlayerPubkeys(forRound: roundId)
         XCTAssertEqual(players.count, 2)
-        XCTAssertEqual(players[0], Self.accountAPubkey)
-        XCTAssertEqual(players[1], Self.accountBPubkey)
+        XCTAssertEqual(players[0], Self.accountBPubkey)
+        XCTAssertEqual(players[1], Self.accountAPubkey)
     }
 
     func testCreateLocalRound_IdempotentOnDuplicateJoin() throws {
@@ -230,11 +230,11 @@ final class RoundJoinTests: XCTestCase {
             myPubkey: Self.accountBPubkey
         )
 
-        // Account B is index 1 in the p tags (0-indexed, Account A is index 0)
+        // Joiner (myPubkey=B) is always index 0 locally, regardless of p tag order
         let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
         let players = try playerRepo.fetchPlayers(forRound: roundId)
         let myPlayer = players.first(where: { $0.playerPubkey == Self.accountBPubkey })
-        XCTAssertEqual(myPlayer?.playerIndex, 1)
+        XCTAssertEqual(myPlayer?.playerIndex, 0)
     }
 
     func testJoinRound_RejectsIfMyPubkeyNotInPTags() throws {

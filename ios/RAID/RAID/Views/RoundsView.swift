@@ -18,6 +18,11 @@ struct RoundsView: View {
     @State private var errorMessage: String?
     @State private var showNostrProfile = false
 
+    // Multi-device setup sheet state
+    @State private var showSetupSheet = false
+    @State private var setupRoundId: Int64?
+    @State private var setupCourseHash: String?
+
     var body: some View {
         NavigationStack {
             Group {
@@ -57,27 +62,39 @@ struct RoundsView: View {
                 NostrProfileView()
             }
             .sheet(isPresented: $showingCreateRound) {
-                CreateRoundView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys in
+                CreateRoundView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys, isMultiDevice in
                     showingCreateRound = false
                     loadRounds()
-                    navigateToScoreEntry(roundId: roundId, courseHash: courseHash)
 
-                    // Fire-and-forget: publish kind 1501 initiation in background
-                    if !playerPubkeys.isEmpty {
-                        Task {
-                            await publishInitiation(
-                                roundId: roundId,
-                                courseHash: courseHash,
-                                playerPubkeys: playerPubkeys
-                            )
+                    if isMultiDevice {
+                        // Show setup sheet — navigation happens after dismiss
+                        setupRoundId = roundId
+                        setupCourseHash = courseHash
+                        Task { await publishInitiation(roundId: roundId, courseHash: courseHash) }
+                        // Small delay to let CreateRound sheet dismiss before presenting setup sheet
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showSetupSheet = true
                         }
+                    } else {
+                        navigateToScoreEntry(roundId: roundId, courseHash: courseHash, isMultiDevice: false)
                     }
                 }
             }
             .sheet(isPresented: $showingJoinRound) {
                 JoinRoundView(dbQueue: dbQueue) { roundId, courseHash in
                     loadRounds()
-                    navigateToScoreEntry(roundId: roundId, courseHash: courseHash)
+                    navigateToScoreEntry(roundId: roundId, courseHash: courseHash, isMultiDevice: true)
+                }
+            }
+            .sheet(isPresented: $showSetupSheet, onDismiss: {
+                if let roundId = setupRoundId, let courseHash = setupCourseHash {
+                    navigateToScoreEntry(roundId: roundId, courseHash: courseHash, isMultiDevice: true)
+                    setupRoundId = nil
+                    setupCourseHash = nil
+                }
+            }) {
+                if let roundId = setupRoundId {
+                    RoundSetupSheet(roundId: roundId, dbQueue: dbQueue)
                 }
             }
             .navigationDestination(item: $navigationTarget) { target in
@@ -121,7 +138,8 @@ struct RoundsView: View {
                     navigationTarget = .roundDetail(roundId: round.roundId)
                 } else {
                     if let courseHash = fetchCourseHash(forRoundId: round.roundId) {
-                        navigateToScoreEntry(roundId: round.roundId, courseHash: courseHash)
+                        let isMultiDevice = fetchIsMultiDevice(forRoundId: round.roundId)
+                        navigateToScoreEntry(roundId: round.roundId, courseHash: courseHash, isMultiDevice: isMultiDevice)
                     }
                 }
             } label: {
@@ -163,14 +181,20 @@ struct RoundsView: View {
     // MARK: - Navigation
 
     /// Create or reconfigure the store for a specific round, then navigate.
-    private func navigateToScoreEntry(roundId: Int64, courseHash: String) {
+    private func navigateToScoreEntry(roundId: Int64, courseHash: String, isMultiDevice: Bool = false) {
         // Reuse existing store if same round; otherwise create new one
         if activeRoundStore?.roundId != roundId {
             let store = ActiveRoundStore()
-            store.configure(roundId: roundId, courseHash: courseHash, dbQueue: dbQueue)
+            store.configure(roundId: roundId, courseHash: courseHash, dbQueue: dbQueue, isMultiDevice: isMultiDevice)
             activeRoundStore = store
         }
         navigationTarget = .scoreEntry(roundId: roundId)
+    }
+
+    private func fetchIsMultiDevice(forRoundId roundId: Int64) -> Bool {
+        let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
+        guard let record = try? nostrRepo.fetchInitiation(forRound: roundId) else { return false }
+        return record.joinedVia == "joined" || record.joinedVia == "created_multi"
     }
 
     // MARK: - Nostr Publishing
@@ -178,7 +202,7 @@ struct RoundsView: View {
     /// Publish kind 1501 (round initiation) in the background after round creation.
     /// Best-effort: failure is logged but does not affect the round.
     /// If publish fails, RoundDetailView handles fallback (publishes both 1501 + 1502 at share time).
-    private func publishInitiation(roundId: Int64, courseHash: String, playerPubkeys: [String]) async {
+    private func publishInitiation(roundId: Int64, courseHash: String) async {
         do {
             let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)
             guard let snapshot = try courseRepo.fetchCourseSnapshot(byHash: courseHash) else {
@@ -199,6 +223,10 @@ struct RoundsView: View {
                 )
             } ?? ISO8601DateFormatter().string(from: Date())
 
+            // Re-read player pubkeys from DB to include creator
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            let playerPubkeys = try playerRepo.fetchPlayerPubkeys(forRound: roundId)
+
             let keyManager = try KeyManager.loadOrCreate()
             let keys = keyManager.signingKeys()
 
@@ -213,7 +241,7 @@ struct RoundsView: View {
             let eventId = try await NostrClient.publishEvent(keys: keys, builder: builder)
 
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
-            try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId)
+            try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId, joinedVia: "created_multi")
             print("[Gambit] Kind 1501 published for round \(roundId): \(eventId)")
         } catch {
             print("[Gambit] Kind 1501 publish failed for round \(roundId): \(error)")

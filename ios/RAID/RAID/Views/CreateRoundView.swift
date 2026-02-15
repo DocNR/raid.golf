@@ -9,7 +9,7 @@ import NostrSDK
 
 struct CreateRoundView: View {
     let dbQueue: DatabaseQueue
-    let onRoundCreated: (Int64, String, [String]) -> Void
+    let onRoundCreated: (Int64, String, [String], Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -30,6 +30,7 @@ struct CreateRoundView: View {
     @State private var followLoadError: String?
     @State private var npubInput = ""
     @State private var npubError: String?
+    @State private var isMultiDevice = false
 
     var body: some View {
         NavigationStack {
@@ -184,6 +185,11 @@ struct CreateRoundView: View {
                         .buttonStyle(.plain)
                     }
                 }
+
+                // Multi-device toggle
+                if !selectedPlayers.isEmpty {
+                    Toggle("Each player uses their own device", isOn: $isMultiDevice)
+                }
             }
         } header: {
             HStack {
@@ -320,7 +326,7 @@ struct CreateRoundView: View {
                 allPlayerPubkeys = [creatorHex] + otherPubkeys
             }
 
-            onRoundCreated(round.roundId, courseSnapshot.courseHash, allPlayerPubkeys)
+            onRoundCreated(round.roundId, courseSnapshot.courseHash, allPlayerPubkeys, isMultiDevice)
 
         } catch {
             isCreating = false
