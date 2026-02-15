@@ -12,6 +12,7 @@ struct CreateRoundView: View {
     let onRoundCreated: (Int64, String, [String], Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nostrService) private var nostrService
 
     @State private var courseName = ""
     @State private var teeSet = ""
@@ -226,7 +227,7 @@ struct CreateRoundView: View {
 
         do {
             let pubkey = try PublicKey.parse(publicKey: creatorHex)
-            let result = try await NostrClient.fetchFollowListWithProfiles(pubkey: pubkey)
+            let result = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
             followOrder = result.follows
             followProfiles = result.profiles
             // Fill in profiles for follows that had no kind 0

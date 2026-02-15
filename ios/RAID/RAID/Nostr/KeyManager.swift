@@ -18,6 +18,20 @@ final class KeyManager {
         self.keys = keys
     }
 
+    /// Import an existing Nostr identity from nsec (bech32) or hex secret key.
+    /// Overwrites any existing key in Keychain.
+    static func importKey(nsec: String) throws -> KeyManager {
+        let keys: Keys
+        do {
+            keys = try Keys.parse(secretKey: nsec)
+        } catch {
+            throw KeyManagerError.invalidKey(error.localizedDescription)
+        }
+        let bech32 = try keys.secretKey().toBech32()
+        try saveToKeychain(nsec: bech32)
+        return KeyManager(keys: keys)
+    }
+
     /// Load existing keys from Keychain or generate new ones
     static func loadOrCreate() throws -> KeyManager {
         if let nsec = loadFromKeychain() {
@@ -104,6 +118,7 @@ final class KeyManager {
 enum KeyManagerError: LocalizedError {
     case encodingFailed
     case keychainWriteFailed(OSStatus)
+    case invalidKey(String)
 
     var errorDescription: String? {
         switch self {
@@ -111,6 +126,8 @@ enum KeyManagerError: LocalizedError {
             return "Failed to encode key data."
         case .keychainWriteFailed(let status):
             return "Failed to save key to Keychain (status: \(status))."
+        case .invalidKey(let detail):
+            return "Invalid Nostr key: \(detail)"
         }
     }
 }

@@ -79,7 +79,7 @@ enum NIP101gEventBuilder {
     // MARK: - NostrSDK Event Builders
 
     /// Build a kind 1501 Round Initiation EventBuilder.
-    /// Returns the builder — caller signs and publishes via NostrClient.
+    /// Returns the builder — caller signs and publishes via NostrService.
     static func buildInitiationEvent(
         content: RoundInitiationContent,
         courseHash: String,

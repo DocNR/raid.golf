@@ -13,6 +13,7 @@ struct JoinRoundView: View {
     let onJoined: (Int64, String) -> Void  // (roundId, courseHash)
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nostrService) private var nostrService
     @State private var inviteText = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -100,7 +101,7 @@ struct JoinRoundView: View {
                 }
 
                 // 3. Fetch kind 1501 from relays
-                guard let event = try await NostrClient.fetchEvent(eventIdHex: eventIdHex) else {
+                guard let event = try await nostrService.fetchEvent(eventIdHex: eventIdHex) else {
                     throw RoundJoinError.initiationNotFound
                 }
 

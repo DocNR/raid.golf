@@ -1,34 +1,39 @@
-// Gambit Golf — Nostr Client
-// Fire-and-forget publisher + one-shot reader. No singleton, no persistent connections.
-// Future: centralized NostrClientService with persistent connections and caching.
+// Gambit Golf — Nostr Service
+// Observable service for dependency injection.
+// Fire-and-forget publisher + one-shot reader. No persistent connections.
 
 import Foundation
+import SwiftUI
 import NostrSDK
 
-enum NostrClient {
+@Observable
+class NostrService {
 
-    static let defaultRelays = [
+    // MARK: - Relay Configuration
+
+    static let defaultPublishRelays = [
         "wss://relay.damus.io",
         "wss://nos.lol",
         "wss://relay.nostr.band"
     ]
 
-    /// Relays used for metadata reads. Kept small to minimize connection overhead.
-    static let readRelays = [
+    static let defaultReadRelays = [
         "wss://relay.damus.io",
         "wss://nos.lol",
         "wss://purplepag.es"
     ]
 
-    private static let readTimeout: TimeInterval = 5
+    private let readTimeout: TimeInterval = 5
+
+    // MARK: - Publish
 
     /// Publish a pre-built EventBuilder and return its event ID.
     /// Used for NIP-101g events where we need the ID for cross-referencing.
-    static func publishEvent(keys: Keys, builder: EventBuilder) async throws -> String {
+    func publishEvent(keys: Keys, builder: EventBuilder) async throws -> String {
         let signer = NostrSigner.keys(keys: keys)
         let client = Client(signer: signer)
 
-        for urlString in defaultRelays {
+        for urlString in Self.defaultPublishRelays {
             let url = try RelayUrl.parse(url: urlString)
             _ = try await client.addRelay(url: url)
         }
@@ -51,7 +56,7 @@ enum NostrClient {
 
     /// Fetch the follow list (kind 3 / NIP-02) for a given public key.
     /// Returns an array of followed public key hex strings.
-    static func fetchFollowList(pubkey: PublicKey) async throws -> [String] {
+    func fetchFollowList(pubkey: PublicKey) async throws -> [String] {
         let client = try await connectReadClient()
 
         let filter = Filter()
@@ -70,7 +75,8 @@ enum NostrClient {
         await client.disconnect()
 
         // Kind 3 is replaceable — first() gives the newest
-        guard let contactEvent = events.first() else {
+        guard let contactEvent = events.first(),
+              verifiedEvents([contactEvent]).first != nil else {
             return []
         }
 
@@ -81,7 +87,7 @@ enum NostrClient {
 
     /// Fetch profile metadata (kind 0 / NIP-01) for a list of public keys.
     /// Returns a dictionary mapping pubkey hex → NostrProfile.
-    static func fetchProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
+    func fetchProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
         guard !pubkeyHexes.isEmpty else { return [:] }
 
         let pubkeys = try pubkeyHexes.compactMap { hex -> PublicKey? in
@@ -96,12 +102,12 @@ enum NostrClient {
 
         await client.disconnect()
 
-        return parseProfileEvents(events)
+        return parseProfileEvents(verifiedEvents(events))
     }
 
     /// Fetch follow list and profiles in a single connection session.
     /// Avoids the overhead of connecting/disconnecting twice.
-    static func fetchFollowListWithProfiles(pubkey: PublicKey) async throws -> (follows: [String], profiles: [String: NostrProfile]) {
+    func fetchFollowListWithProfiles(pubkey: PublicKey) async throws -> (follows: [String], profiles: [String: NostrProfile]) {
         let client = try await connectReadClient()
 
         // 1. Fetch kind 3 (follow list)
@@ -118,7 +124,8 @@ enum NostrClient {
             throw NostrReadError.networkFailure(error)
         }
 
-        guard let contactEvent = followEvents.first() else {
+        guard let contactEvent = followEvents.first(),
+              verifiedEvents([contactEvent]).first != nil else {
             await client.disconnect()
             return (follows: [], profiles: [:])
         }
@@ -136,14 +143,14 @@ enum NostrClient {
 
         await client.disconnect()
 
-        return (follows: followedHexes, profiles: parseProfileEvents(profileEvents))
+        return (follows: followedHexes, profiles: parseProfileEvents(verifiedEvents(profileEvents)))
     }
 
     // MARK: - Live Scorecard Fetch
 
     /// Fetch kind 30501 live scorecard events for a round (by initiation event ID).
     /// Returns all matching events — caller deduplicates (keep latest per author).
-    static func fetchLiveScorecards(initiationEventId: String) async throws -> [Event] {
+    func fetchLiveScorecards(initiationEventId: String) async throws -> [Event] {
         let client = try await connectReadClient()
 
         // Filter by kind 30501 with e tag matching initiation event ID
@@ -161,12 +168,12 @@ enum NostrClient {
         }
 
         await client.disconnect()
-        return try events.toVec()
+        return verifiedEvents(try events.toVec())
     }
 
     /// Fetch kind 1502 final record events for a round (by initiation event ID).
     /// Returns all matching events — each player publishes their own.
-    static func fetchFinalRecords(initiationEventId: String) async throws -> [Event] {
+    func fetchFinalRecords(initiationEventId: String) async throws -> [Event] {
         let client = try await connectReadClient()
 
         let eventId = try EventId.parse(id: initiationEventId)
@@ -183,14 +190,14 @@ enum NostrClient {
         }
 
         await client.disconnect()
-        return try events.toVec()
+        return verifiedEvents(try events.toVec())
     }
 
     // MARK: - Event Fetch by ID
 
     /// Fetch a single event by its hex ID from read relays.
     /// Returns nil if the event is not found on any relay.
-    static func fetchEvent(eventIdHex: String) async throws -> Event? {
+    func fetchEvent(eventIdHex: String) async throws -> Event? {
         let eventId = try EventId.parse(id: eventIdHex)
         let client = try await connectReadClient()
 
@@ -207,15 +214,26 @@ enum NostrClient {
         }
 
         await client.disconnect()
-        return events.first()
+        guard let event = events.first() else { return nil }
+        return verifiedEvents([event]).first
     }
 
     // MARK: - Private Helpers
 
-    private static func connectReadClient() async throws -> Client {
+    /// Filter events to only those with valid cryptographic signatures.
+    /// Discards events where id or schnorr signature verification fails.
+    private func verifiedEvents(_ events: [Event]) -> [Event] {
+        events.filter { event in
+            if event.verify() { return true }
+            print("[Gambit][Verify] Discarded invalid event \(event.id().toHex().prefix(12))...")
+            return false
+        }
+    }
+
+    private func connectReadClient() async throws -> Client {
         let client = Client()
 
-        for urlString in readRelays {
+        for urlString in Self.defaultReadRelays {
             let url = try RelayUrl.parse(url: urlString)
             _ = try await client.addRelay(url: url)
         }
@@ -224,7 +242,7 @@ enum NostrClient {
         return client
     }
 
-    private static func fetchProfileEvents(client: Client, pubkeys: [PublicKey]) async throws -> [Event] {
+    private func fetchProfileEvents(client: Client, pubkeys: [PublicKey]) async throws -> [Event] {
         let filter = Filter()
             .authors(authors: pubkeys)
             .kind(kind: Kind(kind: 0))
@@ -239,7 +257,7 @@ enum NostrClient {
         return try events.toVec()
     }
 
-    private static func parseProfileEvents(_ eventList: [Event]) -> [String: NostrProfile] {
+    private func parseProfileEvents(_ eventList: [Event]) -> [String: NostrProfile] {
         // Kind 0 is replaceable — keep newest per author
         var newest: [String: Event] = [:]
         for event in eventList {
@@ -259,6 +277,19 @@ enum NostrClient {
             result[authorHex] = profile
         }
         return result
+    }
+}
+
+// MARK: - Environment Key
+
+private struct NostrServiceKey: EnvironmentKey {
+    static let defaultValue = NostrService()
+}
+
+extension EnvironmentValues {
+    var nostrService: NostrService {
+        get { self[NostrServiceKey.self] }
+        set { self[NostrServiceKey.self] = newValue }
     }
 }
 
@@ -294,6 +325,14 @@ struct NostrProfile: Identifiable {
             picture: json["picture"] as? String
         )
     }
+}
+
+// MARK: - Author Verification
+
+/// Check whether an event's author is in the list of authorized pubkeys for a round.
+/// Used to reject scoring events from unauthorized parties (B-004).
+func isAuthorizedPlayer(_ authorHex: String, allowedPubkeys: [String]) -> Bool {
+    allowedPubkeys.contains(authorHex)
 }
 
 // MARK: - Errors

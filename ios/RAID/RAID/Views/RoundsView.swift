@@ -10,6 +10,7 @@ import GRDB
 struct RoundsView: View {
     let dbQueue: DatabaseQueue
 
+    @Environment(\.nostrService) private var nostrService
     @State private var rounds: [RoundListItem] = []
     @State private var showingCreateRound = false
     @State private var showingJoinRound = false
@@ -185,7 +186,7 @@ struct RoundsView: View {
         // Reuse existing store if same round; otherwise create new one
         if activeRoundStore?.roundId != roundId {
             let store = ActiveRoundStore()
-            store.configure(roundId: roundId, courseHash: courseHash, dbQueue: dbQueue, isMultiDevice: isMultiDevice)
+            store.configure(roundId: roundId, courseHash: courseHash, dbQueue: dbQueue, nostrService: nostrService, isMultiDevice: isMultiDevice)
             activeRoundStore = store
         }
         navigationTarget = .scoreEntry(roundId: roundId)
@@ -238,7 +239,7 @@ struct RoundsView: View {
                 date: roundDate
             )
 
-            let eventId = try await NostrClient.publishEvent(keys: keys, builder: builder)
+            let eventId = try await nostrService.publishEvent(keys: keys, builder: builder)
 
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
             try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId, joinedVia: "created_multi")

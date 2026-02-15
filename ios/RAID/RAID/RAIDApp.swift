@@ -8,6 +8,8 @@ import GRDB
 
 @main
 struct RAIDApp: App {
+    @State private var nostrService = NostrService()
+
     private let dbQueue: DatabaseQueue = {
         do {
             let supportDir = try FileManager.default.url(
@@ -26,6 +28,7 @@ struct RAIDApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(dbQueue: dbQueue)
+                .environment(\.nostrService, nostrService)
                 .task { await bootstrapTemplates() }
         }
     }

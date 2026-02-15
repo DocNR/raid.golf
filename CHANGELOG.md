@@ -31,6 +31,33 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 8A: Nostr Protocol Foundations**
+  - **8A.1: Key Import**
+    - `KeyManager.importKey(nsec:)` static method accepts nsec1 bech32 or hex private keys
+    - Overwrites existing keypair in Keychain (no confirmation prompt — destructive by design)
+    - `KeyManagerError.invalidKey(String)` error case for malformed keys
+    - 5 new tests in `KeyManagerTests.swift` (import hex, import nsec1, import invalid, overwrite behavior)
+  - **8A.2: NostrService Refactor**
+    - Replaced static `NostrClient` enum with `@Observable NostrService` class
+    - Injectable via SwiftUI Environment (`\.nostrService`) for testability and dependency injection
+    - Same fire-and-forget connection pattern (NOT persistent connections)
+    - Migrated all 19 call sites across 7 files (ActiveRoundStore, RoundDetailView, RoundsView, CreateRoundView, JoinRoundView, NostrProfileView, RoundSetupSheet)
+    - `RAIDApp.swift` provides default `NostrService()` instance via `.environment(\.nostrService, ...)`
+    - Renamed `NostrClientTests.swift` → `NostrServiceTests.swift`, deleted `NostrClient.swift`
+  - **8A.3: Signature Verification**
+    - All relay fetch methods now verify event signatures via `event.verify() -> Bool` (rust-nostr-swift)
+    - Invalid events (bad event ID or schnorr signature) silently discarded before parsing
+    - Applied in 6 methods: `fetchFollowList`, `fetchProfiles`, `fetchFollowListWithProfiles`, `fetchLiveScorecards`, `fetchFinalRecords`, `fetchEvent`
+    - `verifiedEvents(_ events: [Event]) -> [Event]` private helper for DRY verification logic
+  - **8A.4: Author Verification (closes B-004)**
+    - Remote scoring events (kind 30501/1502) verified against round player roster
+    - `isAuthorizedPlayer(eventPubkey:roundId:)` module-level helper checks `event.pubkey` against stored `round_players`
+    - Applied in `ActiveRoundStore.fetchRemoteScores()` (live scorecards) and `RoundDetailView.fetchRemoteFinalRecords()` (final records)
+    - Unauthorized events rejected with debug log (not cached or displayed)
+    - Uses existing `RoundPlayerRepository.fetchPlayerPubkeys(forRound:)` method
+  - 200 total unit/integration tests (added 5 KeyManager tests, removed 1 = 200, all passing)
+  - No schema changes, no kernel changes
+
 - **iOS Phase 7: Multi-Device Rounds**
   - Schema v7: `remote_scores` table for caching remote player scores fetched from relay queries
   - Kind 30501 addressable replaceable events for live scorecard sync (one per player per round)

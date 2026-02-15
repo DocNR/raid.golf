@@ -1,14 +1,16 @@
-// NostrClientTests.swift
+// NostrServiceTests.swift
 // Gambit Golf
 //
-// Tests for NostrClient read infrastructure: profile parsing, follow list extraction.
+// Tests for NostrService read infrastructure: profile parsing, follow list extraction.
 // Network-dependent tests are separated and can be skipped in CI.
 
 import XCTest
 import NostrSDK
 @testable import RAID
 
-final class NostrClientTests: XCTestCase {
+final class NostrServiceTests: XCTestCase {
+
+    private let service = NostrService()
 
     // MARK: - NostrProfile Parsing
 
@@ -124,7 +126,7 @@ final class NostrClientTests: XCTestCase {
     // MARK: - fetchProfiles Empty Input
 
     func testFetchProfiles_EmptyInputReturnsEmpty() async throws {
-        let result = try await NostrClient.fetchProfiles(pubkeyHexes: [])
+        let result = try await service.fetchProfiles(pubkeyHexes: [])
         XCTAssertTrue(result.isEmpty)
     }
 
@@ -142,7 +144,7 @@ final class NostrClientTests: XCTestCase {
 
     func testLive_FetchFollowList() async throws {
         let pubkey = try PublicKey.parse(publicKey: Self.testAccountPubkeyHex)
-        let followList = try await NostrClient.fetchFollowList(pubkey: pubkey)
+        let followList = try await service.fetchFollowList(pubkey: pubkey)
 
         // Test account follows 13 users (may change if account is modified)
         XCTAssertFalse(followList.isEmpty, "Follow list should not be empty")
@@ -161,7 +163,7 @@ final class NostrClientTests: XCTestCase {
     }
 
     func testLive_FetchProfiles() async throws {
-        let profiles = try await NostrClient.fetchProfiles(pubkeyHexes: [Self.fiatjafPubkeyHex])
+        let profiles = try await service.fetchProfiles(pubkeyHexes: [Self.fiatjafPubkeyHex])
 
         XCTAssertEqual(profiles.count, 1, "Should fetch exactly 1 profile")
 
@@ -173,7 +175,7 @@ final class NostrClientTests: XCTestCase {
     func testLive_FetchFollowListWithProfiles() async throws {
         // End-to-end: single connection fetches follow list + all profiles
         let pubkey = try PublicKey.parse(publicKey: Self.testAccountPubkeyHex)
-        let (follows, profiles) = try await NostrClient.fetchFollowListWithProfiles(pubkey: pubkey)
+        let (follows, profiles) = try await service.fetchFollowListWithProfiles(pubkey: pubkey)
 
         // Follow list assertions
         XCTAssertFalse(follows.isEmpty, "Follow list should not be empty")

@@ -141,21 +141,20 @@ Round join flow currently requires pasting nevent URI. QR scanning with device c
 
 ## B-007: Signature Verification on Remote Events
 
+**Status:** ✅ CLOSED (Phase 8A.4, 2026-02-15)
 **Priority:** High (Phase 7+, security)
 **Area:** Scorecard, Multi-Device Rounds, Nostr
 
 Kind 1502 final records and kind 30501 live scorecards are accepted without verifying that the author's pubkey matches a player in the kind 1501 initiation event's `p` tags.
 
-### Impact
-- Malicious or accidental score publishes from non-players could be accepted.
-- No authentication of event authorship against round roster.
-
-### Proposed fix
-- On parse, verify `event.pubkey` is present in the stored `round_players` table for that round.
-- Reject events from non-rostered pubkeys with explicit error (do not cache).
-- Use rust-nostr-swift `event.verify()` to validate Nostr signature cryptographically.
+### Resolution
+- **Phase 8A.3:** All relay fetch methods now call `event.verify() -> Bool` to verify event ID and schnorr signature. Invalid events are silently discarded.
+- **Phase 8A.4:** Added `isAuthorizedPlayer()` module-level helper. Applied in `ActiveRoundStore.fetchRemoteScores()` (kind 30501) and `RoundDetailView.fetchRemoteFinalRecords()` (kind 1502). Events from pubkeys not in the round's player roster are rejected with log.
+- Cryptographic signature verification prevents forged events.
+- Author verification prevents unauthorized score publishing from non-rostered pubkeys.
 
 ### Code pointers
-- `ios/RAID/RAID/Nostr/NIP101gEventParser.swift` — `parseLiveScorecard()` / `parseFinalRecord()`
-- `ios/RAID/RAID/Scorecard/RoundPlayerRepository.swift` — `fetchPlayers(forRound:)` for roster lookup
-- rust-nostr-swift: `Event.verify()` method
+- `ios/RAID/RAID/Nostr/NostrService.swift` — `verifiedEvents()` private helper (Phase 8A.3)
+- `ios/RAID/RAID/Scorecard/ActiveRoundStore.swift` — `fetchRemoteScores()` author check (Phase 8A.4)
+- `ios/RAID/RAID/Views/RoundDetailView.swift` — `fetchRemoteFinalRecords()` author check (Phase 8A.4)
+- `ios/RAID/RAID/Scorecard/RoundPlayerRepository.swift` — `fetchPlayerPubkeys(forRound:)` for roster lookup

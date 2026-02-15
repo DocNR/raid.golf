@@ -126,7 +126,7 @@ struct RoundSetupSheet: View {
                 if let record = try nostrRepo.fetchInitiation(forRound: roundId) {
                     inviteNevent = try RoundInviteBuilder.buildNevent(
                         eventIdHex: record.initiationEventId,
-                        relays: NostrClient.defaultRelays
+                        relays: NostrService.defaultPublishRelays
                     )
                     return
                 }

@@ -11,6 +11,7 @@ struct RoundDetailView: View {
     let roundId: Int64
     let dbQueue: DatabaseQueue
 
+    @Environment(\.nostrService) private var nostrService
     @State private var round: RoundRecord?
     @State private var courseSnapshot: CourseSnapshotRecord?
     @State private var holes: [CourseHoleRecord] = []
@@ -287,7 +288,7 @@ struct RoundDetailView: View {
                     date: dateString
                 )
                 initiationBuilder = initiationBuilder.allowSelfTagging()
-                initiationEventId = try await NostrClient.publishEvent(
+                initiationEventId = try await nostrService.publishEvent(
                     keys: keys,
                     builder: initiationBuilder
                 )
@@ -320,7 +321,7 @@ struct RoundDetailView: View {
                     playerPubkeys: playerPubkeys,
                     notes: nil
                 )
-                myFinalEventId = try await NostrClient.publishEvent(
+                myFinalEventId = try await nostrService.publishEvent(
                     keys: keys,
                     builder: finalBuilder
                 )
@@ -345,7 +346,7 @@ struct RoundDetailView: View {
                         playerPubkeys: playerPubkeys,
                         notes: nil
                     )
-                    let eventId = try await NostrClient.publishEvent(
+                    let eventId = try await nostrService.publishEvent(
                         keys: keys,
                         builder: finalBuilder
                     )
@@ -371,7 +372,7 @@ struct RoundDetailView: View {
                     playerPubkeys: playerPubkeys,
                     notes: nil
                 )
-                myFinalEventId = try await NostrClient.publishEvent(
+                myFinalEventId = try await nostrService.publishEvent(
                     keys: keys,
                     builder: finalBuilder
                 )
@@ -428,7 +429,7 @@ struct RoundDetailView: View {
             let socialBuilder = EventBuilder(kind: Kind(kind: 1), content: socialContent)
                 .tags(tags: socialTags)
                 .allowSelfTagging()
-            _ = try await NostrClient.publishEvent(keys: keys, builder: socialBuilder)
+            _ = try await nostrService.publishEvent(keys: keys, builder: socialBuilder)
 
             showPublishSuccess = true
         } catch {
@@ -477,7 +478,7 @@ struct RoundDetailView: View {
         }
 
         do {
-            let events = try await NostrClient.fetchFinalRecords(
+            let events = try await nostrService.fetchFinalRecords(
                 initiationEventId: record.initiationEventId
             )
 
@@ -493,6 +494,9 @@ struct RoundDetailView: View {
                 pubkeyToIndex[player.playerPubkey] = player.playerIndex
             }
 
+            // Authorized player list for author verification (B-004)
+            let authorizedPubkeys = Array(pubkeyToIndex.keys)
+
             // Parse each event and merge into allPlayerScores
             let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
             for event in events {
@@ -501,6 +505,12 @@ struct RoundDetailView: View {
                 // Skip own events — local scores are authoritative
                 if authorHex == myPubkeyHex {
                     print("[Gambit][Fetch1502] Skipped own 1502 from \(authorHex.prefix(8))...")
+                    continue
+                }
+
+                // Reject events from unauthorized authors (B-004)
+                guard isAuthorizedPlayer(authorHex, allowedPubkeys: authorizedPubkeys) else {
+                    print("[Gambit][Auth] Rejected 1502 from unauthorized author \(authorHex.prefix(12))...")
                     continue
                 }
 

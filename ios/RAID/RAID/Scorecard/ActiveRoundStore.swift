@@ -35,6 +35,7 @@ class ActiveRoundStore {
     private(set) var courseHash: String = ""
     private(set) var multiDeviceMode: Bool = false
     private var dbQueue: DatabaseQueue?
+    private var nostrService: NostrService?
 
     // MARK: - Computed Properties
 
@@ -142,13 +143,14 @@ class ActiveRoundStore {
 
     /// Configure the store for a specific round. Loads state from DB.
     /// Call once per active round — do not call again unless roundId changes.
-    func configure(roundId: Int64, courseHash: String, dbQueue: DatabaseQueue, isMultiDevice: Bool = false) {
+    func configure(roundId: Int64, courseHash: String, dbQueue: DatabaseQueue, nostrService: NostrService, isMultiDevice: Bool = false) {
         // Skip reconfigure if already loaded for this round
         guard self.roundId != roundId else { return }
 
         self.roundId = roundId
         self.courseHash = courseHash
         self.dbQueue = dbQueue
+        self.nostrService = nostrService
         self.multiDeviceMode = isMultiDevice
         self.isLoaded = false
 
@@ -285,7 +287,7 @@ class ActiveRoundStore {
                 if let record = try nostrRepo.fetchInitiation(forRound: roundId) {
                     inviteNevent = try RoundInviteBuilder.buildNevent(
                         eventIdHex: record.initiationEventId,
-                        relays: NostrClient.defaultRelays
+                        relays: NostrService.defaultPublishRelays
                     )
                     return
                 }
@@ -316,7 +318,7 @@ class ActiveRoundStore {
     /// Fetch remote players' live scorecard events from relays and cache locally.
     /// Manual refresh — called from UI "Refresh" button.
     func fetchRemoteScores() async {
-        guard let dbQueue = dbQueue else { return }
+        guard let dbQueue = dbQueue, let nostrService = nostrService else { return }
 
         // Need round_nostr record with initiation_event_id
         let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
@@ -325,7 +327,7 @@ class ActiveRoundStore {
         isFetchingRemoteScores = true
 
         do {
-            let events = try await NostrClient.fetchLiveScorecards(
+            let events = try await nostrService.fetchLiveScorecards(
                 initiationEventId: record.initiationEventId
             )
 
@@ -334,6 +336,10 @@ class ActiveRoundStore {
                 guard let km = try? KeyManager.loadOrCreate() else { return nil }
                 return try? km.signingKeys().publicKey().toHex()
             }()
+
+            // Load authorized player list for this round (B-004)
+            let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)
+            let authorizedPubkeys = try playerRepo.fetchPlayerPubkeys(forRound: roundId)
 
             let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)
 
@@ -346,6 +352,12 @@ class ActiveRoundStore {
 
                 // Skip own events — local scores are authoritative
                 if authorHex == myPubkeyHex { continue }
+
+                // Reject events from unauthorized authors (B-004)
+                guard isAuthorizedPlayer(authorHex, allowedPubkeys: authorizedPubkeys) else {
+                    print("[Gambit][Auth] Rejected 30501 from unauthorized author \(authorHex.prefix(12))...")
+                    continue
+                }
 
                 let tags = event.tags().toVec().map { $0.asVec() }
                 guard let data = NIP101gEventParser.parseLiveScorecard(
@@ -384,7 +396,7 @@ class ActiveRoundStore {
     /// If overrideScores is provided, publishes those instead of reading from in-memory state
     /// (used to avoid publishing unconfirmed default-par for the just-arrived-at hole).
     func publishLiveScorecard(overrideScores: [Int: Int]? = nil) async {
-        guard let dbQueue = dbQueue else { return }
+        guard let dbQueue = dbQueue, let nostrService = nostrService else { return }
 
         let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
         guard let record = try? nostrRepo.fetchInitiation(forRound: roundId) else { return }
@@ -415,7 +427,7 @@ class ActiveRoundStore {
                 playerPubkeys: playerPubkeys
             )
 
-            _ = try await NostrClient.publishEvent(keys: keys, builder: builder)
+            _ = try await nostrService.publishEvent(keys: keys, builder: builder)
             let holeList = myScores.keys.sorted().map { "\($0):\(myScores[$0]!)" }.joined(separator: ", ")
             print("[Gambit][Publish] Kind 30501 round \(roundId): [\(holeList)]")
         } catch {
@@ -430,7 +442,7 @@ class ActiveRoundStore {
     /// and multi-device modes. Includes fallback 1501 publish if no initiation exists.
     /// Caches the 1502 event ID in UserDefaults to prevent duplicate publishes.
     func publishFinalRecords() async {
-        guard let dbQueue = dbQueue else { return }
+        guard let dbQueue = dbQueue, let nostrService = nostrService else { return }
 
         let cached1502Key = "1502_event_\(roundId)"
         if UserDefaults.standard.string(forKey: cached1502Key) != nil {
@@ -471,7 +483,7 @@ class ActiveRoundStore {
                     content: content, courseHash: computedCourseHash, rulesHash: rulesHash,
                     playerPubkeys: playerPubkeys, date: roundDate)
                 builder = builder.allowSelfTagging()
-                initiationEventId = try await NostrClient.publishEvent(keys: keys, builder: builder)
+                initiationEventId = try await nostrService.publishEvent(keys: keys, builder: builder)
                 try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: initiationEventId)
                 print("[Gambit] Kind 1501 fallback published for round \(roundId)")
             }
@@ -491,7 +503,7 @@ class ActiveRoundStore {
                 let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
                     initiationEventId: initiationEventId, scores: scoreList, total: total,
                     scoredPlayerPubkey: pubkey, playerPubkeys: playerPubkeys, notes: nil)
-                myFinalEventId = try await NostrClient.publishEvent(keys: keys, builder: finalBuilder)
+                myFinalEventId = try await nostrService.publishEvent(keys: keys, builder: finalBuilder)
             } else if isMultiplayer {
                 // Same-device: one 1502 per player, all signed by creator
                 for player in players {
@@ -505,7 +517,7 @@ class ActiveRoundStore {
                     let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
                         initiationEventId: initiationEventId, scores: scoreList, total: total,
                         scoredPlayerPubkey: player.playerPubkey, playerPubkeys: playerPubkeys, notes: nil)
-                    let eventId = try await NostrClient.publishEvent(keys: keys, builder: finalBuilder)
+                    let eventId = try await nostrService.publishEvent(keys: keys, builder: finalBuilder)
                     if player.playerIndex == 0 { myFinalEventId = eventId }
                 }
             } else {
@@ -520,7 +532,7 @@ class ActiveRoundStore {
                 let finalBuilder = try NIP101gEventBuilder.buildFinalRecordEvent(
                     initiationEventId: initiationEventId, scores: scoreList, total: total,
                     playerPubkeys: playerPubkeys, notes: nil)
-                myFinalEventId = try await NostrClient.publishEvent(keys: keys, builder: finalBuilder)
+                myFinalEventId = try await nostrService.publishEvent(keys: keys, builder: finalBuilder)
             }
 
             // Cache event ID to prevent duplicate publishes

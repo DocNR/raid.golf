@@ -87,7 +87,7 @@ struct NostrProfileView: View {
 
     private var relaySection: some View {
         Section("Relays") {
-            ForEach(NostrClient.defaultRelays, id: \.self) { relay in
+            ForEach(NostrService.defaultPublishRelays, id: \.self) { relay in
                 HStack {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .foregroundStyle(.secondary)
