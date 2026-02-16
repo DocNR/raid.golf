@@ -9,6 +9,7 @@ import GRDB
 @main
 struct RAIDApp: App {
     @State private var nostrService = NostrService()
+    @State private var drawerState = DrawerState()
 
     private let dbQueue: DatabaseQueue = {
         do {
@@ -29,6 +30,7 @@ struct RAIDApp: App {
         WindowGroup {
             ContentView(dbQueue: dbQueue)
                 .environment(\.nostrService, nostrService)
+                .environment(\.drawerState, drawerState)
                 .task { await bootstrapTemplates() }
         }
     }

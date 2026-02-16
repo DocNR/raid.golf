@@ -449,9 +449,11 @@ struct NostrProfile: Identifiable {
     var id: String { pubkeyHex }
 
     let pubkeyHex: String
-    let name: String?
-    let displayName: String?
-    let picture: String?
+    var name: String?
+    var displayName: String?
+    var picture: String?
+    var about: String?
+    var banner: String?
 
     /// Best available display string: displayName > name > truncated pubkey.
     var displayLabel: String {
@@ -471,7 +473,9 @@ struct NostrProfile: Identifiable {
             pubkeyHex: pubkeyHex,
             name: json["name"] as? String,
             displayName: json["display_name"] as? String,
-            picture: json["picture"] as? String
+            picture: json["picture"] as? String,
+            about: json["about"] as? String,
+            banner: json["banner"] as? String
         )
     }
 }

@@ -2,6 +2,9 @@
 // RAID Golf
 //
 // Nostr identity sheet: own profile display, key import, nsec backup, relay info.
+//
+// Profile state lives in DrawerState (single source of truth).
+// This view reads from drawerState.ownProfile — no local duplicate.
 
 import SwiftUI
 import NostrSDK
@@ -9,15 +12,13 @@ import NostrSDK
 struct NostrProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.nostrService) private var nostrService
+    @Environment(\.drawerState) private var drawerState
 
     @State private var npub: String?
     @State private var errorMessage: String?
     @State private var showCopyNsecConfirm = false
     @State private var copiedNpub = false
     @State private var copiedNsec = false
-
-    // Own profile state
-    @State private var ownProfile: NostrProfile?
     @State private var isLoadingProfile = false
 
     // Import state
@@ -25,6 +26,9 @@ struct NostrProfileView: View {
     @State private var nsecInput = ""
     @State private var importError: String?
     @State private var showOrphanWarning = false
+
+    /// Single source of truth — reads from shared DrawerState, not local @State.
+    private var profile: NostrProfile? { drawerState.ownProfile }
 
     var body: some View {
         NavigationStack {
@@ -34,7 +38,7 @@ struct NostrProfileView: View {
                 relaySection
                 warningSection
             }
-            .navigationTitle("Nostr Profile")
+            .navigationTitle("Keys & Relays")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -63,7 +67,9 @@ struct NostrProfileView: View {
             }
             .task {
                 loadIdentity()
-                await fetchOwnProfile()
+                if profile == nil {
+                    await refreshProfile()
+                }
             }
             .sheet(isPresented: $showImportSheet) {
                 importSheet
@@ -85,7 +91,7 @@ struct NostrProfileView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                } else if let profile = ownProfile {
+                } else if let profile {
                     VStack(spacing: 12) {
                         ProfileAvatarView(pictureURL: profile.picture, size: 80)
 
@@ -254,7 +260,8 @@ struct NostrProfileView: View {
         }
     }
 
-    private func fetchOwnProfile() async {
+    /// Fetch profile from relays and update the single source of truth (DrawerState).
+    private func refreshProfile() async {
         guard let km = try? KeyManager.loadOrCreate() else { return }
         let pubkeyHex = km.signingKeys().publicKey().toHex()
 
@@ -262,7 +269,7 @@ struct NostrProfileView: View {
         defer { isLoadingProfile = false }
 
         if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [pubkeyHex]) {
-            ownProfile = profiles[pubkeyHex]
+            drawerState.ownProfile = profiles[pubkeyHex]
         }
     }
 
@@ -304,8 +311,9 @@ struct NostrProfileView: View {
         do {
             _ = try KeyManager.importKey(nsec: input)
             loadIdentity()
-            ownProfile = nil
-            Task { await fetchOwnProfile() }
+            // Clear the single source of truth — triggers UI update everywhere
+            drawerState.ownProfile = nil
+            Task { await refreshProfile() }
             showImportSheet = false
             nsecInput = ""
             importError = nil

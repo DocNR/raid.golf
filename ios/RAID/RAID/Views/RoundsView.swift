@@ -18,8 +18,6 @@ struct RoundsView: View {
     @State private var navigationTarget: NavigationTarget?
     @State private var activeRoundStore: ActiveRoundStore?
     @State private var errorMessage: String?
-    @State private var showNostrProfile = false
-    @State private var ownProfile: NostrProfile?
 
     // DM invite state
     @State private var pendingInviteCount: Int = 0
@@ -38,15 +36,9 @@ struct RoundsView: View {
                     roundsList
                 }
             }
-            .navigationTitle("Rounds")
+            .navigationTitle("Play")
+            .avatarToolbar()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showNostrProfile = true
-                    } label: {
-                        ProfileAvatarView(pictureURL: ownProfile?.picture, size: 28)
-                    }
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
@@ -63,11 +55,6 @@ struct RoundsView: View {
                         Image(systemName: "plus")
                     }
                 }
-            }
-            .sheet(isPresented: $showNostrProfile, onDismiss: {
-                Task { await fetchOwnProfile() }
-            }) {
-                NostrProfileView()
             }
             .sheet(isPresented: $showingCreateRound) {
                 CreateRoundView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys, isMultiDevice in
@@ -117,7 +104,6 @@ struct RoundsView: View {
             }
             .task {
                 loadRounds()
-                await fetchOwnProfile()
                 await checkPendingInvites()
             }
             .alert("Error", isPresented: Binding(
@@ -155,8 +141,9 @@ struct RoundsView: View {
     }
 
     private var emptyState: some View {
-        ScrollView {
+        VStack(spacing: 0) {
             inviteBanner
+
             ContentUnavailableView {
                 Label("No Rounds", systemImage: "tray")
             } description: {
@@ -166,7 +153,9 @@ struct RoundsView: View {
                     showingCreateRound = true
                 }
             }
+            .frame(maxHeight: .infinity)
         }
+        .frame(maxHeight: .infinity)
         .refreshable {
             loadRounds()
             await checkPendingInvites()
@@ -366,16 +355,6 @@ struct RoundsView: View {
             print("[RAID][10050] Published inbox relays: \(NostrService.defaultReadRelays)")
         } catch {
             print("[RAID][10050] Failed to publish inbox relays: \(error)")
-        }
-    }
-
-    // MARK: - Profile
-
-    private func fetchOwnProfile() async {
-        guard let keyManager = try? KeyManager.loadOrCreate() else { return }
-        let hex = keyManager.signingKeys().publicKey().toHex()
-        if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [hex]) {
-            ownProfile = profiles[hex]
         }
     }
 

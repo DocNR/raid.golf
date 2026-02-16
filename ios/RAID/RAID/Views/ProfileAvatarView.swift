@@ -14,7 +14,7 @@ struct ProfileAvatarView: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
-                    image.resizable().scaledToFill()
+                    image.resizable().renderingMode(.original).scaledToFill()
                 default:
                     placeholderIcon
                 }

@@ -18,7 +18,7 @@ struct FirstRunSheetView: View {
                             .font(.largeTitle)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
-                        Text("Track your practice, score your rounds, and measure what matters.")
+                        Text("Score your rounds, follow golfers, and discover courses.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -28,25 +28,30 @@ struct FirstRunSheetView: View {
                     // Feature cards
                     VStack(spacing: 16) {
                         FeatureCard(
-                            icon: "chart.line.uptrend.xyaxis",
+                            icon: "bubble.left.and.bubble.right.fill",
                             color: .blue,
-                            title: "Practice",
-                            description: "Import Rapsodo CSV files to track your range sessions. Shots are graded A/B/C against your KPI templates."
+                            title: "Feed",
+                            description: "See rounds and posts from golfers you follow on Nostr."
                         )
 
                         FeatureCard(
                             icon: "flag.fill",
                             color: .green,
-                            title: "Rounds",
-                            description: "Score your rounds hole-by-hole. Track your scores over time."
+                            title: "Play",
+                            description: "Score your rounds hole-by-hole. Invite friends to play together across devices."
                         )
 
                         FeatureCard(
-                            icon: "list.clipboard",
+                            icon: "mappin.and.ellipse",
                             color: .orange,
-                            title: "Templates",
-                            description: "KPI templates define what makes an A, B, or C shot. A starter template for 7-iron is already set up."
+                            title: "Courses",
+                            description: "Browse courses, check tee sets, and see who's playing."
                         )
+
+                        Text("Practice sessions, trends, and templates are in the side menu.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
 
                     // CTA
