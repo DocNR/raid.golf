@@ -1,5 +1,5 @@
 // LiveScorecardSheet.swift
-// Gambit Golf
+// RAID Golf
 //
 // Live scorecard view for multi-device rounds.
 // Shows local player's scores alongside all other players from round_players.

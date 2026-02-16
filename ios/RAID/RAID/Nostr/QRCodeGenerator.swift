@@ -1,4 +1,4 @@
-// Gambit Golf — QR Code Generator
+// RAID Golf — QR Code Generator
 // Uses iOS native CoreImage to generate QR codes. No third-party dependencies.
 
 import CoreImage

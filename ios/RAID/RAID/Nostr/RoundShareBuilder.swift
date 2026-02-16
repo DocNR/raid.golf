@@ -1,4 +1,4 @@
-// Gambit Golf — Round Share Builder
+// RAID Golf — Round Share Builder
 // Pure functions to format round data for sharing. No database queries.
 
 import Foundation
@@ -29,7 +29,7 @@ enum RoundShareBuilder {
         if holeCount <= 9 {
             // 9-hole round — no front/back split
             let nineLabel = nineLabel(for: holes)
-            return "Shot \(totalStrokes) on \(nineLabel) at \(course) (\(tees) tees) (\(scoreToParText))\n\n#golf #gambitgolf"
+            return "Shot \(totalStrokes) on \(nineLabel) at \(course) (\(tees) tees) (\(scoreToParText))\n\n#golf #raidgolf"
         }
 
         // 18-hole round — show front 9 / back 9 subtotals
@@ -39,7 +39,7 @@ enum RoundShareBuilder {
         let frontTotal = front9.compactMap { scores[$0.holeNumber] }.reduce(0, +)
         let backTotal = back9.compactMap { scores[$0.holeNumber] }.reduce(0, +)
 
-        return "Shot \(totalStrokes) at \(course) (\(tees) tees) — Front 9: \(frontTotal), Back 9: \(backTotal) (\(scoreToParText))\n\n#golf #gambitgolf"
+        return "Shot \(totalStrokes) at \(course) (\(tees) tees) — Front 9: \(frontTotal), Back 9: \(backTotal) (\(scoreToParText))\n\n#golf #raidgolf"
     }
 
     /// Build a plain-text summary for the share sheet / clipboard.
@@ -56,7 +56,7 @@ enum RoundShareBuilder {
         let scoreToParText = formatScoreToPar(scoreToPar)
 
         var lines: [String] = []
-        lines.append("Gambit Golf — Round Summary")
+        lines.append("RAID Golf — Round Summary")
         lines.append("")
         lines.append("Course: \(course)")
         lines.append("Tees: \(tees)")
@@ -100,10 +100,10 @@ enum RoundShareBuilder {
 
         if holeCount <= 9 {
             let label = nineLabel(for: holes)
-            return "Shot \(totals.joined(separator: "/")) on \(label) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #gambitgolf"
+            return "Shot \(totals.joined(separator: "/")) on \(label) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #raidgolf"
         }
 
-        return "Shot \(totals.joined(separator: "/")) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #gambitgolf"
+        return "Shot \(totals.joined(separator: "/")) at \(course) (\(tees) tees) — \(scoreSummaries.joined(separator: ", "))\n\n#golf #raidgolf"
     }
 
     /// Build a plain-text summary for the share sheet / clipboard — multiplayer.
@@ -117,7 +117,7 @@ enum RoundShareBuilder {
         let totalPar = holes.reduce(0) { $0 + $1.par }
 
         var lines: [String] = []
-        lines.append("Gambit Golf — Round Summary")
+        lines.append("RAID Golf — Round Summary")
         lines.append("")
         lines.append("Course: \(course)")
         lines.append("Tees: \(tees)")

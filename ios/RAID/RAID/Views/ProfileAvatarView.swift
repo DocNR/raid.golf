@@ -1,5 +1,5 @@
 // ProfileAvatarView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Reusable circular profile avatar with AsyncImage and placeholder fallback.
 

@@ -1,5 +1,5 @@
 // RAIDApp.swift
-// Gambit Golf
+// RAID Golf
 //
 // App entry point with template bootstrap
 
@@ -41,7 +41,7 @@ struct RAIDApp: App {
                 try TemplateBootstrap.loadSeeds(into: dbQueue)
             }.value
         } catch {
-            print("[Gambit] Template bootstrap failed (non-fatal): \(error)")
+            print("[RAID] Template bootstrap failed (non-fatal): \(error)")
         }
     }
 }
@@ -53,13 +53,13 @@ struct RAIDApp: App {
 enum TemplateBootstrap {
     static func loadSeeds(into dbQueue: DatabaseQueue) throws {
         guard let seedURL = Bundle.main.url(forResource: "template_seeds", withExtension: "json") else {
-            print("[Gambit] template_seeds.json not found in bundle — skipping bootstrap")
+            print("[RAID] template_seeds.json not found in bundle — skipping bootstrap")
             return
         }
 
         let seedData = try Data(contentsOf: seedURL)
         guard let seeds = try JSONSerialization.jsonObject(with: seedData) as? [[String: Any]] else {
-            print("[Gambit] template_seeds.json is not a JSON array — skipping bootstrap")
+            print("[RAID] template_seeds.json is not a JSON array — skipping bootstrap")
             return
         }
 
@@ -70,7 +70,7 @@ enum TemplateBootstrap {
             let templateJSON = try JSONSerialization.data(withJSONObject: seed)
             do {
                 let record = try templateRepo.insertTemplate(rawJSON: templateJSON)
-                print("[Gambit] Template bootstrapped: \(record.club) hash=\(record.hash.prefix(12))…")
+                print("[RAID] Template bootstrapped: \(record.club) hash=\(record.hash.prefix(12))…")
 
                 // Ensure preference row exists for this template
                 try prefsRepo.ensurePreferenceExists(forHash: record.hash, club: record.club)
@@ -79,7 +79,7 @@ enum TemplateBootstrap {
                 let activeTemplate = try prefsRepo.fetchActiveTemplate(forClub: record.club)
                 if activeTemplate == nil {
                     try prefsRepo.setActive(templateHash: record.hash, club: record.club)
-                    print("[Gambit] Set \(record.club) as active (first template for club)")
+                    print("[RAID] Set \(record.club) as active (first template for club)")
                 }
             } catch {
                 // Expected on subsequent launches (PK constraint on template_hash).

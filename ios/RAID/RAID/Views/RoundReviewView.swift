@@ -1,5 +1,5 @@
 // RoundReviewView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Pre-finish review scorecard. Shown as a sheet before committing the round.
 // Lets the user inspect all scores and go back to correct mistakes.

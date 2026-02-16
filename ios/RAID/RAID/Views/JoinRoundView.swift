@@ -1,5 +1,5 @@
 // JoinRoundView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Join a multi-device round by pasting a nevent invite code.
 // Flow: paste nevent → fetch kind 1501 from relays → verify → create local round.
@@ -122,7 +122,7 @@ struct JoinRoundView: View {
                         rulesHash: rulesHash
                     )
                     if !hashesValid {
-                        print("[Gambit] Hash verification failed for initiation \(eventIdHex) — proceeding anyway (embedded content is authoritative)")
+                        print("[RAID] Hash verification failed for initiation \(eventIdHex) — proceeding anyway (embedded content is authoritative)")
                     }
                 }
 

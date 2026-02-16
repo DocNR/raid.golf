@@ -1,5 +1,5 @@
 // RoundJoinTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for Phase 7B: Join Round Flow.
 // Covers NIP-101g event parsing, hash verification, and local round creation from relay data.
@@ -75,7 +75,7 @@ final class RoundJoinTests: XCTestCase {
             ["p", Self.accountAPubkey],
             ["p", Self.accountBPubkey],
             ["t", "golf"],
-            ["t", "gambitgolf"],
+            ["t", "raidgolf"],
             ["client", "gambit-golf-ios"]
         ])
 

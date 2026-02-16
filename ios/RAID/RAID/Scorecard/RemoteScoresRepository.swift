@@ -1,5 +1,5 @@
 // RemoteScoresRepository.swift
-// Gambit Golf
+// RAID Golf
 //
 // Mutable cache for remote players' scores fetched from Nostr relays.
 // Backed by remote_scores_cache table (v8 migration). No immutability triggers.

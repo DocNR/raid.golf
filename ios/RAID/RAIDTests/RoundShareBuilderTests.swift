@@ -1,5 +1,5 @@
 // RoundShareBuilderTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for RoundShareBuilder note formatting.
 
@@ -48,7 +48,7 @@ final class RoundShareBuilderTests: XCTestCase {
         XCTAssertTrue(note.contains("Back 9: 45"))
         XCTAssertTrue(note.contains("(+18)"))
         XCTAssertTrue(note.contains("#golf"))
-        XCTAssertTrue(note.contains("#gambitgolf"))
+        XCTAssertTrue(note.contains("#raidgolf"))
     }
 
     func testNoteText18Hole_UnderPar() {
@@ -129,7 +129,7 @@ final class RoundShareBuilderTests: XCTestCase {
         )
 
         XCTAssertTrue(note.contains("#golf"))
-        XCTAssertTrue(note.contains("#gambitgolf"))
+        XCTAssertTrue(note.contains("#raidgolf"))
     }
 
     // MARK: - Summary Text
@@ -146,7 +146,7 @@ final class RoundShareBuilderTests: XCTestCase {
             scores: scores
         )
 
-        XCTAssertTrue(summary.contains("Gambit Golf"))
+        XCTAssertTrue(summary.contains("RAID Golf"))
         XCTAssertTrue(summary.contains("Course: Pebble Beach"))
         XCTAssertTrue(summary.contains("Tees: Blue"))
         XCTAssertTrue(summary.contains("Date: 2026-02-12"))

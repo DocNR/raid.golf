@@ -1,5 +1,5 @@
 // TemplateDetailView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Template detail + preferences
 //
@@ -272,7 +272,7 @@ struct TemplateDetailView: View {
             preference = fetchedPreference
             kpiTemplate = fetchedKPI
         } catch {
-            print("[Gambit] Failed to load template: \(error)")
+            print("[RAID] Failed to load template: \(error)")
             errorMessage = "Could not load template details."
         }
     }
@@ -287,7 +287,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[Gambit] Failed to set active: \(error)")
+            print("[RAID] Failed to set active: \(error)")
             errorMessage = "Could not set template as active."
         }
     }
@@ -309,7 +309,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[Gambit] Failed to save display name: \(error)")
+            print("[RAID] Failed to save display name: \(error)")
             errorMessage = "Could not save display name."
         }
     }
@@ -329,7 +329,7 @@ struct TemplateDetailView: View {
             loadTemplate()
             onUpdate?()
         } catch {
-            print("[Gambit] Failed to toggle hidden: \(error)")
+            print("[RAID] Failed to toggle hidden: \(error)")
             errorMessage = "Could not update template visibility."
         }
     }

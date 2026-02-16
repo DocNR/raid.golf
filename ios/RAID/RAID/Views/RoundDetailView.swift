@@ -1,5 +1,5 @@
 // RoundDetailView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Completed round scorecard display
 
@@ -316,7 +316,7 @@ struct RoundDetailView: View {
 
             if let cached1502EventId = UserDefaults.standard.string(forKey: cached1502Key) {
                 myFinalEventId = cached1502EventId
-                print("[Gambit][Post] Using cached 1502 event ID for round \(roundId)")
+                print("[RAID][Post] Using cached 1502 event ID for round \(roundId)")
             } else if isMultiDeviceRound {
                 // Multi-device: publish only MY kind 1502, signed by my key
                 let myScores = allPlayerScores[0] ?? [:] // Local player uses index 0
@@ -433,8 +433,8 @@ struct RoundDetailView: View {
             var socialTagArrays: [[String]] = [
                 ["e", myFinalEventId],
                 ["t", "golf"],
-                ["t", "gambitgolf"],
-                ["client", "gambit-golf-ios"]
+                ["t", "raidgolf"],
+                ["client", "raid-golf-ios"]
             ]
             for pk in playerPubkeys {
                 socialTagArrays.append(["p", pk])
@@ -519,13 +519,13 @@ struct RoundDetailView: View {
 
                 // Skip own events — local scores are authoritative
                 if authorHex == myPubkeyHex {
-                    print("[Gambit][Fetch1502] Skipped own 1502 from \(authorHex.prefix(8))...")
+                    print("[RAID][Fetch1502] Skipped own 1502 from \(authorHex.prefix(8))...")
                     continue
                 }
 
                 // Reject events from unauthorized authors (B-004)
                 guard isAuthorizedPlayer(authorHex, allowedPubkeys: authorizedPubkeys) else {
-                    print("[Gambit][Auth] Rejected 1502 from unauthorized author \(authorHex.prefix(12))...")
+                    print("[RAID][Auth] Rejected 1502 from unauthorized author \(authorHex.prefix(12))...")
                     continue
                 }
 
@@ -550,14 +550,14 @@ struct RoundDetailView: View {
                 }
                 allPlayerScores[playerIndex] = remoteScores
                 let holeList = remoteScores.keys.sorted().map { "\($0):\(remoteScores[$0]!)" }.joined(separator: ", ")
-                print("[Gambit][Fetch1502] Player \(playerIndex) (\(authorHex.prefix(8))...): [\(holeList)]")
+                print("[RAID][Fetch1502] Player \(playerIndex) (\(authorHex.prefix(8))...): [\(holeList)]")
 
                 // Cache in remote_scores_cache for offline viewing
                 try remoteRepo.upsertScores(roundId: roundId, playerPubkey: authorHex, scores: remoteScores)
             }
         } catch {
             errorMessage = "Could not fetch remote scores. Check your connection."
-            print("[Gambit] Failed to fetch remote final records: \(error)")
+            print("[RAID] Failed to fetch remote final records: \(error)")
         }
     }
 
@@ -604,7 +604,7 @@ struct RoundDetailView: View {
                     allPlayerScores[0]?[score.holeNumber] = score.strokes
                 }
                 let localHoles = (allPlayerScores[0] ?? [:]).keys.sorted().map { "\($0):\(allPlayerScores[0]![$0]!)" }.joined(separator: ", ")
-                print("[Gambit][Detail] Local scores (player 0): [\(localHoles)]")
+                print("[RAID][Detail] Local scores (player 0): [\(localHoles)]")
 
                 // Load cached remote scores (if previously fetched)
                 // Skip own pubkey — local scores are authoritative
@@ -621,15 +621,15 @@ struct RoundDetailView: View {
                 }
                 for (pubkey, remoteScores) in cached {
                     if pubkey == myPubkeyHex {
-                        print("[Gambit][Detail] Skipped cached remote \(pubkey.prefix(8))... (own pubkey)")
+                        print("[RAID][Detail] Skipped cached remote \(pubkey.prefix(8))... (own pubkey)")
                         continue
                     }
                     if let index = pubkeyToIndex[pubkey] {
                         allPlayerScores[index] = remoteScores
                         let remoteHoles = remoteScores.keys.sorted().map { "\($0):\(remoteScores[$0]!)" }.joined(separator: ", ")
-                        print("[Gambit][Detail] Cached remote \(pubkey.prefix(8))... → player \(index): [\(remoteHoles)]")
+                        print("[RAID][Detail] Cached remote \(pubkey.prefix(8))... → player \(index): [\(remoteHoles)]")
                     } else {
-                        print("[Gambit][Detail] Skipped cached remote \(pubkey.prefix(8))... (unknown pubkey)")
+                        print("[RAID][Detail] Skipped cached remote \(pubkey.prefix(8))... (unknown pubkey)")
                     }
                 }
             } else if players.count > 1 {
@@ -650,7 +650,7 @@ struct RoundDetailView: View {
                 }
             }
         } catch {
-            print("[Gambit] Failed to load round detail: \(error)")
+            print("[RAID] Failed to load round detail: \(error)")
         }
     }
 }

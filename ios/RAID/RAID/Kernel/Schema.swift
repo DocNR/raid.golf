@@ -1,5 +1,5 @@
 // Schema.swift
-// Gambit Golf
+// RAID Golf
 //
 // SQLite Schema + Immutability Triggers
 // Scorecard v0: course_snapshots, course_holes, rounds, round_events, hole_scores

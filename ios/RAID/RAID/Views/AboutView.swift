@@ -1,5 +1,5 @@
 // AboutView.swift
-// Gambit Golf
+// RAID Golf
 //
 // In-app about screen.
 
@@ -13,7 +13,7 @@ struct AboutView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Gambit Golf")
+                        Text("RAID Golf")
                             .font(.title2)
                             .fontWeight(.semibold)
                         Text("Version \(appVersion)")

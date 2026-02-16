@@ -1,5 +1,5 @@
 // RemoteFinalRecordTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for Phase 7D: Post-Round (fetch + display final records).
 // Covers kind 1502 parsing and combined scorecard building.

@@ -1,5 +1,5 @@
 // RoundInviteTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // TDD tests for Phase 7A: Round invite sharing.
 // Tests nevent encoding/decoding, nostr: URI handling, and QR code generation.

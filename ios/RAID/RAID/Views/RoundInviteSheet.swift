@@ -1,5 +1,5 @@
 // RoundInviteSheet.swift
-// Gambit Golf
+// RAID Golf
 //
 // Displays a round invite as a QR code + copyable nevent string.
 // Used during active rounds to share the invite with other players.

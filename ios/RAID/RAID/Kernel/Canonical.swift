@@ -1,5 +1,5 @@
 // Canonical.swift
-// Gambit Golf
+// RAID Golf
 //
 // RAID Canonical JSON v1 (canonicaljson-compatible)
 //

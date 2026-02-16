@@ -1,5 +1,5 @@
 // ActiveRoundStore.swift
-// Gambit Golf
+// RAID Golf
 //
 // Long-lived view model for active round scoring state.
 // Owns holes, scores, navigation index, player state, and persistence logic.
@@ -247,7 +247,7 @@ class ActiveRoundStore {
 
             dismiss()
         } catch {
-            print("[Gambit] Failed to complete round: \(error)")
+            print("[RAID] Failed to complete round: \(error)")
             errorMessage = "Could not finish round. Please try again."
             isCompleting = false
         }
@@ -300,7 +300,7 @@ class ActiveRoundStore {
                     return
                 }
             } catch {
-                print("[Gambit] Invite nevent build error: \(error)")
+                print("[RAID] Invite nevent build error: \(error)")
                 return
             }
 
@@ -312,7 +312,7 @@ class ActiveRoundStore {
             }
         }
 
-        print("[Gambit] Invite nevent: round_nostr not found after 5 attempts for round \(roundId)")
+        print("[RAID] Invite nevent: round_nostr not found after 5 attempts for round \(roundId)")
     }
 
     // MARK: - Remote Score Sync
@@ -363,7 +363,7 @@ class ActiveRoundStore {
 
                 // Reject events from unauthorized authors (B-004)
                 guard isAuthorizedPlayer(authorHex, allowedPubkeys: authorizedPubkeys) else {
-                    print("[Gambit][Auth] Rejected 30501 from unauthorized author \(authorHex.prefix(12))...")
+                    print("[RAID][Auth] Rejected 30501 from unauthorized author \(authorHex.prefix(12))...")
                     continue
                 }
 
@@ -390,11 +390,11 @@ class ActiveRoundStore {
             remoteScores = fetched
             for (pubkey, pScores) in fetched {
                 let holeList = pScores.keys.sorted().map { "\($0):\(pScores[$0]!)" }.joined(separator: ", ")
-                print("[Gambit][Remote] Cached \(pubkey.prefix(8))...: [\(holeList)]")
+                print("[RAID][Remote] Cached \(pubkey.prefix(8))...: [\(holeList)]")
             }
             isFetchingRemoteScores = false
         } catch {
-            print("[Gambit] Failed to fetch remote scores: \(error)")
+            print("[RAID] Failed to fetch remote scores: \(error)")
             isFetchingRemoteScores = false
         }
     }
@@ -437,9 +437,9 @@ class ActiveRoundStore {
 
             _ = try await nostrService.publishEvent(keys: keys, builder: builder)
             let holeList = myScores.keys.sorted().map { "\($0):\(myScores[$0]!)" }.joined(separator: ", ")
-            print("[Gambit][Publish] Kind 30501 round \(roundId): [\(holeList)]")
+            print("[RAID][Publish] Kind 30501 round \(roundId): [\(holeList)]")
         } catch {
-            print("[Gambit] Kind 30501 publish failed: \(error)")
+            print("[RAID] Kind 30501 publish failed: \(error)")
         }
     }
 
@@ -454,7 +454,7 @@ class ActiveRoundStore {
 
         let cached1502Key = "1502_event_\(roundId)"
         if UserDefaults.standard.string(forKey: cached1502Key) != nil {
-            print("[Gambit] Kind 1502 already published for round \(roundId), skipping")
+            print("[RAID] Kind 1502 already published for round \(roundId), skipping")
             return
         }
 
@@ -477,7 +477,7 @@ class ActiveRoundStore {
             } else {
                 // Fallback: publish 1501 now (offline round or failed background publish)
                 guard let snapshot = try courseRepo.fetchCourseSnapshot(byHash: courseHash) else {
-                    print("[Gambit] Kind 1502 auto-publish skipped: course snapshot not found")
+                    print("[RAID] Kind 1502 auto-publish skipped: course snapshot not found")
                     return
                 }
                 let content = NIP101gEventBuilder.buildInitiationContent(snapshot: snapshot, holes: holes)
@@ -493,7 +493,7 @@ class ActiveRoundStore {
                 builder = builder.allowSelfTagging()
                 initiationEventId = try await nostrService.publishEvent(keys: keys, builder: builder)
                 try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: initiationEventId)
-                print("[Gambit] Kind 1501 fallback published for round \(roundId)")
+                print("[RAID] Kind 1501 fallback published for round \(roundId)")
             }
 
             // Publish 1502s
@@ -545,9 +545,9 @@ class ActiveRoundStore {
 
             // Cache event ID to prevent duplicate publishes
             UserDefaults.standard.set(myFinalEventId, forKey: cached1502Key)
-            print("[Gambit] Kind 1502 auto-published for round \(roundId): \(myFinalEventId)")
+            print("[RAID] Kind 1502 auto-published for round \(roundId): \(myFinalEventId)")
         } catch {
-            print("[Gambit] Kind 1502 auto-publish failed for round \(roundId): \(error)")
+            print("[RAID] Kind 1502 auto-publish failed for round \(roundId): \(error)")
         }
     }
 
@@ -587,9 +587,9 @@ class ActiveRoundStore {
             let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
             let input = HoleScoreInput(holeNumber: hole.holeNumber, strokes: strokes)
             _ = try scoreRepo.recordScore(roundId: roundId, playerIndex: currentPlayerIndex, score: input)
-            print("[Gambit][Score] Saved hole \(hole.holeNumber)=\(strokes) player=\(currentPlayerIndex) round=\(roundId)")
+            print("[RAID][Score] Saved hole \(hole.holeNumber)=\(strokes) player=\(currentPlayerIndex) round=\(roundId)")
         } catch {
-            print("[Gambit] Failed to save score: \(error)")
+            print("[RAID] Failed to save score: \(error)")
             errorMessage = "Could not save score for this hole."
         }
     }
@@ -644,11 +644,11 @@ class ActiveRoundStore {
             // Debug logging
             let loadedScores = scores[0] ?? [:]
             let holeList = loadedScores.keys.sorted().map { "\($0):\(loadedScores[$0]!)" }.joined(separator: ", ")
-            print("[Gambit][Load] Round \(roundId): \(holes.count) holes, \(players.count) players, multiDevice=\(multiDeviceMode), scores=[\(holeList)]")
+            print("[RAID][Load] Round \(roundId): \(holes.count) holes, \(players.count) players, multiDevice=\(multiDeviceMode), scores=[\(holeList)]")
 
             isLoaded = true
         } catch {
-            print("[Gambit] Failed to load round data: \(error)")
+            print("[RAID] Failed to load round data: \(error)")
             errorMessage = "Could not load round data."
         }
     }

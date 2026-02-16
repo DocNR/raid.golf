@@ -1,5 +1,5 @@
 // Hashing.swift
-// Gambit Golf
+// RAID Golf
 //
 // SHA-256 Content-Addressed Hashing
 //

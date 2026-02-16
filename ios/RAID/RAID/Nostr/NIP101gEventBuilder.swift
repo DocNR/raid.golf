@@ -1,4 +1,4 @@
-// Gambit Golf — NIP-101g Event Builder
+// RAID Golf — NIP-101g Event Builder
 // Pure transformation: local DB models → NIP-101g Nostr events.
 // No database queries, no network calls.
 // See: docs/nips/nip101g_round_wip.md
@@ -94,8 +94,8 @@ enum NIP101gEventBuilder {
             ["rules_hash", rulesHash],
             ["date", date],
             ["t", "golf"],
-            ["t", "gambitgolf"],
-            ["client", "gambit-golf-ios"]
+            ["t", "raidgolf"],
+            ["client", "raid-golf-ios"]
         ]
 
         for pubkey in playerPubkeys {
@@ -125,8 +125,8 @@ enum NIP101gEventBuilder {
             ["e", initiationEventId],
             ["total", String(total)],
             ["t", "golf"],
-            ["t", "gambitgolf"],
-            ["client", "gambit-golf-ios"]
+            ["t", "raidgolf"],
+            ["client", "raid-golf-ios"]
         ]
 
         for score in scores.sorted(by: { $0.holeNumber < $1.holeNumber }) {
@@ -170,8 +170,8 @@ enum NIP101gEventBuilder {
             ["e", initiationEventId],
             ["status", status],
             ["t", "golf"],
-            ["t", "gambitgolf"],
-            ["client", "gambit-golf-ios"]
+            ["t", "raidgolf"],
+            ["client", "raid-golf-ios"]
         ]
 
         for holeNumber in scores.keys.sorted() {

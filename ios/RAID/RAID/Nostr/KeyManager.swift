@@ -1,4 +1,4 @@
-// Gambit Golf — Nostr Key Management
+// RAID Golf — Nostr Key Management
 // Keychain-backed keypair lifecycle for Nostr identity
 
 import Foundation
@@ -8,7 +8,7 @@ import NostrSDK
 
 final class KeyManager {
 
-    private static let keychainService = "com.gambitgolf.ios.nostr"
+    private static let keychainService = "dev.local.RAID.nostr"
     private static let keychainAccount = "nostr-nsec"
 
     private let keys: Keys

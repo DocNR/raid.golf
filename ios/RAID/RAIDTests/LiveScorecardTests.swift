@@ -1,5 +1,5 @@
 // LiveScorecardTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for Phase 7C: Score Sync via Replaceable Events (kind 30501).
 // Covers event building, parsing, and remote scores caching.

@@ -1,6 +1,6 @@
-# Gambit Golf — TestFlight Beta Notes
+# RAID Golf — TestFlight Beta Notes
 
-Thank you for testing Gambit Golf.
+Thank you for testing RAID Golf.
 
 ## What to Test
 

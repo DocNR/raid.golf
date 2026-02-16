@@ -1,5 +1,5 @@
 // ScorecardRepository.swift
-// Gambit Golf
+// RAID Golf
 //
 // Storage boundary for the scorecard domain (kernel-adjacent).
 //

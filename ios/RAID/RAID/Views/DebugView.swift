@@ -1,5 +1,5 @@
 // DebugView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Read-only diagnostic screen for debug builds
 //

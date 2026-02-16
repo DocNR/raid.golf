@@ -1,5 +1,5 @@
 // FirstRunSheetView.swift
-// Gambit Golf
+// RAID Golf
 //
 // One-time welcome sheet shown on first launch.
 
@@ -14,7 +14,7 @@ struct FirstRunSheetView: View {
                 VStack(spacing: 32) {
                     // Header
                     VStack(spacing: 8) {
-                        Text("Welcome to Gambit Golf")
+                        Text("Welcome to RAID Golf")
                             .font(.largeTitle)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)

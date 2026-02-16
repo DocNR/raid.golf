@@ -1,5 +1,5 @@
 // TrendsView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Trends view
 // Phase 4C: Empty state keyed on session count

@@ -1,5 +1,5 @@
 // TemplateListView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Template Library (4th tab)
 //
@@ -132,7 +132,7 @@ struct TemplateListView: View {
             templates = fetchedTemplates
             preferences = fetchedPreferences
         } catch {
-            print("[Gambit] Failed to load templates: \(error)")
+            print("[RAID] Failed to load templates: \(error)")
         }
     }
 }

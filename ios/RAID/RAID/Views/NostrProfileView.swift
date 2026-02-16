@@ -1,5 +1,5 @@
 // NostrProfileView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Nostr identity sheet: own profile display, key import, nsec backup, relay info.
 

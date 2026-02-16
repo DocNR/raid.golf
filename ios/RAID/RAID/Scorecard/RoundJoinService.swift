@@ -1,4 +1,4 @@
-// Gambit Golf — Round Join Service
+// RAID Golf — Round Join Service
 // Orchestrates creating a local round from relay-fetched NIP-101g initiation data.
 // Coordinates: CourseSnapshotRepository, RoundRepository, RoundPlayerRepository, RoundNostrRepository.
 //

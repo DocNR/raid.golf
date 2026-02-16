@@ -1,5 +1,5 @@
 // PracticeSummaryView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Session detail view with persisted analysis
 //
@@ -247,7 +247,7 @@ struct PracticeSummaryView: View {
                 await loadSession()
 
             } catch {
-                print("[Gambit] Analysis failed: \(error)")
+                print("[RAID] Analysis failed: \(error)")
                 analyzeError = "Analysis failed. Please try again."
                 isAnalyzing = false
             }

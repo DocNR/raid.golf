@@ -1,4 +1,4 @@
-# Gambit Golf
+# RAID Golf
 
 Practice analytics for golfers. Import Rapsodo CSV files, track your range sessions with A/B/C shot grading, score your rounds, and optionally share via Nostr. All data stored locally on your device.
 
@@ -14,7 +14,7 @@ Practice analytics for golfers. Import Rapsodo CSV files, track your range sessi
 
 ## Nostr Integration
 
-Gambit Golf includes optional Nostr integration for social sharing. Your Nostr keypair is auto-generated on first use and stored securely in the iOS Keychain. You can post completed rounds to Nostr relays. Posting is opt-in and entirely under your control.
+RAID Golf includes optional Nostr integration for social sharing. Your Nostr keypair is auto-generated on first use and stored securely in the iOS Keychain. You can post completed rounds to Nostr relays. Posting is opt-in and entirely under your control.
 
 To view your Nostr identity and relay settings, tap the profile button (person icon) on the Rounds tab.
 
@@ -35,7 +35,7 @@ To view your Nostr identity and relay settings, tap the profile button (person i
 
 RAID Golf kernel and analysis framework: see repository root for license details.
 
-iOS app (Gambit Golf): proprietary, not open source.
+iOS app (RAID Golf): proprietary, not open source.
 
 ## Support
 

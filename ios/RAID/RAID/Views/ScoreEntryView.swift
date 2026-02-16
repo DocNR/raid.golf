@@ -1,5 +1,5 @@
 // ScoreEntryView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Hole-by-hole score entry.
 // Thin rendering shell — all state and persistence lives in ActiveRoundStore.

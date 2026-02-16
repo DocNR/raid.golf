@@ -1,4 +1,4 @@
-// Gambit Golf — NIP-101g Event Data Structures
+// RAID Golf — NIP-101g Event Data Structures
 // Pure data models for round initiation and final record content.
 // See: docs/nips/nip101g_round_wip.md
 

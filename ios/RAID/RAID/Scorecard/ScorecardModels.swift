@@ -1,5 +1,5 @@
 // ScorecardModels.swift
-// Gambit Golf
+// RAID Golf
 //
 // Data models for the scorecard domain (kernel-adjacent).
 // Insert types for write path, Record types for read path.

@@ -1,5 +1,5 @@
 // RoundSetupSheet.swift
-// Gambit Golf
+// RAID Golf
 //
 // Shown after creating a multi-device round, before navigating to scoring.
 // Polls for the kind 1501 initiation publish, then displays the invite QR.
@@ -131,7 +131,7 @@ struct RoundSetupSheet: View {
                     return
                 }
             } catch {
-                print("[Gambit] Setup sheet poll error: \(error)")
+                print("[RAID] Setup sheet poll error: \(error)")
                 return
             }
 
@@ -142,6 +142,6 @@ struct RoundSetupSheet: View {
             }
         }
 
-        print("[Gambit] Setup sheet: round_nostr not found after polling for round \(roundId)")
+        print("[RAID] Setup sheet: round_nostr not found after polling for round \(roundId)")
     }
 }

@@ -1,5 +1,5 @@
 // NIP101gEventBuilderTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for NIP-101g event building: data structures, hash parity, tag structure.
 

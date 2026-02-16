@@ -1,5 +1,5 @@
 // NostrServiceTests.swift
-// Gambit Golf
+// RAID Golf
 //
 // Tests for NostrService read infrastructure: profile parsing, follow list extraction.
 // Network-dependent tests are separated and can be skipped in CI.

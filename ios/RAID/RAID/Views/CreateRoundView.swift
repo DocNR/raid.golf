@@ -1,5 +1,5 @@
 // CreateRoundView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Create new round form with optional player selection from Nostr follow list.
 
@@ -238,7 +238,7 @@ struct CreateRoundView: View {
             }
         } catch {
             followLoadError = "Could not load follow list."
-            print("[Gambit] Follow list load failed: \(error)")
+            print("[RAID] Follow list load failed: \(error)")
         }
 
         isLoadingFollows = false

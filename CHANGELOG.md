@@ -29,6 +29,17 @@ This project versions **behavior and rules**, not files.
 
 > Entries include both iOS port phases and feature sprints; ordered chronologically, grouped by theme.
 
+### Changed
+
+- **Revert "Gambit Golf" rebrand → "RAID Golf"**
+  - Reverted all branding back to RAID Golf due to trademark conflict with gambitgolf.com (putter company)
+  - Bundle identifier: `com.gambitgolf.ios` → `dev.local.RAID`
+  - Display name: "Gambit Golf" → "RAID"
+  - Keychain service: `com.gambitgolf.ios.nostr` → `dev.local.RAID.nostr`
+  - Nostr tags: `["t","gambitgolf"]` → `["t","raidgolf"]`, `["client","gambit-golf-ios"]` → `["client","raid-golf-ios"]`
+  - Updated all file headers, debug log prefixes, UI strings, test assertions, and public docs
+  - 78 files modified across production code, tests, and documentation
+
 ### Added
 
 - **iOS Phase 8A: Nostr Protocol Foundations**
@@ -159,7 +170,7 @@ This project versions **behavior and rules**, not files.
   - `NostrProfileView` sheet with npub display, nsec copy (with confirmation), relay list
   - Profile button on Rounds tab (person.circle icon, top-right)
   - Default relay: wss://relay.damus.io
-  - Event tags: `["t","golf"]`, `["t","gambitgolf"]`, `["client","gambit-golf-ios"]`
+  - Event tags: `["t","golf"]`, `["t","raidgolf"]`, `["client","raid-golf-ios"]`
   - Round summary format: course name, date, holes, score (with par-relative display), highlights (eagles/birdies/bogeys)
   - 8 new unit tests in `RoundShareBuilderTests` (105 total project tests, 0 failures)
   - No kernel changes, no schema changes
@@ -181,10 +192,11 @@ This project versions **behavior and rules**, not files.
   - Debug print statements preserved alongside user alerts for development diagnostics
   - All 96 tests pass, build succeeds
 
-- **iOS Phase 5.0: Rebrand to Gambit Golf**
+- **iOS Phase 5.0: Rebrand to Gambit Golf** (REVERTED 2026-02-15)
   - App display name changed from "RAID" to "Gambit Golf" (iOS app only)
   - Bundle identifier changed from `dev.local.RAID` to `com.gambitgolf.ios`
   - File headers, debug logs, and CFBundleDisplayName all updated to Gambit Golf
+  - **REVERTED 2026-02-15:** All branding reverted back to "RAID Golf", bundle ID `dev.local.RAID`, tags `raidgolf`
   - Python kernel and repository names remain as RAID (no changes to backend/kernel layer)
   - All tests passing post-rebrand
 

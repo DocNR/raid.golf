@@ -1,4 +1,4 @@
-// Gambit Golf — NIP-101g Event Parser
+// RAID Golf — NIP-101g Event Parser
 // Pure transformation: Nostr event content/tags → local data models.
 // Inverse of NIP101gEventBuilder. No database queries, no network calls.
 // See: docs/nips/nip101g_round_wip.md

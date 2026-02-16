@@ -1,5 +1,5 @@
 // ShotClassifier.swift
-// Gambit Golf
+// RAID Golf
 //
 // Pure Shot Classification Logic
 //

@@ -1,4 +1,4 @@
-// Gambit Golf — Nostr Service
+// RAID Golf — Nostr Service
 // Observable service for dependency injection.
 // Fire-and-forget publisher + one-shot reader. No persistent connections.
 
@@ -251,7 +251,7 @@ class NostrService {
     private func verifiedEvents(_ events: [Event]) -> [Event] {
         events.filter { event in
             if event.verify() { return true }
-            print("[Gambit][Verify] Discarded invalid event \(event.id().toHex().prefix(12))...")
+            print("[RAID][Verify] Discarded invalid event \(event.id().toHex().prefix(12))...")
             return false
         }
     }

@@ -1,5 +1,5 @@
 // KPITemplate.swift
-// Gambit Golf
+// RAID Golf
 //
 // Typed KPI Template Model
 //

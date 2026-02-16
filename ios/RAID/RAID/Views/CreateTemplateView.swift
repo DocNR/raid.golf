@@ -1,5 +1,5 @@
 // CreateTemplateView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Create / duplicate template
 //

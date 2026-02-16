@@ -1,5 +1,5 @@
 // ClubSubsession.swift
-// Gambit Golf
+// RAID Golf
 //
 // Purpose:
 // - Model for club-specific subsessions within a practice session

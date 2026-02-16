@@ -1,4 +1,4 @@
-// Gambit Golf — Round Invite Builder
+// RAID Golf — Round Invite Builder
 // Pure transformation: encode/decode round invites as NIP-19 nevent strings and NIP-21 nostr: URIs.
 // No database queries, no network calls.
 

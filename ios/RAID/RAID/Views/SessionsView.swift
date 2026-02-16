@@ -1,5 +1,5 @@
 // SessionsView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Sessions list + CSV import
 
@@ -108,7 +108,7 @@ struct SessionsView: View {
             let repo = SessionRepository(dbQueue: dbQueue)
             sessions = try repo.listSessions()
         } catch {
-            print("[Gambit] Failed to load sessions: \(error)")
+            print("[RAID] Failed to load sessions: \(error)")
         }
     }
 
@@ -181,7 +181,7 @@ struct SessionsView: View {
                 )
             }
         } catch {
-            print("[Gambit] Post-import analysis failed: \(error)")
+            print("[RAID] Post-import analysis failed: \(error)")
         }
     }
 

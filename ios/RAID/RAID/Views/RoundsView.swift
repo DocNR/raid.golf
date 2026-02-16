@@ -1,5 +1,5 @@
 // RoundsView.swift
-// Gambit Golf
+// RAID Golf
 //
 // Rounds list view.
 // Owns ActiveRoundStore so scoring state survives view recreation.
@@ -213,7 +213,7 @@ struct RoundsView: View {
         do {
             let courseRepo = CourseSnapshotRepository(dbQueue: dbQueue)
             guard let snapshot = try courseRepo.fetchCourseSnapshot(byHash: courseHash) else {
-                print("[Gambit] Initiation publish skipped: course snapshot not found")
+                print("[RAID] Initiation publish skipped: course snapshot not found")
                 return
             }
             let holes = try courseRepo.fetchHoles(forCourse: courseHash)
@@ -249,9 +249,9 @@ struct RoundsView: View {
 
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
             try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId, joinedVia: "created_multi")
-            print("[Gambit] Kind 1501 published for round \(roundId): \(eventId)")
+            print("[RAID] Kind 1501 published for round \(roundId): \(eventId)")
         } catch {
-            print("[Gambit] Kind 1501 publish failed for round \(roundId): \(error)")
+            print("[RAID] Kind 1501 publish failed for round \(roundId): \(error)")
         }
     }
 
@@ -272,7 +272,7 @@ struct RoundsView: View {
             let repo = RoundRepository(dbQueue: dbQueue)
             rounds = try repo.listRounds()
         } catch {
-            print("[Gambit] Failed to load rounds: \(error)")
+            print("[RAID] Failed to load rounds: \(error)")
         }
     }
 
@@ -294,7 +294,7 @@ struct RoundsView: View {
                 )
             }
         } catch {
-            print("[Gambit] Failed to fetch courseHash: \(error)")
+            print("[RAID] Failed to fetch courseHash: \(error)")
             errorMessage = "Could not load round data."
             return nil
         }

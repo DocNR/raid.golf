@@ -1,5 +1,5 @@
 // Session.swift
-// Gambit Golf
+// RAID Golf
 //
 // Purpose:
 // - Model for practice sessions (authoritative, immutable)
