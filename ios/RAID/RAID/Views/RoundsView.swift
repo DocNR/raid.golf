@@ -6,6 +6,7 @@
 
 import SwiftUI
 import GRDB
+import NostrSDK
 
 struct RoundsView: View {
     let dbQueue: DatabaseQueue
@@ -19,6 +20,9 @@ struct RoundsView: View {
     @State private var errorMessage: String?
     @State private var showNostrProfile = false
     @State private var ownProfile: NostrProfile?
+
+    // DM invite state
+    @State private var pendingInviteCount: Int = 0
 
     // Multi-device setup sheet state
     @State private var showSetupSheet = false
@@ -114,6 +118,7 @@ struct RoundsView: View {
             .task {
                 loadRounds()
                 await fetchOwnProfile()
+                await checkPendingInvites()
             }
             .alert("Error", isPresented: Binding(
                 get: { errorMessage != nil },
@@ -126,20 +131,52 @@ struct RoundsView: View {
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Rounds", systemImage: "tray")
-        } description: {
-            Text("Track your on-course scores hole-by-hole. Tap + to start a new round.")
-        } actions: {
-            Button("New Round") {
-                showingCreateRound = true
+    @ViewBuilder
+    private var inviteBanner: some View {
+        if pendingInviteCount > 0 {
+            Button {
+                showingJoinRound = true
+            } label: {
+                HStack {
+                    Image(systemName: "envelope.badge")
+                    Text("\(pendingInviteCount) round invite\(pendingInviteCount == 1 ? "" : "s")")
+                    Spacer()
+                    Text("View")
+                        .foregroundStyle(.blue)
+                }
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+    }
+
+    private var emptyState: some View {
+        ScrollView {
+            inviteBanner
+            ContentUnavailableView {
+                Label("No Rounds", systemImage: "tray")
+            } description: {
+                Text("Track your on-course scores hole-by-hole. Tap + to start a new round.")
+            } actions: {
+                Button("New Round") {
+                    showingCreateRound = true
+                }
+            }
+        }
+        .refreshable {
+            loadRounds()
+            await checkPendingInvites()
         }
     }
 
     private var roundsList: some View {
-        List(rounds, id: \.roundId) { round in
+        VStack(spacing: 0) {
+            inviteBanner
+            List(rounds, id: \.roundId) { round in
             Button {
                 if round.isCompleted {
                     navigationTarget = .roundDetail(roundId: round.roundId)
@@ -182,7 +219,11 @@ struct RoundsView: View {
             }
             .buttonStyle(.plain)
         }
-        .refreshable { loadRounds() }
+        .refreshable {
+            loadRounds()
+            await checkPendingInvites()
+        }
+        }
     }
 
     // MARK: - Navigation
@@ -250,8 +291,81 @@ struct RoundsView: View {
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
             try nostrRepo.insertInitiation(roundId: roundId, initiationEventId: eventId, joinedVia: "created_multi")
             print("[RAID] Kind 1501 published for round \(roundId): \(eventId)")
+
+            // Publish our own kind 10050 inbox relays (if not already published)
+            // so other clients can deliver NIP-17 DMs back to us
+            await ensureInboxRelaysPublished(keys: keys)
+
+            // Fire-and-forget NIP-17 DM invites to all other players
+            let nevent = try RoundInviteBuilder.buildNevent(
+                eventIdHex: eventId,
+                relays: NostrService.defaultPublishRelays
+            )
+            Task {
+                await sendDMInvites(
+                    nevent: nevent,
+                    courseName: snapshot.courseName,
+                    playerPubkeys: playerPubkeys,
+                    senderKeys: keys
+                )
+            }
         } catch {
             print("[RAID] Kind 1501 publish failed for round \(roundId): \(error)")
+        }
+    }
+
+    /// Send NIP-17 gift-wrapped DM invites to all players (except self).
+    /// Fetches each recipient's kind 10050 inbox relays for NIP-17 compliance.
+    /// Fire-and-forget — failure is logged but does not affect the round.
+    private func sendDMInvites(
+        nevent: String,
+        courseName: String,
+        playerPubkeys: [String],
+        senderKeys: Keys
+    ) async {
+        let myHex = senderKeys.publicKey().toHex()
+        let others = playerPubkeys.filter { $0 != myHex }
+        guard !others.isEmpty else { return }
+
+        for pubkeyHex in others {
+            do {
+                // Fetch recipient's NIP-17 inbox relays (kind 10050)
+                let inboxRelays = try await nostrService.fetchInboxRelays(pubkeyHex: pubkeyHex)
+
+                let rumor = try DMInviteBuilder.buildInviteRumor(
+                    senderPubkey: senderKeys.publicKey(),
+                    receiverPubkeyHex: pubkeyHex,
+                    courseName: courseName,
+                    nevent: nevent
+                )
+                try await nostrService.sendGiftWrapDM(
+                    senderKeys: senderKeys,
+                    receiverPubkeyHex: pubkeyHex,
+                    rumor: rumor,
+                    targetRelays: inboxRelays.isEmpty ? nil : inboxRelays
+                )
+                let relayDesc = inboxRelays.isEmpty ? "default relays" : "\(inboxRelays.count) inbox relay(s)"
+                print("[RAID][DM] Invite sent to \(pubkeyHex.prefix(8))... via \(relayDesc)")
+            } catch {
+                print("[RAID][DM] Failed to send invite to \(pubkeyHex.prefix(8))...: \(error)")
+            }
+        }
+    }
+
+    /// Publish kind 10050 inbox relay list if not already published.
+    /// Best-effort — failure is logged but does not block the round.
+    private func ensureInboxRelaysPublished(keys: Keys) async {
+        let myHex = keys.publicKey().toHex()
+        do {
+            let existing = try await nostrService.fetchInboxRelays(pubkeyHex: myHex)
+            if !existing.isEmpty {
+                print("[RAID][10050] Inbox relays already published: \(existing)")
+                return
+            }
+            try await nostrService.publishInboxRelays(keys: keys, relays: NostrService.defaultReadRelays)
+            print("[RAID][10050] Published inbox relays: \(NostrService.defaultReadRelays)")
+        } catch {
+            print("[RAID][10050] Failed to publish inbox relays: \(error)")
         }
     }
 
@@ -262,6 +376,22 @@ struct RoundsView: View {
         let hex = keyManager.signingKeys().publicKey().toHex()
         if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [hex]) {
             ownProfile = profiles[hex]
+        }
+    }
+
+    // MARK: - DM Invite Check
+
+    private func checkPendingInvites() async {
+        guard let keyManager = try? KeyManager.loadOrCreate() else { return }
+        do {
+            let invites = try await DMInviteService.fetchIncomingInvites(
+                nostrService: nostrService,
+                keys: keyManager.signingKeys(),
+                dbQueue: dbQueue
+            )
+            pendingInviteCount = invites.count
+        } catch {
+            // Silent — badge is nice-to-have
         }
     }
 

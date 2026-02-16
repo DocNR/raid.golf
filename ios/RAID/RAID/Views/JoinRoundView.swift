@@ -17,19 +17,76 @@ struct JoinRoundView: View {
     @State private var inviteText = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var incomingInvites: [IncomingInvite] = []
+    @State private var isLoadingInvites = false
 
     var body: some View {
         NavigationStack {
             Form {
+                // Incoming DM invites (NIP-17)
+                Section {
+                    if isLoadingInvites {
+                        HStack {
+                            ProgressView()
+                            Text("Checking for invites...")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if incomingInvites.isEmpty {
+                        Text("No pending invites")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(incomingInvites) { invite in
+                            Button {
+                                inviteText = invite.nevent
+                                joinRound()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ProfileAvatarView(
+                                        pictureURL: invite.senderProfile?.picture,
+                                        size: 36
+                                    )
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(invite.senderProfile?.displayLabel ?? String(invite.senderPubkeyHex.prefix(8)) + "...")
+                                            .font(.headline)
+                                        if let courseName = invite.courseName {
+                                            Text(courseName)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption)
+                                }
+                            }
+                            .tint(.primary)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Incoming Invites")
+                        Spacer()
+                        if !isLoadingInvites {
+                            Button {
+                                Task { await loadInvites() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     TextField("Paste nevent or nostr: URI", text: $inviteText, axis: .vertical)
                         .lineLimit(3...6)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Round Invite")
+                    Text("Manual Entry")
                 } footer: {
-                    Text("Paste the invite code shared by the round creator.")
+                    Text("Or paste the invite code shared by the round creator.")
                 }
 
                 if let errorMessage {
@@ -55,7 +112,23 @@ struct JoinRoundView: View {
                     }
                 }
             }
+            .task { await loadInvites() }
         }
+    }
+
+    private func loadInvites() async {
+        guard let keyManager = try? KeyManager.loadOrCreate() else { return }
+        isLoadingInvites = true
+        do {
+            incomingInvites = try await DMInviteService.fetchIncomingInvites(
+                nostrService: nostrService,
+                keys: keyManager.signingKeys(),
+                dbQueue: dbQueue
+            )
+        } catch {
+            print("[RAID][DM] Failed to fetch incoming invites: \(error)")
+        }
+        isLoadingInvites = false
     }
 
     private func joinRound() {

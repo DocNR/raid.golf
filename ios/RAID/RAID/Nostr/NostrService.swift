@@ -244,6 +244,129 @@ class NostrService {
         return verifiedEvents([event]).first
     }
 
+    // MARK: - NIP-17 Gift Wrap DMs
+
+    /// Fetch a user's kind 10050 DM inbox relay list (NIP-17).
+    /// Returns relay URL strings, or empty if no 10050 found.
+    func fetchInboxRelays(pubkeyHex: String) async throws -> [String] {
+        let pubkey = try PublicKey.parse(publicKey: pubkeyHex)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .author(author: pubkey)
+            .kind(kind: Kind(kind: 10050))
+            .limit(limit: 1)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        guard let event = events.first(),
+              verifiedEvents([event]).first != nil else {
+            return []
+        }
+
+        // Parse "relay" tags from kind 10050
+        let tags = event.tags().toVec()
+        var relays: [String] = []
+        for tag in tags {
+            let vec = tag.asVec()
+            if vec.count >= 2 && vec[0] == "relay" {
+                relays.append(vec[1])
+            }
+        }
+        return relays
+    }
+
+    /// Send a NIP-17 gift-wrapped DM to a single recipient.
+    /// The SDK handles the full NIP-59 flow internally (rumor → seal → gift wrap).
+    /// Sends to recipient's inbox relays (kind 10050) + default relays for redundancy.
+    func sendGiftWrapDM(senderKeys: Keys, receiverPubkeyHex: String, rumor: UnsignedEvent, targetRelays: [String]? = nil) async throws {
+        let receiver = try PublicKey.parse(publicKey: receiverPubkeyHex)
+        let signer = NostrSigner.keys(keys: senderKeys)
+        let client = Client(signer: signer)
+
+        // Connect to all relays: inbox + defaults (deduplicated)
+        var allRelayStrings = Set(Self.defaultPublishRelays)
+        if let targetRelays {
+            allRelayStrings.formUnion(targetRelays)
+        }
+
+        for urlString in allRelayStrings {
+            let url = try RelayUrl.parse(url: urlString)
+            _ = try await client.addRelay(url: url)
+        }
+
+        await client.connect()
+
+        // Use giftWrap to send to ALL connected relays (inbox + defaults)
+        let output = try await client.giftWrap(receiver: receiver, rumor: rumor, extraTags: [])
+
+        await client.disconnect()
+
+        if output.success.isEmpty {
+            throw NostrPublishError.allRelaysFailed
+        }
+    }
+
+    /// Publish the user's kind 10050 DM inbox relay preferences (NIP-17).
+    /// Replaceable — overwrites any previous 10050.
+    func publishInboxRelays(keys: Keys, relays: [String]) async throws {
+        var tags: [Tag] = []
+        for relay in relays {
+            tags.append(try Tag.parse(data: ["relay", relay]))
+        }
+
+        let builder = EventBuilder(kind: Kind(kind: 10050), content: "")
+            .tags(tags: tags)
+
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Fetch kind 1059 gift wrap events addressed to the user from read relays.
+    /// Returns raw events — caller unwraps and filters.
+    func fetchGiftWraps(recipientPubkey: PublicKey, since: UInt64? = nil) async throws -> [Event] {
+        let client = try await connectReadClient()
+
+        var filter = Filter()
+            .kind(kind: Kind(kind: 1059))
+            .pubkey(pubkey: recipientPubkey)
+
+        if let since {
+            filter = filter.since(timestamp: Timestamp.fromSecs(secs: since))
+        }
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        // Note: gift wraps are signed by ephemeral keys, so we don't verify signatures here.
+        // The UnwrappedGift.fromGiftWrap method handles cryptographic verification of the seal.
+        return try events.toVec()
+    }
+
+    /// Unwrap a single gift wrap event. Returns nil if unwrap fails.
+    func unwrapGiftWrap(keys: Keys, giftWrap: Event) async -> UnwrappedGift? {
+        let signer = NostrSigner.keys(keys: keys)
+        do {
+            return try await UnwrappedGift.fromGiftWrap(signer: signer, giftWrap: giftWrap)
+        } catch {
+            print("[RAID][GiftWrap] Failed to unwrap event: \(error)")
+            return nil
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Filter events to only those with valid cryptographic signatures.

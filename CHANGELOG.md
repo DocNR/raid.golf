@@ -42,6 +42,27 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 8B: Nostr Identity + NIP-17 DM Invites**
+  - **8B.1: Identity & Profiles**
+    - `ProfileAvatarView` with AsyncImage and 2-letter initials fallback
+    - Display names shown in player picker, score entry, and round detail views
+    - Key import validation in `NostrProfileView` (nsec paste + error handling)
+  - **8B.2: NIP-17 DM Round Invites**
+    - Encrypted gift-wrapped round invites via NIP-17/NIP-59 protocol
+    - `DMInviteBuilder`: builds kind 14 rumor events with nevent link + course name
+    - `DMInviteService`: orchestrates fetch/unwrap/dedup of incoming invites (7-day lookback, profile resolution)
+    - `NostrService` gains `sendGiftWrapDM`, `fetchGiftWraps`, `unwrapGiftWrap` for NIP-59 gift wrap lifecycle
+    - `fetchInboxRelays(pubkeyHex:)`: queries recipient's kind 10050 DM inbox relay list
+    - `publishInboxRelays(keys:relays:)`: publishes RAID's own kind 10050 so other clients can deliver DMs
+    - Auto-send DM invites on multi-device round creation (fire-and-forget)
+    - Inbox relay routing: fetches recipient's kind 10050, sends gift wrap to inbox + default relays for redundancy
+    - Auto-publishes own kind 10050 on first multi-device round creation
+    - `JoinRoundView`: incoming invites section with sender avatar/name/course, tap-to-join, refresh button
+    - `RoundsView`: pending invite banner (shared across empty state + rounds list), pull-to-refresh checks invites
+    - 11 new DM tests (build rumor, extract nevent, round-trip, gift wrap encrypt/decrypt, wrong-key rejection)
+  - 215 total unit/integration tests (all passing)
+  - No schema changes, no kernel changes
+
 - **iOS Phase 8A: Nostr Protocol Foundations**
   - **8A.1: Key Import**
     - `KeyManager.importKey(nsec:)` static method accepts nsec1 bech32 or hex private keys
