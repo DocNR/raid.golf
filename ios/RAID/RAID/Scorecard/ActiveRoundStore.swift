@@ -28,6 +28,7 @@ class ActiveRoundStore {
     var isCompleting: Bool = false
     var isLoaded: Bool = false
     var errorMessage: String?
+    var playerProfiles: [String: NostrProfile] = [:]
 
     // MARK: - Identity
 
@@ -108,7 +109,7 @@ class ActiveRoundStore {
         if shouldCyclePlayers {
             return players.map { player in
                 let scored = holes.filter { scores[player.playerIndex]?[$0.holeNumber] != nil }.count
-                return (label: playerLabel(for: player.playerIndex), scored: scored, total: holes.count)
+                return (label: playerDisplayLabel(for: player.playerIndex), scored: scored, total: holes.count)
             }
         } else {
             return [(label: "You", scored: holesScored, total: holes.count)]
@@ -121,7 +122,7 @@ class ActiveRoundStore {
             let incomplete = players.compactMap { player -> String? in
                 let scored = holes.filter { scores[player.playerIndex]?[$0.holeNumber] != nil }.count
                 guard scored < holes.count else { return nil }
-                return "\(playerLabel(for: player.playerIndex)): \(scored)/\(holes.count)"
+                return "\(playerDisplayLabel(for: player.playerIndex)): \(scored)/\(holes.count)"
             }
             return incomplete.isEmpty ? nil : "Missing scores: \(incomplete.joined(separator: ", "))"
         } else {
@@ -133,6 +134,13 @@ class ActiveRoundStore {
     /// Short label for player (P1, P2, etc.) for segmented picker
     func playerLabel(for index: Int) -> String {
         "P\(index + 1)"
+    }
+
+    /// Display label with Nostr profile name, falling back to P1/P2.
+    func playerDisplayLabel(for index: Int) -> String {
+        if multiDeviceMode && index == 0 { return "You" }
+        guard index < players.count else { return "P\(index + 1)" }
+        return playerProfiles[players[index].playerPubkey]?.displayLabel ?? "P\(index + 1)"
     }
 
     private var shouldCyclePlayers: Bool {
@@ -334,7 +342,7 @@ class ActiveRoundStore {
             // Get my pubkey to filter out own events (we already have local scores)
             let myPubkeyHex: String? = {
                 guard let km = try? KeyManager.loadOrCreate() else { return nil }
-                return try? km.signingKeys().publicKey().toHex()
+                return km.signingKeys().publicKey().toHex()
             }()
 
             // Load authorized player list for this round (B-004)
@@ -453,7 +461,7 @@ class ActiveRoundStore {
         do {
             let keyManager = try KeyManager.loadOrCreate()
             let keys = keyManager.signingKeys()
-            let pubkey = try keys.publicKey().toHex()
+            let pubkey = keys.publicKey().toHex()
 
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
             let playerRepo = RoundPlayerRepository(dbQueue: dbQueue)

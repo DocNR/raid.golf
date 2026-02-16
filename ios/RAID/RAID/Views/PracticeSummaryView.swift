@@ -119,7 +119,6 @@ struct PracticeSummaryView: View {
             let sessionRepo = SessionRepository(dbQueue: dbQueue)
             let shotRepo = ShotRepository(dbQueue: dbQueue)
             let subsessionRepo = SubsessionRepository(dbQueue: dbQueue)
-            let templateRepo = TemplateRepository(dbQueue: dbQueue)
             let prefsRepo = TemplatePreferencesRepository(dbQueue: dbQueue)
 
             guard let sessionRecord = try sessionRepo.fetchSession(byId: sessionId) else {

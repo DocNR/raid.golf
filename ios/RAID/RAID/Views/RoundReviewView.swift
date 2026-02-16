@@ -24,7 +24,7 @@ struct RoundReviewView: View {
                     Section {
                         Picker("Player", selection: $selectedPlayerIndex) {
                             ForEach(store.players.indices, id: \.self) { index in
-                                Text(store.playerLabel(for: index)).tag(index)
+                                Text(store.playerDisplayLabel(for: index)).tag(index)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -160,7 +160,7 @@ struct RoundReviewView: View {
                 let diff = strokes - totalPar
 
                 HStack {
-                    Text(store.playerLabel(for: index))
+                    Text(store.playerDisplayLabel(for: index))
                         .fontWeight(.medium)
                     Spacer()
                     Text("\(strokes)")

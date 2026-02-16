@@ -21,9 +21,20 @@ final class KeyManager {
     /// Import an existing Nostr identity from nsec (bech32) or hex secret key.
     /// Overwrites any existing key in Keychain.
     static func importKey(nsec: String) throws -> KeyManager {
+        let trimmed = nsec.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Reject non-nsec bech32 prefixes (nevent, npub, nprofile, note, naddr, etc.)
+        let knownBadPrefixes = ["npub1", "nevent1", "nprofile1", "note1", "naddr1", "nrelay1"]
+        let lower = trimmed.lowercased()
+        for prefix in knownBadPrefixes {
+            if lower.hasPrefix(prefix) {
+                throw KeyManagerError.invalidKey("Expected nsec1... or hex secret key, not \(prefix)...")
+            }
+        }
+
         let keys: Keys
         do {
-            keys = try Keys.parse(secretKey: nsec)
+            keys = try Keys.parse(secretKey: trimmed)
         } catch {
             throw KeyManagerError.invalidKey(error.localizedDescription)
         }

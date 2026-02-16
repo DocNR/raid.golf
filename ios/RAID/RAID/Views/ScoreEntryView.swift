@@ -11,6 +11,7 @@ struct ScoreEntryView: View {
     var store: ActiveRoundStore
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nostrService) private var nostrService
     @State private var showScorecard = false
 
     var body: some View {
@@ -35,7 +36,7 @@ struct ScoreEntryView: View {
                         set: { store.switchPlayer(to: $0) }
                     )) {
                         ForEach(store.players.indices, id: \.self) { index in
-                            Text(store.playerLabel(for: index)).tag(index)
+                            Text(store.playerDisplayLabel(for: index)).tag(index)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -171,7 +172,15 @@ struct ScoreEntryView: View {
                 }
             }
         }
-        .task { await store.loadInviteNevent() }
+        .task {
+            await store.loadInviteNevent()
+            if store.isMultiplayer && store.playerProfiles.isEmpty {
+                let pubkeys = store.players.map { $0.playerPubkey }
+                if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: pubkeys) {
+                    store.playerProfiles = profiles
+                }
+            }
+        }
         .sheet(isPresented: Bindable(store).showInviteSheet) {
             if let nevent = store.inviteNevent {
                 RoundInviteSheet(nevent: nevent)

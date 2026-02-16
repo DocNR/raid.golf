@@ -158,7 +158,8 @@ struct CreateRoundView: View {
                         Button {
                             togglePlayer(pubkeyHex: pubkeyHex, profile: profile)
                         } label: {
-                            HStack {
+                            HStack(spacing: 10) {
+                                ProfileAvatarView(pictureURL: profile.picture, size: 32)
                                 Text(profile.displayLabel)
                                     .foregroundStyle(.primary)
                                 Spacer()
@@ -171,19 +172,20 @@ struct CreateRoundView: View {
                     }
                 }
 
-                // Selected players (including manually added)
+                // Selected players (manually added, not in follow list)
                 let manuallyAdded = selectedPlayers.filter { followProfiles[$0.key] == nil }
                 ForEach(Array(manuallyAdded.values)) { profile in
-                    HStack {
-                        Text(profile.displayLabel)
-                        Spacer()
-                        Button {
-                            selectedPlayers.removeValue(forKey: profile.pubkeyHex)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                    Button {
+                        selectedPlayers.removeValue(forKey: profile.pubkeyHex)
+                    } label: {
+                        HStack(spacing: 10) {
+                            ProfileAvatarView(pictureURL: profile.picture, size: 32)
+                            Text(profile.displayLabel)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.blue)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -213,7 +215,7 @@ struct CreateRoundView: View {
         do {
             let keyManager = try KeyManager.loadOrCreate()
             let keys = keyManager.signingKeys()
-            creatorPubkeyHex = try keys.publicKey().toHex()
+            creatorPubkeyHex = keys.publicKey().toHex()
             hasNostrKeys = true
         } catch {
             hasNostrKeys = false
@@ -275,6 +277,16 @@ struct CreateRoundView: View {
             let profile = followProfiles[hex] ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
             selectedPlayers[hex] = profile
             npubInput = ""
+
+            // Fetch profile from relays in background (if not already known)
+            if followProfiles[hex] == nil {
+                Task {
+                    if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [hex]),
+                       let fetched = profiles[hex] {
+                        selectedPlayers[hex] = fetched
+                    }
+                }
+            }
         } catch {
             npubError = "Invalid npub or hex key."
         }

@@ -130,6 +130,13 @@ final class NostrServiceTests: XCTestCase {
         XCTAssertTrue(result.isEmpty)
     }
 
+    // MARK: - resolveProfiles
+
+    func testResolveProfiles_EmptyInput() async throws {
+        let result = try await service.resolveProfiles(pubkeyHexes: [])
+        XCTAssertTrue(result.isEmpty)
+    }
+
     // MARK: - Live Relay Tests (require network)
 
     /// Test account pubkey: nsec1324q936nn4pp8yd34jg4ufxle7tnpv8z457gha0rwueqluz78cjq20ufjj

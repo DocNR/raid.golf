@@ -9,14 +9,6 @@
 /* Begin PBXBuildFile section */
 		EF52A0032F5200010032E6A0 /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EF52A0022F5200010032E6A0 /* NostrSDK */; };
 		EFB69B842F35690B0032E6A0 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EFB69B832F35690B0032E6A0 /* GRDB */; };
-		EFB69B922F356A060032E6A0 /* .gitkeep in Resources */ = {isa = PBXBuildFile; fileRef = EFB69B902F356A060032E6A0 /* .gitkeep */; };
-		EFB69B932F356A060032E6A0 /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8A2F356A060032E6A0 /* Schema.swift */; };
-		EFB69B942F356A060032E6A0 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8E2F356A060032E6A0 /* Session.swift */; };
-		EFB69B952F356A060032E6A0 /* RapsodoIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */; };
-		EFB69B962F356A060032E6A0 /* Hashing.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B882F356A060032E6A0 /* Hashing.swift */; };
-		EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */; };
-		EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B872F356A060032E6A0 /* Canonical.swift */; };
-		EFB69B992F356A060032E6A0 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB69B892F356A060032E6A0 /* Repository.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,14 +32,6 @@
 		EFB69B2A2F3562C10032E6A0 /* RAID.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAID.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EFB69B372F3562C30032E6A0 /* RAIDTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RAIDTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EFB69B412F3562C30032E6A0 /* RAIDUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RAIDUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RapsodoIngest.swift; sourceTree = "<group>"; };
-		EFB69B872F356A060032E6A0 /* Canonical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Canonical.swift; sourceTree = "<group>"; };
-		EFB69B882F356A060032E6A0 /* Hashing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hashing.swift; sourceTree = "<group>"; };
-		EFB69B892F356A060032E6A0 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
-		EFB69B8A2F356A060032E6A0 /* Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Schema.swift; sourceTree = "<group>"; };
-		EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClubSubsession.swift; sourceTree = "<group>"; };
-		EFB69B8E2F356A060032E6A0 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
-		EFB69B902F356A060032E6A0 /* .gitkeep */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitkeep; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -98,10 +82,6 @@
 		EFB69B212F3562C10032E6A0 = {
 			isa = PBXGroup;
 			children = (
-				EFB69B862F356A060032E6A0 /* Ingest */,
-				EFB69B8B2F356A060032E6A0 /* Kernel */,
-				EFB69B8F2F356A060032E6A0 /* Models */,
-				EFB69B912F356A060032E6A0 /* Views */,
 				EFB69B2C2F3562C10032E6A0 /* RAID */,
 				EFB69B3A2F3562C30032E6A0 /* RAIDTests */,
 				EFB69B442F3562C30032E6A0 /* RAIDUITests */,
@@ -117,46 +97,6 @@
 				EFB69B412F3562C30032E6A0 /* RAIDUITests.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		EFB69B862F356A060032E6A0 /* Ingest */ = {
-			isa = PBXGroup;
-			children = (
-				EFB69B852F356A060032E6A0 /* RapsodoIngest.swift */,
-			);
-			name = Ingest;
-			path = RAID/Ingest;
-			sourceTree = "<group>";
-		};
-		EFB69B8B2F356A060032E6A0 /* Kernel */ = {
-			isa = PBXGroup;
-			children = (
-				EFB69B872F356A060032E6A0 /* Canonical.swift */,
-				EFB69B882F356A060032E6A0 /* Hashing.swift */,
-				EFB69B892F356A060032E6A0 /* Repository.swift */,
-				EFB69B8A2F356A060032E6A0 /* Schema.swift */,
-			);
-			name = Kernel;
-			path = RAID/Kernel;
-			sourceTree = "<group>";
-		};
-		EFB69B8F2F356A060032E6A0 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				EFB69B8C2F356A060032E6A0 /* ClubSubsession.swift */,
-				EFB69B8E2F356A060032E6A0 /* Session.swift */,
-			);
-			name = Models;
-			path = RAID/Models;
-			sourceTree = "<group>";
-		};
-		EFB69B912F356A060032E6A0 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				EFB69B902F356A060032E6A0 /* .gitkeep */,
-			);
-			name = Views;
-			path = RAID/Views;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -285,7 +225,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EFB69B922F356A060032E6A0 /* .gitkeep in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,13 +249,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EFB69B932F356A060032E6A0 /* Schema.swift in Sources */,
-				EFB69B942F356A060032E6A0 /* Session.swift in Sources */,
-				EFB69B952F356A060032E6A0 /* RapsodoIngest.swift in Sources */,
-				EFB69B962F356A060032E6A0 /* Hashing.swift in Sources */,
-				EFB69B972F356A060032E6A0 /* ClubSubsession.swift in Sources */,
-				EFB69B982F356A060032E6A0 /* Canonical.swift in Sources */,
-				EFB69B992F356A060032E6A0 /* Repository.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

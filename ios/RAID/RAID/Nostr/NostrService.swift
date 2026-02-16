@@ -25,6 +25,10 @@ class NostrService {
 
     private let readTimeout: TimeInterval = 5
 
+    /// Session-scoped profile cache. Populated by resolveProfiles, fetchProfiles,
+    /// and fetchFollowListWithProfiles. Cleared on app restart.
+    private(set) var profileCache: [String: NostrProfile] = [:]
+
     // MARK: - Publish
 
     /// Publish a pre-built EventBuilder and return its event ID.
@@ -102,7 +106,9 @@ class NostrService {
 
         await client.disconnect()
 
-        return parseProfileEvents(verifiedEvents(events))
+        let result = parseProfileEvents(verifiedEvents(events))
+        for (key, profile) in result { profileCache[key] = profile }
+        return result
     }
 
     /// Fetch follow list and profiles in a single connection session.
@@ -143,7 +149,27 @@ class NostrService {
 
         await client.disconnect()
 
-        return (follows: followedHexes, profiles: parseProfileEvents(verifiedEvents(profileEvents)))
+        let profiles = parseProfileEvents(verifiedEvents(profileEvents))
+        for (key, profile) in profiles { profileCache[key] = profile }
+        return (follows: followedHexes, profiles: profiles)
+    }
+
+    // MARK: - Profile Resolution (Cache-First)
+
+    /// Resolve profiles from cache or fetch uncached keys from relays.
+    func resolveProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
+        let uncached = pubkeyHexes.filter { profileCache[$0] == nil }
+
+        if !uncached.isEmpty {
+            let fetched = try await fetchProfiles(pubkeyHexes: uncached)
+            for (key, profile) in fetched {
+                profileCache[key] = profile
+            }
+        }
+
+        return pubkeyHexes.reduce(into: [:]) { result, hex in
+            result[hex] = profileCache[hex]
+        }
     }
 
     // MARK: - Live Scorecard Fetch

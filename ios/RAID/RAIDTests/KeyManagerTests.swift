@@ -48,6 +48,26 @@ final class KeyManagerTests: XCTestCase {
         XCTAssertEqual(try km.publicKeyBech32(), newExpectedPubkey)
     }
 
+    func testImportNeventThrows() {
+        // nevent bech32 should be rejected immediately
+        let nevent = "nevent1qqstest1234567890abcdefghijklmnopqrstuvwxyz"
+        XCTAssertThrowsError(try KeyManager.importKey(nsec: nevent)) { error in
+            guard let kmError = error as? KeyManagerError,
+                  case .invalidKey(let msg) = kmError else {
+                XCTFail("Expected KeyManagerError.invalidKey")
+                return
+            }
+            XCTAssertTrue(msg.contains("nevent1"), "Error should mention the bad prefix")
+        }
+    }
+
+    func testImportNpubThrows() {
+        let npub = "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3cxnys"
+        XCTAssertThrowsError(try KeyManager.importKey(nsec: npub)) { error in
+            XCTAssertTrue(error is KeyManagerError)
+        }
+    }
+
     func testLoadOrCreateAfterImportReturnsSameKey() throws {
         let km1 = try KeyManager.importKey(nsec: Self.testNsec)
         let pubkey1 = try km1.publicKeyBech32()

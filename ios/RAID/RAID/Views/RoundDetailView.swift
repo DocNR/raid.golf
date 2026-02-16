@@ -19,6 +19,9 @@ struct RoundDetailView: View {
     @State private var players: [RoundPlayerRecord] = []
     @State private var selectedPlayerIndex: Int = 0
 
+    // Profile state
+    @State private var playerProfiles: [String: NostrProfile] = [:]
+
     // Share state
     @State private var isPublishing = false
     @State private var errorMessage: String?
@@ -78,6 +81,12 @@ struct RoundDetailView: View {
         }
         .task {
             loadData()
+            if !players.isEmpty {
+                let pubkeys = players.map { $0.playerPubkey }
+                if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: pubkeys) {
+                    playerProfiles = profiles
+                }
+            }
             if isMultiDeviceRound {
                 await fetchRemoteFinalRecords()
             }
@@ -90,7 +99,7 @@ struct RoundDetailView: View {
                 Section {
                     Picker("Player", selection: $selectedPlayerIndex) {
                         ForEach(players.indices, id: \.self) { index in
-                            Text("P\(index + 1)").tag(index)
+                            Text(playerDisplayLabel(for: index)).tag(index)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -210,6 +219,12 @@ struct RoundDetailView: View {
         }
     }
 
+    private func playerDisplayLabel(for index: Int) -> String {
+        if isMultiDeviceRound && index == 0 { return "You" }
+        guard index < players.count else { return "P\(index + 1)" }
+        return playerProfiles[players[index].playerPubkey]?.displayLabel ?? "P\(index + 1)"
+    }
+
     private var totalPar: Int {
         holes.reduce(0) { $0 + $1.par }
     }
@@ -254,7 +269,7 @@ struct RoundDetailView: View {
         do {
             let keyManager = try KeyManager.loadOrCreate()
             let keys = keyManager.signingKeys()
-            let pubkey = try keys.publicKey().toHex()
+            let pubkey = keys.publicKey().toHex()
 
             // Check for stored initiation (published at round creation)
             let nostrRepo = RoundNostrRepository(dbQueue: dbQueue)
@@ -383,7 +398,7 @@ struct RoundDetailView: View {
             let noteText: String
             if isMultiplayer {
                 let playerScoreList = players.map { player in
-                    (label: "P\(player.playerIndex + 1)", scores: allPlayerScores[player.playerIndex] ?? [:])
+                    (label: playerDisplayLabel(for: player.playerIndex), scores: allPlayerScores[player.playerIndex] ?? [:])
                 }
                 noteText = RoundShareBuilder.noteText(
                     course: course.courseName,
@@ -443,7 +458,7 @@ struct RoundDetailView: View {
         let text: String
         if isMultiplayer {
             let playerScoreList = players.map { player in
-                (label: "P\(player.playerIndex + 1)", scores: allPlayerScores[player.playerIndex] ?? [:])
+                (label: playerDisplayLabel(for: player.playerIndex), scores: allPlayerScores[player.playerIndex] ?? [:])
             }
             text = RoundShareBuilder.summaryText(
                 course: course.courseName,
@@ -485,7 +500,7 @@ struct RoundDetailView: View {
             // Get my pubkey to filter own events (local scores are authoritative)
             let myPubkeyHex: String? = {
                 guard let km = try? KeyManager.loadOrCreate() else { return nil }
-                return try? km.signingKeys().publicKey().toHex()
+                return km.signingKeys().publicKey().toHex()
             }()
 
             // Build pubkey → player_index lookup from round_players
@@ -595,7 +610,7 @@ struct RoundDetailView: View {
                 // Skip own pubkey — local scores are authoritative
                 let myPubkeyHex: String? = {
                     guard let km = try? KeyManager.loadOrCreate() else { return nil }
-                    return try? km.signingKeys().publicKey().toHex()
+                    return km.signingKeys().publicKey().toHex()
                 }()
 
                 let remoteRepo = RemoteScoresRepository(dbQueue: dbQueue)

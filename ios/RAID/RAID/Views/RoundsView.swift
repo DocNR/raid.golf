@@ -18,6 +18,7 @@ struct RoundsView: View {
     @State private var activeRoundStore: ActiveRoundStore?
     @State private var errorMessage: String?
     @State private var showNostrProfile = false
+    @State private var ownProfile: NostrProfile?
 
     // Multi-device setup sheet state
     @State private var showSetupSheet = false
@@ -39,7 +40,7 @@ struct RoundsView: View {
                     Button {
                         showNostrProfile = true
                     } label: {
-                        Image(systemName: "person.circle")
+                        ProfileAvatarView(pictureURL: ownProfile?.picture, size: 28)
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -59,7 +60,9 @@ struct RoundsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showNostrProfile) {
+            .sheet(isPresented: $showNostrProfile, onDismiss: {
+                Task { await fetchOwnProfile() }
+            }) {
                 NostrProfileView()
             }
             .sheet(isPresented: $showingCreateRound) {
@@ -108,7 +111,10 @@ struct RoundsView: View {
                     RoundDetailView(roundId: roundId, dbQueue: dbQueue)
                 }
             }
-            .task { loadRounds() }
+            .task {
+                loadRounds()
+                await fetchOwnProfile()
+            }
             .alert("Error", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -246,6 +252,16 @@ struct RoundsView: View {
             print("[Gambit] Kind 1501 published for round \(roundId): \(eventId)")
         } catch {
             print("[Gambit] Kind 1501 publish failed for round \(roundId): \(error)")
+        }
+    }
+
+    // MARK: - Profile
+
+    private func fetchOwnProfile() async {
+        guard let keyManager = try? KeyManager.loadOrCreate() else { return }
+        let hex = keyManager.signingKeys().publicKey().toHex()
+        if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [hex]) {
+            ownProfile = profiles[hex]
         }
     }
 

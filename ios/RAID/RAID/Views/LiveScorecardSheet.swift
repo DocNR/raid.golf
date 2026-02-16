@@ -11,7 +11,9 @@ struct LiveScorecardSheet: View {
     var store: ActiveRoundStore
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nostrService) private var nostrService
     @State private var lastRefreshed: Date?
+    @State private var playerProfiles: [String: NostrProfile] = [:]
 
     private var myScores: [Int: Int] {
         store.scores[0] ?? [:]
@@ -71,7 +73,7 @@ struct LiveScorecardSheet: View {
                             .font(.caption2)
                             .fontWeight(.medium)
                         ForEach(otherPlayers, id: \.playerPubkey) { player in
-                            Text("P\(player.playerIndex + 1)")
+                            Text(playerDisplayLabel(for: player.playerIndex))
                                 .frame(width: 40, alignment: .center)
                                 .font(.caption2)
                                 .fontWeight(.medium)
@@ -158,11 +160,8 @@ struct LiveScorecardSheet: View {
                     ForEach(otherPlayers, id: \.playerPubkey) { player in
                         let pScores = store.remoteScores[player.playerPubkey] ?? [:]
                         HStack {
-                            Text("P\(player.playerIndex + 1)")
+                            Text(playerDisplayLabel(for: player.playerIndex))
                                 .font(.headline)
-                            Text(String(player.playerPubkey.prefix(8)) + "...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                             Spacer()
                             Text("\(pScores.count)/\(store.holes.count) holes")
                                 .font(.caption)
@@ -180,6 +179,20 @@ struct LiveScorecardSheet: View {
                     }
                 }
             }
+            .task {
+                if !store.players.isEmpty && playerProfiles.isEmpty {
+                    let pubkeys = store.players.map { $0.playerPubkey }
+                    if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: pubkeys) {
+                        playerProfiles = profiles
+                    }
+                }
+            }
         }
+    }
+
+    private func playerDisplayLabel(for index: Int) -> String {
+        if index == 0 { return "You" }
+        guard index < store.players.count else { return "P\(index + 1)" }
+        return playerProfiles[store.players[index].playerPubkey]?.displayLabel ?? "P\(index + 1)"
     }
 }
