@@ -8,7 +8,7 @@ import NostrSDK
 
 final class KeyManager {
 
-    private static let keychainService = "dev.local.RAID.nostr"
+    private static let keychainService = "golf.raid.app.nostr"
     private static let keychainAccount = "nostr-nsec"
 
     private let keys: Keys
