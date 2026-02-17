@@ -172,6 +172,38 @@ class NostrService {
         }
     }
 
+    // MARK: - Feed
+
+    /// Fetch kind 1 (text notes) and kind 1502 (final round records) from followed pubkeys
+    /// that are tagged with #golf. Returns verified events sorted by created_at descending.
+    func fetchFeedEvents(followedPubkeys: [String]) async throws -> [Event] {
+        guard !followedPubkeys.isEmpty else { return [] }
+
+        let pubkeys = try followedPubkeys.compactMap { hex -> PublicKey? in
+            try PublicKey.parse(publicKey: hex)
+        }
+        guard !pubkeys.isEmpty else { return [] }
+
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .authors(authors: pubkeys)
+            .kinds(kinds: [Kind(kind: 1), Kind(kind: NIP101gKind.finalRoundRecord)])
+            .hashtag(hashtag: "golf")
+            .limit(limit: 50)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return verifiedEvents(try events.toVec())
+    }
+
     // MARK: - Live Scorecard Fetch
 
     /// Fetch kind 30501 live scorecard events for a round (by initiation event ID).
