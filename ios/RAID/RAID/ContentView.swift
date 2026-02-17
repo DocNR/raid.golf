@@ -25,21 +25,15 @@ struct ContentView: View {
             // Main content
             TabView(selection: $selectedTab) {
                 FeedView()
-                    .tabItem {
-                        Label("Feed", systemImage: "bubble.left.and.bubble.right.fill")
-                    }
+                    .tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
                     .tag(Tab.feed)
 
                 RoundsView(dbQueue: dbQueue)
-                    .tabItem {
-                        Label("Play", systemImage: "flag.fill")
-                    }
+                    .tabItem { Image(systemName: "flag.fill") }
                     .tag(Tab.play)
 
                 CoursesView()
-                    .tabItem {
-                        Label("Courses", systemImage: "mappin.and.ellipse")
-                    }
+                    .tabItem { Image(systemName: "mappin.and.ellipse") }
                     .tag(Tab.courses)
             }
             .disabled(drawerState.isOpen)
