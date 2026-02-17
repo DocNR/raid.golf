@@ -138,18 +138,18 @@ This creates a permanently "unfinalized" round under the binary model.
 
 **Existing docs handle this better:** Verification is a **projection** with configurable policies (basic / strict / stricter). A round can be "verified by 3 of 4 participants" rather than requiring unanimity. The conversation's binary finalized/disputed model should be softened to a spectrum.
 
-### 4.3 Score Publication vs Attestation — Conflated
+### 4.3 Score Publication vs Attestation — Unified in the 1502
 
-The conversation treats "publishing your 1502" and "attesting" as the same act. They are different:
+The conversation treats "publishing your 1502" and "attesting" as similar acts. On reflection, this is correct for the multiplayer case:
 
-- **Publishing 1502** = "These are my scores for this round" (self-assertion)
-- **Attesting** = "I confirm that Player X's scores are correct" (peer verification)
+- **1502 with `scored_by=self`** = self-assertion ("these are my scores")
+- **1502 with `scored_by=other_player`** = attestation ("I confirm Player X's scores")
 
-Self-assertion is not attestation. The existing `attestation_and_snapshots.md` gets this right:
+Both are Schnorr-signed 1502 events containing `fss_hash`. The `scored_by` tag distinguishes self-assertion from peer attestation. Self-assertions carry less weight than peer attestations — a player signing their own scores proves nothing about accuracy, only about what they claim.
 
-> "I, `marker_pubkey`, attest that `fss_hash` correctly represents `player_pubkey`'s final score for `round_uid`."
+**Consensus emerges naturally:** when multiple participants publish 1502 events with matching `fss_hash` for the same scored player, that IS multi-party attestation without a separate event kind.
 
-The marker and the player are different parties. Self-attestation should carry zero weight, as the conversation briefly noted but then dropped.
+A separate attestation kind would only be needed for non-participants (tournament officials, witnesses) or after-the-fact dispute resolution — deferred to a future phase.
 
 ### 4.4 Correction Flow — Not Addressed
 
@@ -198,74 +198,85 @@ Tags:
 Content: canonical fss JSON (the snapshot payload)
 ```
 
-And a separate kind (e.g., 1503 or the WIP `1zzz`) for attestation:
-
-```
-Tags:
-  [e, initiation_id]          — round reference
-  [fss_hash, <hex>]           — what's being attested
-  [p, <player_pubkey>]        — whose score is attested
-  [status, verified|disputed] — attestation verdict
-
-Content: optional notes
-```
+A separate attestation event kind is **not needed** for the common case. See section 6 for why.
 
 ---
 
-## 6) Recommended Strategy: Semantic Hash Consensus + Per-Player Attestation
+## 6) Recommended Strategy: 1502-as-Attestation (Simplified Model)
 
-Combining the conversation's consensus model with the existing kernel docs:
+### 6.1 Key Insight: The 1502 IS the Attestation
 
-### 6.1 Flow
+A separate attestation event kind is unnecessary for multiplayer rounds. When Player A publishes a kind 1502 with `scored_by=PlayerB` and `fss_hash=X`, that IS an attestation: "I, Player A, Schnorr-sign that Player B's score is X."
+
+**Why this works:**
+
+- Each participant publishes 1502 events for each player in the round
+- Each 1502 contains `fss_hash` — the content-addressed score identity
+- Each 1502 is Schnorr-signed by the publisher
+- If two participants' 1502s for the same scored player contain the same `fss_hash`, that's cryptographic consensus — two independent signatures over the same hash
+
+**The 30501 "finished" status adds an additional signal:** it proves the player reviewed and accepted the scores before the immutable 1502 was published. The sequence (30501 status=finished → 1502 published) establishes informed consent.
+
+### 6.2 Flow
 
 ```
 1. PLAY      All participants score on their devices
                 (live scorecards via kind 30501, UX-only, non-authoritative)
 
-2. FINISH    Each participant completes all holes locally
-                (ActiveRoundStore.isFinishEnabled = true)
+2. FINISH    Each participant marks their 30501 as status=finished
+                (signals: "I've reviewed these scores, they're complete")
+                (30501 is still addressable/replaceable — this is a UX signal, not a commit)
 
 3. COMPUTE   Each device computes per-player fss + fss_hash
                 fss_hash = SHA-256(UTF-8(JCS(fss_json)))
                 One fss per player per round
 
-4. PUBLISH   Each participant publishes kind 1502 with fss_hash tag
-                (immutable regular event — can't be replaced or deleted)
+4. FINALIZE  Each participant publishes kind 1502 with fss_hash per scored player
+                (immutable regular event — the commit)
+                (1502 with scored_by=<other_player> IS the attestation)
 
-5. ATTEST    Each participant MAY publish attestation events
-                for other players' fss_hash values
-                (separate event kind — peer verification)
-
-6. VERIFY    Verification is a local projection:
+5. VERIFY    Verification is a local projection:
                 - fss_hash matches recomputed hash? (integrity)
                 - Schnorr signature valid? (authenticity)
-                - Attester is a listed participant? (authorization)
-                - Attestation count meets policy threshold? (strength)
+                - Publisher is a listed participant? (authorization)
+                - Multiple participants published same fss_hash? (consensus)
 ```
 
-### 6.2 Consensus Detection
+### 6.3 Consensus Detection
 
 ```
 Round status = projection derived from collected 1502 events:
 
-- PENDING:    Not all participants have published 1502
-- CONSISTENT: All published 1502s for the same player agree on fss_hash
-- DISPUTED:   Multiple fss_hash values exist for the same player
-- VERIFIED:   Consistent + meets attestation policy threshold
+- PENDING:     Not all participants have published 1502
+- CONSISTENT:  All 1502s for the same scored player agree on fss_hash
+- DISPUTED:    Multiple fss_hash values exist for the same scored player
+- FINALIZED:   Consistent + all participants have published
 ```
 
-### 6.3 Conflict Resolution (When Multiple 1502s Exist)
+### 6.4 Conflict Resolution (When Multiple 1502s Exist)
 
 Since Nostr allows multiple 1502 publications:
 
 1. **Same fss_hash** → redundant, no conflict (same assertion republished)
-2. **Different fss_hash, same author** → fork detected
-   - Count attestations per fss_hash from other participants
-   - fss_hash with most participant attestations wins
+2. **Different fss_hash, different publishers for same scored player** → dispute
+   - Display both versions with their signers
+   - No automatic resolution — this is a genuine disagreement
+3. **Different fss_hash, same publisher** → fork (user published conflicting finals)
+   - The fss_hash that appears in more 1502s from other participants wins
    - Tie-break: deterministic (e.g., lexicographic sort of fss_hash)
-3. **No attestations for any version** → newest by `created_at` as soft fallback (UX only, not trust)
 
 **Timestamps are never trusted for truth.** They are a UX convenience for display ordering only.
+
+### 6.5 When a Separate Attestation Event Kind IS Needed (Future)
+
+A dedicated attestation kind (e.g., 1503) would be needed for:
+
+- **Non-participants attesting** (tournament officials, spectators, witnesses)
+- **After-the-fact verification** (signing off hours/days later without republishing scores)
+- **Dispute resolution** (explicit "I dispute this score" events)
+- **Money games / tournaments** (where stronger proof is required)
+
+This can be deferred. The 1502-as-attestation model is sufficient for casual multiplayer.
 
 ---
 
@@ -283,11 +294,12 @@ Since Nostr allows multiple 1502 publications:
 2. **Implement `fss_hash` computation** — extend `RAIDHashing` for score snapshots
 3. **Add `fss_hash` tag to kind 1502** — content-addressed identity in the event
 4. **Add canonical `fss` as 1502 content** — payload for verification
-5. **Define attestation event kind** — separate from 1502
+5. **Add `status=finished` to kind 30501** — signal review-complete before finalization
 6. **Implement dedup by `fss_hash`** — replace timestamp-based dedup
-7. **Define verification policies** — configurable projection rules
+7. **Define verification projection** — consensus detection from collected 1502s
 
-### Deferred (Post-Attestation)
+### Deferred
+- Separate attestation event kind (for non-participants, tournaments, disputes)
 - Round-level consensus hash (aggregate of per-player fss_hashes)
 - Full fact bundles for dispute resolution
 - NIP-09 tombstone tracking
@@ -302,7 +314,7 @@ Since Nostr allows multiple 1502 publications:
 | `attestation_and_snapshots.md` | **Upstream authority.** This review refines but does not replace it. The fss/fss_hash model, append-only attestation facts, and verification-as-projection are all preserved. |
 | `mental_model.md` | **Fully aligned.** Local truth, Nostr as projection, trust boundaries. |
 | `identifier_glossary.md` | **Fully aligned.** Three-tier taxonomy confirmed: fss_hash = Tier 1, event IDs = Tier 3, timestamps = Tier 3. |
-| `nip101g_round_wip.md` | **Needs extension.** Current 1502 spec lacks fss_hash tag and canonical content. Attestation event kind needs definition. |
+| `nip101g_round_wip.md` | **Needs extension.** Current 1502 spec lacks fss_hash tag and canonical content. 30501 needs finished status. |
 | `NIP101gEventBuilder.swift` | **Needs extension.** `buildFinalRecordEvent()` does not compute or include fss_hash. |
 
 ---
@@ -311,13 +323,15 @@ Since Nostr allows multiple 1502 publications:
 
 1. **Strategy:** Semantic Hash Consensus (over two-phase commit or version chains)
 2. **Hash scope:** Per-player `fss_hash`, not round-level aggregate
-3. **Attestation binding:** Sign `fss_hash`, not event ID or mutable data
-4. **Timestamp trust:** Zero for consensus/truth; UX-only for display
-5. **Publication model:** Symmetric — all participants publish independently
-6. **Verification model:** Projection with configurable policies, not binary
-7. **Local truth:** DB is authoritative; Nostr is distribution
-8. **Conflict resolution:** By attestation count, then deterministic fallback
-9. **Corrections:** Append-only — new fss, new hash, new attestations required
+3. **Attestation model:** 1502-as-attestation — no separate event kind needed for casual play
+4. **Finish → Finalize:** 30501 status=finished (review signal) → 1502 (immutable commit)
+5. **Timestamp trust:** Zero for consensus/truth; UX-only for display
+6. **Publication model:** Symmetric — all participants publish independently
+7. **Verification model:** Projection — consensus when all 1502s agree on fss_hash
+8. **Local truth:** DB is authoritative; Nostr is distribution
+9. **Conflict resolution:** Display disputes; deterministic fallback for forks
+10. **Corrections:** Append-only — new fss, new hash, new 1502 required
+11. **Separate attestation kind:** Deferred to tournament/money-game phase
 
 ---
 
