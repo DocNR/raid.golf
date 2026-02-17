@@ -1,12 +1,13 @@
-// FirstRunSheetView.swift
+// WelcomeView.swift
 // RAID Golf
 //
-// One-time welcome sheet shown on first launch.
+// Onboarding root — 3-path welcome screen (O-1).
+// Replaces FirstRunSheetView.
 
 import SwiftUI
 
-struct FirstRunSheetView: View {
-    @Environment(\.dismiss) private var dismiss
+struct WelcomeView: View {
+    let onComplete: (_ activated: Bool) -> Void
 
     var body: some View {
         NavigationStack {
@@ -31,7 +32,7 @@ struct FirstRunSheetView: View {
                             icon: "bubble.left.and.bubble.right.fill",
                             color: .blue,
                             title: "Feed",
-                            description: "See rounds and posts from golfers you follow on Nostr."
+                            description: "See rounds and posts from golfers you follow."
                         )
 
                         FeatureCard(
@@ -54,17 +55,41 @@ struct FirstRunSheetView: View {
                             .multilineTextAlignment(.center)
                     }
 
-                    // CTA
-                    Button {
-                        dismiss()
-                    } label: {
-                        Text("Get Started")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
+                    // CTAs
+                    VStack(spacing: 12) {
+                        NavigationLink {
+                            OnboardingProfileSetupView(onComplete: onComplete)
+                        } label: {
+                            Text("Create Account")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+
+                        NavigationLink {
+                            OnboardingKeyImportView(onComplete: onComplete)
+                        } label: {
+                            Text("Sign In")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+
+                        Button {
+                            onComplete(false)
+                        } label: {
+                            Text("Skip for Now")
+                                .font(.subheadline)
+                        }
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .padding(.top, 8)
+
+                    Text("No email or password required.\nYour data stays on your device.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 32)

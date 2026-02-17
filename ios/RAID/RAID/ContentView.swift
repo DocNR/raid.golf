@@ -11,8 +11,9 @@ struct ContentView: View {
 
     @Environment(\.drawerState) private var drawerState
     @Environment(\.nostrService) private var nostrService
-    @AppStorage("hasSeenFirstRun") private var hasSeenFirstRun = false
-    @State private var showFirstRun = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("nostrActivated") private var nostrActivated = false
+    @State private var showOnboarding = false
     @State private var selectedTab: Tab = .play
 
     enum Tab: String {
@@ -77,19 +78,37 @@ struct ContentView: View {
         .sheet(isPresented: Bindable(drawerState).showAbout) {
             AboutView()
         }
-        // First-run sheet
-        .sheet(isPresented: $showFirstRun, onDismiss: {
-            hasSeenFirstRun = true
-        }) {
-            FirstRunSheetView()
+        // Onboarding full-screen cover
+        .fullScreenCover(isPresented: $showOnboarding) {
+            WelcomeView { activated in
+                nostrActivated = activated
+                hasCompletedOnboarding = true
+                showOnboarding = false
+            }
         }
         .onAppear {
-            if !hasSeenFirstRun {
-                showFirstRun = true
+            migrateOnboardingFlags()
+            // Ensure keypair exists before showing onboarding
+            _ = try? KeyManager.loadOrCreate()
+            if !hasCompletedOnboarding {
+                showOnboarding = true
             }
         }
         .task {
             await fetchOwnProfile()
+        }
+    }
+
+    /// Migrate from legacy hasSeenFirstRun flag to new onboarding flags.
+    /// Existing users who already saw the first-run sheet skip onboarding entirely.
+    private func migrateOnboardingFlags() {
+        let legacyFlag = UserDefaults.standard.bool(forKey: "hasSeenFirstRun")
+        guard legacyFlag, !hasCompletedOnboarding else { return }
+
+        hasCompletedOnboarding = true
+        // If user already has a key in Keychain, they've used Nostr features
+        if KeyManager.hasExistingKey() {
+            nostrActivated = true
         }
     }
 

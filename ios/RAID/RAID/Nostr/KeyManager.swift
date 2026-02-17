@@ -43,6 +43,15 @@ final class KeyManager {
         return KeyManager(keys: keys)
     }
 
+    /// Generate a fresh keypair, overwriting any existing key in Keychain.
+    /// Used by "Create Account" to ensure a new identity.
+    static func createNew() throws -> KeyManager {
+        let keys = Keys.generate()
+        let nsec = try keys.secretKey().toBech32()
+        try saveToKeychain(nsec: nsec)
+        return KeyManager(keys: keys)
+    }
+
     /// Load existing keys from Keychain or generate new ones
     static func loadOrCreate() throws -> KeyManager {
         if let nsec = loadFromKeychain() {
@@ -69,6 +78,17 @@ final class KeyManager {
     /// Check whether a key already exists in the Keychain (without creating one).
     static func hasExistingKey() -> Bool {
         loadFromKeychain() != nil
+    }
+
+    /// Delete the secret key from Keychain. Used by sign-out flow.
+    /// After calling this, `hasExistingKey()` returns false and `loadOrCreate()` will generate a new key.
+    static func deleteKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     // MARK: - Keychain (internal for testing)
