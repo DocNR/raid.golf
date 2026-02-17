@@ -51,7 +51,6 @@ struct FeedView: View {
             }
             .navigationTitle("Feed")
             .avatarToolbar()
-            .refreshable { await viewModel.refresh(nostrService: nostrService) }
             .task { await viewModel.loadIfNeeded(nostrService: nostrService) }
         }
     }
@@ -71,5 +70,6 @@ struct FeedView: View {
                 }
             }
         }
+        .refreshable { await viewModel.refresh(nostrService: nostrService) }
     }
 }
