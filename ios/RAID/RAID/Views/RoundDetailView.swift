@@ -493,9 +493,23 @@ struct RoundDetailView: View {
         }
 
         do {
-            let events = try await nostrService.fetchFinalRecords(
+            let allEvents = try await nostrService.fetchFinalRecords(
                 initiationEventId: record.initiationEventId
             )
+
+            // Dedup: keep only the latest 1502 per author (by created_at)
+            var latestByAuthor: [String: Event] = [:]
+            for event in allEvents {
+                let authorHex = event.author().toHex()
+                if let existing = latestByAuthor[authorHex] {
+                    if event.createdAt().asSecs() > existing.createdAt().asSecs() {
+                        latestByAuthor[authorHex] = event
+                    }
+                } else {
+                    latestByAuthor[authorHex] = event
+                }
+            }
+            let events = Array(latestByAuthor.values)
 
             // Get my pubkey to filter own events (local scores are authoritative)
             let myPubkeyHex: String? = {
