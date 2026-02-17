@@ -49,7 +49,7 @@ struct FeedView: View {
                     }
                 }
             }
-            .navigationTitle("Feed")
+            .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
             .task { await viewModel.loadIfNeeded(nostrService: nostrService) }
         }
@@ -66,7 +66,6 @@ struct FeedView: View {
                     .padding(.horizontal)
 
                     Divider()
-                        .padding(.leading, 56)
                 }
             }
         }

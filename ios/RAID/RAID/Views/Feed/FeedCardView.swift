@@ -10,39 +10,42 @@ struct FeedCardView: View {
     let profile: NostrProfile?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header: avatar + name + time
-            HStack(alignment: .top, spacing: 10) {
-                ProfileAvatarView(pictureURL: profile?.picture, size: 36)
+        HStack(alignment: .top, spacing: 10) {
+            ProfileAvatarView(pictureURL: profile?.picture, size: 40)
 
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Name · time
+                HStack(spacing: 4) {
                     Text(profile?.displayLabel ?? String(item.pubkeyHex.prefix(8)) + "...")
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
+
+                    Text("·")
+                        .foregroundStyle(.secondary)
+
+                    Text(relativeTime(item.createdAt))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
                 }
 
-                Spacer()
+                // Content
+                switch item {
+                case .textNote(_, _, let content, _):
+                    Text(content)
+                        .font(.subheadline)
 
-                Text(relativeTime(item.createdAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // Content
-            switch item {
-            case .textNote(_, _, let content, _):
-                Text(content)
-                    .font(.body)
-
-            case .scorecard(_, _, let commentary, let record, let courseInfo, _):
-                if let commentary, !commentary.isEmpty {
-                    Text(commentary)
-                        .font(.body)
+                case .scorecard(_, _, let commentary, let record, let courseInfo, _):
+                    if let commentary, !commentary.isEmpty {
+                        Text(commentary)
+                            .font(.subheadline)
+                    }
+                    ScorecardCardView(record: record, courseInfo: courseInfo)
                 }
-                ScorecardCardView(record: record, courseInfo: courseInfo)
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Relative Time
