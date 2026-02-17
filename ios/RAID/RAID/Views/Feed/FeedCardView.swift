@@ -9,28 +9,32 @@ struct FeedCardView: View {
     let item: FeedItem
     let profile: NostrProfile?
 
+    private let avatarSize: CGFloat = 40
+    private let avatarSpacing: CGFloat = 10
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ProfileAvatarView(pictureURL: profile?.picture, size: 40)
+        VStack(alignment: .leading, spacing: 4) {
+            // Header: avatar + name · time (center-aligned row)
+            HStack(spacing: avatarSpacing) {
+                ProfileAvatarView(pictureURL: profile?.picture, size: avatarSize)
 
-            VStack(alignment: .leading, spacing: 4) {
-                // Name · time
-                HStack(spacing: 4) {
-                    Text(profile?.displayLabel ?? String(item.pubkeyHex.prefix(8)) + "...")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
+                Text(profile?.displayLabel ?? String(item.pubkeyHex.prefix(8)) + "...")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
 
-                    Text("·")
-                        .foregroundStyle(.secondary)
+                Text("·")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-                    Text(relativeTime(item.createdAt))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                Text(relativeTime(item.createdAt))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-                    Spacer()
-                }
+                Spacer()
+            }
 
-                // Content
+            // Content — indented to align under the name
+            Group {
                 switch item {
                 case .textNote(_, _, let content, _):
                     Text(content)
@@ -44,6 +48,7 @@ struct FeedCardView: View {
                     ScorecardCardView(record: record, courseInfo: courseInfo)
                 }
             }
+            .padding(.leading, avatarSize + avatarSpacing)
         }
         .padding(.vertical, 10)
     }
