@@ -82,7 +82,7 @@ struct OnboardingProfileSetupView: View {
         defer { isPublishing = false }
 
         do {
-            let keyManager = try KeyManager.loadOrCreate()
+            let keyManager = try KeyManager.createNew()
             let keys = keyManager.signingKeys()
             let pubkeyHex = keys.publicKey().toHex()
 
