@@ -14,7 +14,7 @@ struct CoursesView: View {
             } description: {
                 Text("Browse courses, check tee sets, and see who's playing. Coming soon.")
             }
-            .navigationTitle("Courses")
+            .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
         }
     }

@@ -36,7 +36,7 @@ struct RoundsView: View {
                     roundsList
                 }
             }
-            .navigationTitle("Play")
+            .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
