@@ -66,6 +66,11 @@ final class KeyManager {
         keys
     }
 
+    /// Check whether a key already exists in the Keychain (without creating one).
+    static func hasExistingKey() -> Bool {
+        loadFromKeychain() != nil
+    }
+
     // MARK: - Keychain (internal for testing)
 
     /// Copy nsec to pasteboard (the only way to reveal the secret key).
