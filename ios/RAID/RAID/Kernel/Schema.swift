@@ -616,6 +616,33 @@ struct Schema {
             """)
         }
 
+        // ============================================================
+        // v9_create_nostr_profiles: Nostr Profile Metadata Cache
+        //
+        // Mutable profile cache. No immutability triggers (same pattern
+        // as remote_scores_cache v8). Content-addressed by pubkey_hex —
+        // natural PK, no surrogate. Profiles are upserted on each fetch.
+        // ============================================================
+        migrator.registerMigration("v9_create_nostr_profiles") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_profiles (
+                    pubkey_hex   TEXT NOT NULL PRIMARY KEY
+                                     CHECK(length(pubkey_hex) = 64),
+                    name         TEXT,
+                    display_name TEXT,
+                    picture      TEXT,
+                    about        TEXT,
+                    banner       TEXT,
+                    nip05        TEXT,
+                    cached_at    TEXT NOT NULL
+                )
+                """)
+
+            try db.execute(sql: "CREATE INDEX idx_nostr_profiles_name         ON nostr_profiles(name)")
+            try db.execute(sql: "CREATE INDEX idx_nostr_profiles_display_name ON nostr_profiles(display_name)")
+            try db.execute(sql: "CREATE INDEX idx_nostr_profiles_nip05        ON nostr_profiles(nip05)")
+        }
+
         return migrator
     }
 

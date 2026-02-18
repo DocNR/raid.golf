@@ -72,6 +72,15 @@ final class NostrServiceTests: XCTestCase {
         XCTAssertNil(profile.displayName)
     }
 
+    func testParseProfile_withNip05() {
+        let content = """
+        {"name":"alice","display_name":"Alice","nip05":"alice@primal.net","picture":"https://example.com/pic.jpg"}
+        """
+        let profile = NostrProfile.parse(from: content, pubkeyHex: String(repeating: "a", count: 64))
+        XCTAssertEqual(profile.name, "alice")
+        XCTAssertEqual(profile.nip05, "alice@primal.net")
+    }
+
     // MARK: - Display Label
 
     func testDisplayLabel_PrefersDisplayName() {

@@ -179,25 +179,53 @@ class NostrService {
 
     // MARK: - Profile Resolution (Cache-First)
 
-    /// Resolve profiles from cache or fetch uncached keys from relays.
-    func resolveProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
+    /// Resolve profiles from cache (in-memory then GRDB) or fetch uncached keys from relays.
+    /// Three-layer lookup: in-memory → GRDB → relay fetch.
+    func resolveProfiles(pubkeyHexes: [String], cacheRepo: ProfileCacheRepository? = nil) async throws -> [String: NostrProfile] {
         if !isActivated {
             return pubkeyHexes.reduce(into: [:]) { result, hex in
                 result[hex] = profileCache[hex]
             }
         }
-        let uncached = pubkeyHexes.filter { profileCache[$0] == nil }
 
-        if !uncached.isEmpty {
-            let fetched = try await fetchProfiles(pubkeyHexes: uncached)
-            for (key, profile) in fetched {
-                profileCache[key] = profile
+        var result: [String: NostrProfile] = [:]
+        var uncachedAfterMemory: [String] = []
+
+        // Layer 1: in-memory
+        for hex in pubkeyHexes {
+            if let cached = profileCache[hex] {
+                result[hex] = cached
+            } else {
+                uncachedAfterMemory.append(hex)
             }
         }
 
-        return pubkeyHexes.reduce(into: [:]) { result, hex in
-            result[hex] = profileCache[hex]
+        // Layer 2: GRDB
+        var uncachedAfterDB: [String] = []
+        if let repo = cacheRepo {
+            for hex in uncachedAfterMemory {
+                if let cached = try? repo.fetchProfile(pubkeyHex: hex) {
+                    result[hex] = cached
+                    profileCache[hex] = cached  // warm in-memory cache
+                } else {
+                    uncachedAfterDB.append(hex)
+                }
+            }
+        } else {
+            uncachedAfterDB = uncachedAfterMemory
         }
+
+        // Layer 3: relay fetch
+        if !uncachedAfterDB.isEmpty {
+            let fetched = try await fetchProfiles(pubkeyHexes: uncachedAfterDB)
+            for (key, profile) in fetched {
+                profileCache[key] = profile
+                result[key] = profile
+            }
+            try? cacheRepo?.upsertProfiles(Array(fetched.values))
+        }
+
+        return result
     }
 
     // MARK: - Feed
@@ -550,6 +578,7 @@ struct NostrProfile: Identifiable {
     var picture: String?
     var about: String?
     var banner: String?
+    var nip05: String? = nil
 
     /// Best available display string: displayName > name > truncated pubkey.
     var displayLabel: String {
@@ -571,7 +600,8 @@ struct NostrProfile: Identifiable {
             displayName: json["display_name"] as? String,
             picture: json["picture"] as? String,
             about: json["about"] as? String,
-            banner: json["banner"] as? String
+            banner: json["banner"] as? String,
+            nip05: json["nip05"] as? String
         )
     }
 }
