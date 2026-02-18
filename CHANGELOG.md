@@ -42,6 +42,13 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 8C.4: Feed Merge Stability (quick win)**
+  - `FeedViewModel.refresh()` now merges new items into existing state instead of wholesale replacement
+  - Previously-seen posts are retained across refreshes; unfollowed authors are filtered out via `followSet`
+  - Items reset on app restart (fresh `FeedViewModel` instance) — no hard-refresh UI required
+  - Fixes: posts vanishing when a relay returns a stale kind-3 contact list on a subsequent refresh
+  - File changed: `ios/RAID/RAID/Nostr/FeedViewModel.swift`
+
 - **iOS Phase 8B: Nostr Identity + NIP-17 DM Invites**
   - **8B.1: Identity & Profiles**
     - `ProfileAvatarView` with AsyncImage and 2-letter initials fallback

@@ -67,11 +67,18 @@ class FeedViewModel {
 
             // 4. Process into FeedItems (batch relay fetches)
             let processed = await processEvents(events, nostrService: nostrService)
-            items = processed
+
+            // Merge: keep previously-seen items that aren't in this fetch,
+            // so a flaky relay response doesn't nuke posts.
+            // Only retain items from authors still in the follow list (respects unfollows).
+            let followSet = Set(follows)
+            let newIds = Set(processed.map(\.id))
+            let retained = items.filter { !newIds.contains($0.id) && followSet.contains($0.pubkeyHex) }
+            items = (processed + retained).sorted { $0.createdAt > $1.createdAt }
             loadState = .loaded
 
             // 5. Resolve profiles for all authors; snapshot into resolvedProfiles for stable UI reads
-            let pubkeyHexes = Array(Set(processed.map(\.pubkeyHex)))
+            let pubkeyHexes = Array(Set(items.map(\.pubkeyHex)))
             let uncached = pubkeyHexes.filter { nostrService.profileCache[$0] == nil }
             if !uncached.isEmpty {
                 _ = try? await nostrService.resolveProfiles(pubkeyHexes: uncached)
