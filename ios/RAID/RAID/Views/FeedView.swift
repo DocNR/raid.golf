@@ -13,7 +13,7 @@ struct FeedView: View {
     @State private var viewModel = FeedViewModel()
     @AppStorage("nostrActivated") private var nostrActivated = false
     @State private var showActivation = false
-    @State private var commentTarget: (id: String, isTextNote: Bool)?
+    @State private var selectedItem: FeedItem?
 
     var body: some View {
         NavigationStack {
@@ -75,13 +75,6 @@ struct FeedView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Comment Sheet Binding
-
-    private struct CommentSheetBinding: Identifiable {
-        let id: String
-        let isTextNote: Bool
     }
 
     // MARK: - Guest State
@@ -278,38 +271,37 @@ struct FeedView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.items) { item in
-                    FeedCardView(
-                        item: item,
-                        profile: viewModel.resolvedProfiles[item.pubkeyHex],
-                        reactionCount: viewModel.reactionCounts[item.id] ?? 0,
-                        hasReacted: viewModel.ownReactions.contains(item.id),
-                        commentCount: viewModel.commentCounts[item.id] ?? 0,
-                        onReact: {
-                            viewModel.react(itemId: item.id, nostrService: nostrService)
-                        },
-                        onComment: {
-                            let isText: Bool
-                            if case .textNote = item { isText = true } else { isText = false }
-                            commentTarget = (id: item.id, isTextNote: isText)
-                        }
-                    )
-                    .padding(.horizontal)
+                    NavigationLink {
+                        ThreadDetailView(
+                            item: item,
+                            profile: viewModel.resolvedProfiles[item.pubkeyHex],
+                            rawEvent: viewModel.rawEvents[item.id],
+                            dbQueue: dbQueue,
+                            reactionCount: viewModel.reactionCounts[item.id] ?? 0,
+                            hasReacted: viewModel.ownReactions.contains(item.id),
+                            onReact: {
+                                viewModel.react(itemId: item.id, nostrService: nostrService)
+                            }
+                        )
+                    } label: {
+                        FeedCardView(
+                            item: item,
+                            profile: viewModel.resolvedProfiles[item.pubkeyHex],
+                            reactionCount: viewModel.reactionCounts[item.id] ?? 0,
+                            hasReacted: viewModel.ownReactions.contains(item.id),
+                            commentCount: viewModel.commentCounts[item.id] ?? 0,
+                            onReact: {
+                                viewModel.react(itemId: item.id, nostrService: nostrService)
+                            }
+                        )
+                        .padding(.horizontal)
+                    }
+                    .buttonStyle(.plain)
 
                     Divider()
                 }
             }
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService) }
-        .sheet(item: Binding(
-            get: { commentTarget.map { CommentSheetBinding(id: $0.id, isTextNote: $0.isTextNote) } },
-            set: { commentTarget = $0.map { ($0.id, $0.isTextNote) } }
-        )) { binding in
-            CommentSheetView(
-                eventId: binding.id,
-                rawEvent: viewModel.rawEvents[binding.id],
-                isTextNote: binding.isTextNote,
-                dbQueue: dbQueue
-            )
-        }
     }
 }

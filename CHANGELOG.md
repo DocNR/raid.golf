@@ -42,6 +42,74 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 8D.B: Social Interactions + Thread UX**
+  - **NIP-51 Clubhouse (kind 30000): curated player list**
+    - Schema v10: `clubhouse_members` table (mutable, no triggers, outside kernel)
+    - `ClubhouseRepository`: local GRDB CRUD (add/remove/list members)
+    - `NostrService.fetchClubhouse()` / `publishClubhouse()`: relay sync via kind 30000 replaceable events
+    - `ClubhouseView`: manage members from follow list or by manual npub entry; auto-syncs to relay on add/remove
+    - Clubhouse members appear first in `CreateRoundView` player picker (before remaining follows)
+    - 5 new `ClubhouseRepositoryTests`
+  - **NIP-25 Reactions (kind 7): heart button on feed cards**
+    - `NostrService.publishReaction()` / `fetchReactions()` (batch, single relay connection)
+    - Optimistic UI: reaction applied immediately, rolled back on relay failure
+    - `FeedViewModel` stores raw `Event` objects to supply `e` and `p` tags on reaction publish
+  - **NIP-22 Comments (kind 1111) for scorecard events + NIP-10 Replies (kind 1) for text notes**
+    - `NostrService.publishComment()` / `fetchComments()` / `fetchCommentCounts()`
+    - `NostrService.publishReply()` / `fetchReplies()` / `fetchReplyCounts()`
+    - NIP-22 spec: comments (kind 1111) used only on non-kind-1 events; kind 1 notes use kind 1 replies
+  - **Damus-style ThreadDetailView (replaces sheet-based CommentSheetView)**
+    - Tap feed card → push navigation to thread detail (slides from right via NavigationStack)
+    - Original post pinned at top; replies/comments in scrollable list below; input bar at bottom
+    - Optimistic comment append with fire-and-forget relay publish
+    - Own profile resolved from NostrService cache for immediate display name/avatar
+    - `CommentSheetView.swift` deleted; `ThreadDetailView.swift` added
+  - **Replaceable event correctness fix (kind 3 / 0 / 30000 / 10050)**
+    - All replaceable event fetches now select newest `created_at` instead of first relay response
+    - Fixes stale follow-list bug where `purplepag.es` had updated list while `damus.io`/`nos.lol` served stale version
+  - Files changed: `NostrService.swift`, `FeedViewModel.swift`, `FeedCardView.swift`, `FeedView.swift`, `Schema.swift`, `DrawerState.swift`, `SideDrawerView.swift`, `ContentView.swift`, `CreateRoundView.swift`
+  - Files added: `ThreadDetailView.swift`, `ClubhouseRepository.swift`, `ClubhouseView.swift`
+  - Files deleted: `CommentSheetView.swift`
+  - 233+ total tests (228 baseline + 5 new ClubhouseRepository tests)
+  - No kernel changes
+
+- **iOS Phase 8D.A: Guest Mode + Profile Cache + Feed Enrichment**
+  - **Guest mode activation gates**
+    - All Nostr features gated behind `@AppStorage("nostrActivated")` flag
+    - `WelcomeView`: key import or new-key generation flow shown to unauthenticated users
+    - `NostrActivationAlert`: CTA presented when unauthenticated user reaches a gated feature
+    - `FeedViewModel.loadState` enum with `.guest` case prevents relay connections without keys
+  - **ProfileCacheRepository: 3-layer profile resolution**
+    - Schema v9: `nostr_profiles` table (mutable, no triggers, outside kernel)
+    - Layer 1: in-memory `[String: NostrProfile]` dict; Layer 2: GRDB `nostr_profiles`; Layer 3: relay fetch
+    - `resolveProfiles`: batch-enriches feed events in 2 relay connections instead of N×2 serial
+    - Indexes on `name`, `display_name`, `nip05` for search
+    - 12 new `ProfileCacheRepositoryTests` + 1 new `NostrServiceTests` (testParseProfile_withNip05)
+  - **Batch feed enrichment (PR A2)**
+    - `fetchEventsByIds([String])` on `NostrService`: builds `Filter().ids()`, single relay round-trip
+    - `FeedViewModel.processEvents` uses `resolvedProfiles: [String: NostrProfile]` dict populated by batch call
+    - `FeedView` reads `viewModel.resolvedProfiles`, not `nostrService.profileCache`
+  - **Profile search bar in CreateRoundView (PR A3)**
+    - Search by npub or display name/name against `nostr_profiles` cache
+  - 228 total tests (all passing)
+  - No kernel changes
+
+- **iOS Phase 8B.3-4: Nav Restructure + Side Drawer + Profile Editing**
+  - **3-tab navigation: Feed | Play | Courses**
+    - Replaced previous 4-tab layout (Sessions / Trends / Rounds / Templates)
+    - Practice content (Sessions, Trends, Templates) moved into segmented control within side drawer
+  - **Damus-style side drawer**
+    - Slides in from trailing edge as ZStack overlay (not a sheet, not a full-screen cover)
+    - `DrawerState` `@Observable` class in SwiftUI environment owns: `ownProfile` (single source of truth), drawer open/close state, and all sheet presentation bools
+    - Menu items: Profile, Practice, Keys & Relays, About
+  - **In-app profile editing**
+    - Kind 0 metadata publishing: name, display_name, picture URL, about
+    - `ownProfile` in `DrawerState` is the single source of truth — no local `@State` duplication in child views
+  - **ProfileAvatarView in toolbar**
+    - `AsyncImage` with 2-letter initials fallback
+    - `.renderingMode(.original)` so toolbar button shows actual photo colors, not system tint
+  - No schema changes, no kernel changes
+
 - **iOS Phase 8C.4: Feed Merge Stability (quick win)**
   - `FeedViewModel.refresh()` now merges new items into existing state instead of wholesale replacement
   - Previously-seen posts are retained across refreshes; unfollowed authors are filtered out via `followSet`

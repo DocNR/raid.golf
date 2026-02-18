@@ -93,9 +93,12 @@ class NostrService {
 
         await client.disconnect()
 
-        // Kind 3 is replaceable — first() gives the newest
-        guard let contactEvent = events.first(),
-              verifiedEvents([contactEvent]).first != nil else {
+        // Kind 3 is replaceable — different relays may return different versions.
+        // Pick newest created_at (authoritative per protocol).
+        let allContactEvents = verifiedEvents(try events.toVec())
+        guard let contactEvent = allContactEvents
+            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
+            .first else {
             return []
         }
 
@@ -153,8 +156,12 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        guard let contactEvent = followEvents.first(),
-              verifiedEvents([contactEvent]).first != nil else {
+        // Kind 3 is replaceable — different relays may have different versions.
+        // Pick the one with the newest created_at (authoritative per protocol).
+        let allContactEvents = verifiedEvents(try followEvents.toVec())
+        guard let contactEvent = allContactEvents
+            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
+            .first else {
             await client.disconnect()
             return (follows: [], profiles: [:])
         }
@@ -617,8 +624,11 @@ class NostrService {
 
         await client.disconnect()
 
-        guard let event = events.first(),
-              verifiedEvents([event]).first != nil else {
+        // Kind 30000 is addressable replaceable — pick newest created_at.
+        let allClubhouseEvents = verifiedEvents(try events.toVec())
+        guard let event = allClubhouseEvents
+            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
+            .first else {
             return []
         }
 
@@ -673,8 +683,11 @@ class NostrService {
 
         await client.disconnect()
 
-        guard let event = events.first(),
-              verifiedEvents([event]).first != nil else {
+        // Kind 10050 is replaceable — pick newest created_at.
+        let allInboxEvents = verifiedEvents(try events.toVec())
+        guard let event = allInboxEvents
+            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
+            .first else {
             return []
         }
 
