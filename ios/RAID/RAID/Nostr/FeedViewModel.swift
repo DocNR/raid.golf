@@ -12,6 +12,7 @@ class FeedViewModel {
     var items: [FeedItem] = []
     var isLoading = false
     var errorMessage: String?
+    var resolvedProfiles: [String: NostrProfile] = [:]
 
     enum LoadState {
         case idle
@@ -64,16 +65,19 @@ class FeedViewModel {
             // 3. Fetch feed events
             let events = try await nostrService.fetchFeedEvents(followedPubkeys: follows)
 
-            // 4. Process into FeedItems
+            // 4. Process into FeedItems (batch relay fetches)
             let processed = await processEvents(events, nostrService: nostrService)
             items = processed
             loadState = .loaded
 
-            // 5. Resolve profiles for all authors
-            let pubkeyHexes = Array(Set(items.map(\.pubkeyHex)))
+            // 5. Resolve profiles for all authors; snapshot into resolvedProfiles for stable UI reads
+            let pubkeyHexes = Array(Set(processed.map(\.pubkeyHex)))
             let uncached = pubkeyHexes.filter { nostrService.profileCache[$0] == nil }
             if !uncached.isEmpty {
                 _ = try? await nostrService.resolveProfiles(pubkeyHexes: uncached)
+            }
+            resolvedProfiles = pubkeyHexes.reduce(into: [:]) { dict, hex in
+                dict[hex] = nostrService.profileCache[hex]
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -85,19 +89,15 @@ class FeedViewModel {
     // MARK: - Event Processing
 
     private func processEvents(_ events: [Event], nostrService: NostrService) async -> [FeedItem] {
-        var feedItems: [FeedItem] = []
-        var quotedScorecardIds: Set<String> = []
-
-        // First pass: identify kind 1 notes that reference a 1502 via `e` tag
-        // and collect the referenced 1502 IDs for dedup
         var kind1Events: [Event] = []
         var kind1502Events: [Event] = []
+        var quotedScorecardIds: Set<String> = []
 
+        // Pass 1: categorize events, collect all e-tag IDs from kind-1 events
         for event in events {
             let kind = event.kind().asU16()
             if kind == 1 {
                 kind1Events.append(event)
-                // Check for e tag referencing a 1502
                 let tags = event.tags().toVec().map { $0.asVec() }
                 if let eTag = tags.first(where: { $0.count >= 2 && $0[0] == "e" }) {
                     quotedScorecardIds.insert(eTag[1])
@@ -107,7 +107,62 @@ class FeedViewModel {
             }
         }
 
-        // Process kind 1 events
+        // Pass 2: batch fetch all referenced 1502 events (single relay connection)
+        var fetchedEventsById: [String: Event] = [:]
+        let allRefIds = Array(quotedScorecardIds)
+        if !allRefIds.isEmpty {
+            let fetched = (try? await nostrService.fetchEventsByIds(allRefIds)) ?? []
+            for event in fetched {
+                fetchedEventsById[event.id().toHex()] = event
+            }
+        }
+
+        // Pass 3: collect all initiation event IDs from 1502s (both quoted and direct)
+        var initiationIds: Set<String> = []
+
+        for refId in quotedScorecardIds {
+            if let refEvent = fetchedEventsById[refId],
+               refEvent.kind().asU16() == NIP101gKind.finalRoundRecord {
+                let refTags = refEvent.tags().toVec().map { $0.asVec() }
+                if let record = NIP101gEventParser.parseFinalRecord(
+                    tagArrays: refTags,
+                    authorPubkeyHex: refEvent.author().toHex(),
+                    content: refEvent.content()
+                ), let initId = record.initiationEventId {
+                    initiationIds.insert(initId)
+                }
+            }
+        }
+
+        for event in kind1502Events {
+            let id = event.id().toHex()
+            guard !quotedScorecardIds.contains(id) else { continue }
+            let tags = event.tags().toVec().map { $0.asVec() }
+            if let record = NIP101gEventParser.parseFinalRecord(
+                tagArrays: tags,
+                authorPubkeyHex: event.author().toHex(),
+                content: event.content()
+            ), let initId = record.initiationEventId {
+                initiationIds.insert(initId)
+            }
+        }
+
+        // Pass 4: batch fetch all 1501 initiation events (single relay connection)
+        var courseInfoById: [String: CourseSnapshotContent] = [:]
+        if !initiationIds.isEmpty {
+            let fetched1501s = (try? await nostrService.fetchEventsByIds(Array(initiationIds))) ?? []
+            for event in fetched1501s {
+                let id = event.id().toHex()
+                if let content = try? NIP101gEventParser.parseInitiationContent(json: event.content()) {
+                    courseInfoById[id] = content.courseSnapshot
+                }
+            }
+        }
+
+        // Pass 5: assemble FeedItems
+        var feedItems: [FeedItem] = []
+
+        // Process kind-1 events
         for event in kind1Events {
             let id = event.id().toHex()
             let pubkey = event.author().toHex()
@@ -115,26 +170,30 @@ class FeedViewModel {
             let content = event.content()
             let tags = event.tags().toVec().map { $0.asVec() }
 
-            // Check if this kind 1 references a 1502 via e tag
-            if let eTagValue = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
-                // Try to fetch the referenced 1502 and build a scorecard item
-                if let scorecardItem = await fetchScorecardForQuote(
-                    noteId: id, notePubkey: pubkey, noteContent: content,
-                    noteCreatedAt: createdAt, referencedEventId: eTagValue,
-                    nostrService: nostrService
+            if let eTagValue = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1],
+               let refEvent = fetchedEventsById[eTagValue],
+               refEvent.kind().asU16() == NIP101gKind.finalRoundRecord {
+                let refTags = refEvent.tags().toVec().map { $0.asVec() }
+                let refPubkey = refEvent.author().toHex()
+                if let record = NIP101gEventParser.parseFinalRecord(
+                    tagArrays: refTags,
+                    authorPubkeyHex: refPubkey,
+                    content: refEvent.content()
                 ) {
-                    feedItems.append(scorecardItem)
+                    let courseInfo = record.initiationEventId.flatMap { courseInfoById[$0] }
+                    feedItems.append(.scorecard(
+                        id: id, pubkeyHex: pubkey, commentary: content,
+                        record: record, courseInfo: courseInfo, createdAt: createdAt
+                    ))
                     continue
                 }
             }
 
             // Plain text note
-            feedItems.append(.textNote(
-                id: id, pubkeyHex: pubkey, content: content, createdAt: createdAt
-            ))
+            feedItems.append(.textNote(id: id, pubkeyHex: pubkey, content: content, createdAt: createdAt))
         }
 
-        // Process kind 1502 events (skip those already quoted by a kind 1)
+        // Process direct kind-1502 events (skip those already quoted)
         for event in kind1502Events {
             let id = event.id().toHex()
             guard !quotedScorecardIds.contains(id) else { continue }
@@ -147,64 +206,14 @@ class FeedViewModel {
                 tagArrays: tags, authorPubkeyHex: pubkey, content: event.content()
             ) else { continue }
 
-            // Fetch 1501 for course info
-            let courseInfo = await fetchCourseInfo(
-                initiationEventId: record.initiationEventId, nostrService: nostrService
-            )
-
+            let courseInfo = record.initiationEventId.flatMap { courseInfoById[$0] }
             feedItems.append(.scorecard(
                 id: id, pubkeyHex: pubkey, commentary: nil,
                 record: record, courseInfo: courseInfo, createdAt: createdAt
             ))
         }
 
-        // Sort by createdAt descending
         return feedItems.sorted { $0.createdAt > $1.createdAt }
-    }
-
-    /// Fetch a 1502 event referenced by a kind 1 quote note and build a scorecard FeedItem.
-    private func fetchScorecardForQuote(
-        noteId: String, notePubkey: String, noteContent: String,
-        noteCreatedAt: Date, referencedEventId: String,
-        nostrService: NostrService
-    ) async -> FeedItem? {
-        guard let referencedEvent = try? await nostrService.fetchEvent(eventIdHex: referencedEventId) else {
-            return nil
-        }
-
-        // Verify the referenced event is actually a 1502
-        guard referencedEvent.kind().asU16() == NIP101gKind.finalRoundRecord else {
-            return nil
-        }
-
-        let refTags = referencedEvent.tags().toVec().map { $0.asVec() }
-        let refPubkey = referencedEvent.author().toHex()
-
-        guard let record = NIP101gEventParser.parseFinalRecord(
-            tagArrays: refTags, authorPubkeyHex: refPubkey, content: referencedEvent.content()
-        ) else {
-            return nil
-        }
-
-        // Fetch 1501 for course info
-        let courseInfo = await fetchCourseInfo(
-            initiationEventId: record.initiationEventId, nostrService: nostrService
-        )
-
-        return .scorecard(
-            id: noteId, pubkeyHex: notePubkey, commentary: noteContent,
-            record: record, courseInfo: courseInfo, createdAt: noteCreatedAt
-        )
-    }
-
-    /// Fetch a 1501 initiation event and parse course snapshot from it.
-    private func fetchCourseInfo(
-        initiationEventId: String?, nostrService: NostrService
-    ) async -> CourseSnapshotContent? {
-        guard let eventId = initiationEventId else { return nil }
-        guard let event = try? await nostrService.fetchEvent(eventIdHex: eventId) else { return nil }
-        guard let content = try? NIP101gEventParser.parseInitiationContent(json: event.content()) else { return nil }
-        return content.courseSnapshot
     }
 }
 

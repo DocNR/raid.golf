@@ -348,6 +348,34 @@ class NostrService {
         return verifiedEvents([event]).first
     }
 
+    /// Fetch multiple events by their hex IDs in a single relay query.
+    /// Returns verified events. Unmatched IDs are silently omitted.
+    func fetchEventsByIds(_ hexIds: [String]) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchEventsByIds blocked — Nostr not activated")
+            return []
+        }
+        guard !hexIds.isEmpty else { return [] }
+
+        let eventIds = hexIds.compactMap { try? EventId.parse(id: $0) }
+        guard !eventIds.isEmpty else { return [] }
+
+        let client = try await connectReadClient()
+
+        let filter = Filter().ids(ids: eventIds)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return verifiedEvents(try events.toVec())
+    }
+
     // MARK: - NIP-17 Gift Wrap DMs
 
     /// Fetch a user's kind 10050 DM inbox relay list (NIP-17).

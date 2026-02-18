@@ -264,7 +264,7 @@ struct FeedView: View {
                 ForEach(viewModel.items) { item in
                     FeedCardView(
                         item: item,
-                        profile: nostrService.profileCache[item.pubkeyHex]
+                        profile: viewModel.resolvedProfiles[item.pubkeyHex]
                     )
                     .padding(.horizontal)
 
