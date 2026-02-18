@@ -102,6 +102,9 @@ struct OnboardingProfileSetupView: View {
                 encoding: .utf8
             ) ?? "{}"
 
+            // Open gate before publishing so NostrService relays are active
+            UserDefaults.standard.set(true, forKey: "nostrActivated")
+
             // Publish kind 0
             let builder = EventBuilder(kind: Kind(kind: 0), content: content)
 

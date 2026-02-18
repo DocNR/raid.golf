@@ -212,6 +212,10 @@ struct CreateRoundView: View {
     // MARK: - Player Actions
 
     private func checkNostrKeys() {
+        guard UserDefaults.standard.bool(forKey: "nostrActivated") else {
+            hasNostrKeys = false
+            return
+        }
         do {
             let keyManager = try KeyManager.loadOrCreate()
             let keys = keyManager.signingKeys()

@@ -82,14 +82,14 @@ struct ContentView: View {
         }
         .onAppear {
             migrateOnboardingFlags()
-            // Ensure keypair exists before showing onboarding
-            _ = try? KeyManager.loadOrCreate()
             if !hasCompletedOnboarding {
                 showOnboarding = true
             }
         }
         .task {
-            await fetchOwnProfile()
+            if nostrActivated {
+                await fetchOwnProfile()
+            }
         }
     }
 

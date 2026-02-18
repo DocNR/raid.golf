@@ -99,6 +99,9 @@ struct OnboardingKeyImportView: View {
             let keyManager = try KeyManager.importKey(nsec: input)
             let pubkeyHex = keyManager.signingKeys().publicKey().toHex()
 
+            // Open gate before relay operations so NostrService connections are active
+            UserDefaults.standard.set(true, forKey: "nostrActivated")
+
             // Best-effort profile fetch from relays
             if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [pubkeyHex]) {
                 drawerState.ownProfile = profiles[pubkeyHex]

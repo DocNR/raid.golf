@@ -27,6 +27,10 @@ struct RoundDetailView: View {
     @State private var errorMessage: String?
     @State private var showPublishSuccess = false
 
+    // Guest activation state
+    @State private var showActivationAlert = false
+    @State private var showActivation = false
+
     // Multi-device state
     @State private var nostrRecord: RoundNostrRecord?
     @State private var isFetchingRemote = false
@@ -78,6 +82,18 @@ struct RoundDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your round has been shared on Nostr.")
+        }
+        .nostrActivationAlert(
+            isPresented: $showActivationAlert,
+            message: "Enable Nostr to share your rounds and see friends' scores.",
+            onActivate: { showActivation = true }
+        )
+        .fullScreenCover(isPresented: $showActivation) {
+            WelcomeView { activated in
+                UserDefaults.standard.set(activated, forKey: "nostrActivated")
+                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                showActivation = false
+            }
         }
         .task {
             loadData()
@@ -240,7 +256,11 @@ struct RoundDetailView: View {
     private var shareMenu: some View {
         Menu {
             Button {
-                Task { await publishToNostr() }
+                if nostrService.isActivated {
+                    Task { await publishToNostr() }
+                } else {
+                    showActivationAlert = true
+                }
             } label: {
                 Label(isPublishing ? "Posting..." : "Post to Nostr", systemImage: "paperplane")
             }
@@ -484,6 +504,7 @@ struct RoundDetailView: View {
     /// Fetch other players' kind 1502 final records from relays.
     /// Merges remote scores into allPlayerScores by matching pubkey → player_index.
     private func fetchRemoteFinalRecords() async {
+        guard nostrService.isActivated else { return }
         guard let record = nostrRecord else { return }
 
         isFetchingRemote = true

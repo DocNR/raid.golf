@@ -15,6 +15,7 @@ class FeedViewModel {
 
     enum LoadState {
         case idle
+        case guest
         case noKey
         case noFollows
         case loaded
@@ -32,6 +33,12 @@ class FeedViewModel {
     }
 
     func refresh(nostrService: NostrService) async {
+        guard nostrService.isActivated else {
+            loadState = .guest
+            isLoading = false
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 

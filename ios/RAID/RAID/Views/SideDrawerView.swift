@@ -12,6 +12,10 @@ struct SideDrawerView: View {
 
     @Environment(\.drawerState) private var drawerState
 
+    @AppStorage("nostrActivated") private var nostrActivated = false
+    @State private var showActivationAlert = false
+    @State private var showActivation = false
+
     // Sign-out two-step alerts
     @State private var showKeyBackupAlert = false
     @State private var showSignOutConfirm = false
@@ -32,11 +36,15 @@ struct SideDrawerView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 drawerMenuItem(icon: "person.circle", label: "Profile") {
-                    drawerState.close()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            drawerState.showProfile = true
+                    if nostrActivated {
+                        drawerState.close()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                drawerState.showProfile = true
+                            }
                         }
+                    } else {
+                        showActivationAlert = true
                     }
                 }
 
@@ -45,11 +53,21 @@ struct SideDrawerView: View {
                 }
 
                 drawerMenuItem(icon: "key.horizontal", label: "Keys & Relays") {
-                    presentSheet { drawerState.showKeysRelays = true }
+                    if nostrActivated {
+                        presentSheet { drawerState.showKeysRelays = true }
+                    } else {
+                        showActivationAlert = true
+                    }
                 }
 
                 drawerMenuItem(icon: "info.circle", label: "About") {
                     presentSheet { drawerState.showAbout = true }
+                }
+
+                if !nostrActivated {
+                    drawerMenuItem(icon: "person.badge.plus", label: "Create Account") {
+                        presentSheet { showActivation = true }
+                    }
                 }
             }
             .padding(.top, 8)
@@ -59,8 +77,10 @@ struct SideDrawerView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 0) {
-                drawerMenuItem(icon: "rectangle.portrait.and.arrow.right", label: "Sign Out") {
-                    showKeyBackupAlert = true
+                if nostrActivated {
+                    drawerMenuItem(icon: "rectangle.portrait.and.arrow.right", label: "Sign Out") {
+                        showKeyBackupAlert = true
+                    }
                 }
 
                 drawerMenuItem(icon: "exclamationmark.triangle", label: "Danger Zone", tint: .red) {
@@ -71,6 +91,18 @@ struct SideDrawerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
+        .nostrActivationAlert(
+            isPresented: $showActivationAlert,
+            message: "Create an account to view your profile and share rounds.",
+            onActivate: { showActivation = true }
+        )
+        .fullScreenCover(isPresented: $showActivation) {
+            WelcomeView { activated in
+                UserDefaults.standard.set(activated, forKey: "nostrActivated")
+                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                showActivation = false
+            }
+        }
         // Sign Out — Step 1: key backup warning
         .alert("Have You Saved Your Secret Key?", isPresented: $showKeyBackupAlert) {
             Button("Copy Secret Key") {
@@ -167,27 +199,37 @@ struct SideDrawerView: View {
     @ViewBuilder
     private var profileHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ProfileAvatarView(
-                pictureURL: drawerState.ownProfile?.picture,
-                size: 56
-            )
+            if nostrActivated {
+                ProfileAvatarView(
+                    pictureURL: drawerState.ownProfile?.picture,
+                    size: 56
+                )
 
-            if let profile = drawerState.ownProfile {
-                if let displayName = profile.displayName, !displayName.isEmpty {
-                    Text(displayName)
-                        .font(.title3)
-                        .fontWeight(.semibold)
+                if let profile = drawerState.ownProfile {
+                    if let displayName = profile.displayName, !displayName.isEmpty {
+                        Text(displayName)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                    }
+                    if let name = profile.name, !name.isEmpty {
+                        Text("@\(name)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                if let name = profile.name, !name.isEmpty {
-                    Text("@\(name)")
-                        .font(.subheadline)
+
+                if let npub = try? KeyManager.loadOrCreate().publicKeyBech32() {
+                    Text(String(npub.prefix(20)) + "...")
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-            }
-
-            if let npub = try? KeyManager.loadOrCreate().publicKeyBech32() {
-                Text(String(npub.prefix(20)) + "...")
-                    .font(.system(.caption, design: .monospaced))
+            } else {
+                ProfileAvatarView(pictureURL: nil, size: 56)
+                Text("Guest")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Text("Create an account to share rounds")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }

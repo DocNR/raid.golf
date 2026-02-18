@@ -19,6 +19,10 @@ struct RoundsView: View {
     @State private var activeRoundStore: ActiveRoundStore?
     @State private var errorMessage: String?
 
+    // Guest activation state
+    @State private var showActivationAlert = false
+    @State private var showActivation = false
+
     // DM invite state
     @State private var pendingInviteCount: Int = 0
 
@@ -47,7 +51,11 @@ struct RoundsView: View {
                             Label("New Round", systemImage: "plus")
                         }
                         Button {
-                            showingJoinRound = true
+                            if nostrService.isActivated {
+                                showingJoinRound = true
+                            } else {
+                                showActivationAlert = true
+                            }
                         } label: {
                             Label("Join Round", systemImage: "person.badge.plus")
                         }
@@ -113,6 +121,18 @@ struct RoundsView: View {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .nostrActivationAlert(
+                isPresented: $showActivationAlert,
+                message: "Enable Nostr to join multiplayer rounds with friends.",
+                onActivate: { showActivation = true }
+            )
+            .fullScreenCover(isPresented: $showActivation) {
+                WelcomeView { activated in
+                    UserDefaults.standard.set(activated, forKey: "nostrActivated")
+                    UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                    showActivation = false
+                }
             }
         }
     }
@@ -361,6 +381,7 @@ struct RoundsView: View {
     // MARK: - DM Invite Check
 
     private func checkPendingInvites() async {
+        guard nostrService.isActivated else { return }
         guard let keyManager = try? KeyManager.loadOrCreate() else { return }
         do {
             let invites = try await DMInviteService.fetchIncomingInvites(

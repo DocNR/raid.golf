@@ -12,6 +12,12 @@ final class NostrServiceTests: XCTestCase {
 
     private let service = NostrService()
 
+    override func setUp() {
+        super.setUp()
+        // Enable Nostr activation gate so service methods contact relays
+        UserDefaults.standard.set(true, forKey: "nostrActivated")
+    }
+
     // MARK: - NostrProfile Parsing
 
     func testParseProfile_AllFields() {
@@ -135,6 +141,31 @@ final class NostrServiceTests: XCTestCase {
     func testResolveProfiles_EmptyInput() async throws {
         let result = try await service.resolveProfiles(pubkeyHexes: [])
         XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - Guest Mode Gate
+
+    func testGuestMode_FetchProfilesReturnsEmpty() async throws {
+        UserDefaults.standard.set(false, forKey: "nostrActivated")
+        let result = try await service.fetchProfiles(pubkeyHexes: ["aabbccdd"])
+        XCTAssertTrue(result.isEmpty, "Guest mode should return empty profiles")
+        UserDefaults.standard.set(true, forKey: "nostrActivated")
+    }
+
+    func testGuestMode_PublishReturnsEmptyId() async throws {
+        UserDefaults.standard.set(false, forKey: "nostrActivated")
+        let keys = Keys.generate()
+        let builder = EventBuilder(kind: Kind(kind: 1), content: "test")
+        let eventId = try await service.publishEvent(keys: keys, builder: builder)
+        XCTAssertEqual(eventId, "", "Guest mode publish should return empty event ID")
+        UserDefaults.standard.set(true, forKey: "nostrActivated")
+    }
+
+    func testGuestMode_ResolveProfilesReturnsEmptyForUncached() async throws {
+        UserDefaults.standard.set(false, forKey: "nostrActivated")
+        let result = try await service.resolveProfiles(pubkeyHexes: ["uncached_key_123"])
+        XCTAssertNil(result["uncached_key_123"], "Guest mode should not fetch uncached profiles from relays")
+        UserDefaults.standard.set(true, forKey: "nostrActivated")
     }
 
     // MARK: - Live Relay Tests (require network)

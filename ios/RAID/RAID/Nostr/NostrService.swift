@@ -29,11 +29,22 @@ class NostrService {
     /// and fetchFollowListWithProfiles. Cleared on app restart.
     private(set) var profileCache: [String: NostrProfile] = [:]
 
+    // MARK: - Activation Gate
+
+    /// Whether Nostr features are active. Guest users have this set to false.
+    var isActivated: Bool {
+        UserDefaults.standard.bool(forKey: "nostrActivated")
+    }
+
     // MARK: - Publish
 
     /// Publish a pre-built EventBuilder and return its event ID.
     /// Used for NIP-101g events where we need the ID for cross-referencing.
     func publishEvent(keys: Keys, builder: EventBuilder) async throws -> String {
+        guard isActivated else {
+            print("[RAID][Guest] publishEvent blocked — Nostr not activated")
+            return ""
+        }
         let signer = NostrSigner.keys(keys: keys)
         let client = Client(signer: signer)
 
@@ -61,6 +72,10 @@ class NostrService {
     /// Fetch the follow list (kind 3 / NIP-02) for a given public key.
     /// Returns an array of followed public key hex strings.
     func fetchFollowList(pubkey: PublicKey) async throws -> [String] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchFollowList blocked — Nostr not activated")
+            return []
+        }
         let client = try await connectReadClient()
 
         let filter = Filter()
@@ -92,6 +107,10 @@ class NostrService {
     /// Fetch profile metadata (kind 0 / NIP-01) for a list of public keys.
     /// Returns a dictionary mapping pubkey hex → NostrProfile.
     func fetchProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchProfiles blocked — Nostr not activated")
+            return [:]
+        }
         guard !pubkeyHexes.isEmpty else { return [:] }
 
         let pubkeys = try pubkeyHexes.compactMap { hex -> PublicKey? in
@@ -114,6 +133,10 @@ class NostrService {
     /// Fetch follow list and profiles in a single connection session.
     /// Avoids the overhead of connecting/disconnecting twice.
     func fetchFollowListWithProfiles(pubkey: PublicKey) async throws -> (follows: [String], profiles: [String: NostrProfile]) {
+        guard isActivated else {
+            print("[RAID][Guest] fetchFollowListWithProfiles blocked — Nostr not activated")
+            return (follows: [], profiles: [:])
+        }
         let client = try await connectReadClient()
 
         // 1. Fetch kind 3 (follow list)
@@ -158,6 +181,11 @@ class NostrService {
 
     /// Resolve profiles from cache or fetch uncached keys from relays.
     func resolveProfiles(pubkeyHexes: [String]) async throws -> [String: NostrProfile] {
+        if !isActivated {
+            return pubkeyHexes.reduce(into: [:]) { result, hex in
+                result[hex] = profileCache[hex]
+            }
+        }
         let uncached = pubkeyHexes.filter { profileCache[$0] == nil }
 
         if !uncached.isEmpty {
@@ -177,6 +205,10 @@ class NostrService {
     /// Fetch kind 1 (text notes) and kind 1502 (final round records) from followed pubkeys
     /// that are tagged with #golf. Returns verified events sorted by created_at descending.
     func fetchFeedEvents(followedPubkeys: [String]) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchFeedEvents blocked — Nostr not activated")
+            return []
+        }
         guard !followedPubkeys.isEmpty else { return [] }
 
         let pubkeys = try followedPubkeys.compactMap { hex -> PublicKey? in
@@ -209,6 +241,10 @@ class NostrService {
     /// Fetch kind 30501 live scorecard events for a round (by initiation event ID).
     /// Returns all matching events — caller deduplicates (keep latest per author).
     func fetchLiveScorecards(initiationEventId: String) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchLiveScorecards blocked — Nostr not activated")
+            return []
+        }
         let client = try await connectReadClient()
 
         // Filter by kind 30501 with e tag matching initiation event ID
@@ -232,6 +268,10 @@ class NostrService {
     /// Fetch kind 1502 final record events for a round (by initiation event ID).
     /// Returns all matching events — each player publishes their own.
     func fetchFinalRecords(initiationEventId: String) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchFinalRecords blocked — Nostr not activated")
+            return []
+        }
         let client = try await connectReadClient()
 
         let eventId = try EventId.parse(id: initiationEventId)
@@ -256,6 +296,10 @@ class NostrService {
     /// Fetch a single event by its hex ID from read relays.
     /// Returns nil if the event is not found on any relay.
     func fetchEvent(eventIdHex: String) async throws -> Event? {
+        guard isActivated else {
+            print("[RAID][Guest] fetchEvent blocked — Nostr not activated")
+            return nil
+        }
         let eventId = try EventId.parse(id: eventIdHex)
         let client = try await connectReadClient()
 
@@ -281,6 +325,10 @@ class NostrService {
     /// Fetch a user's kind 10050 DM inbox relay list (NIP-17).
     /// Returns relay URL strings, or empty if no 10050 found.
     func fetchInboxRelays(pubkeyHex: String) async throws -> [String] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchInboxRelays blocked — Nostr not activated")
+            return []
+        }
         let pubkey = try PublicKey.parse(publicKey: pubkeyHex)
         let client = try await connectReadClient()
 
@@ -320,6 +368,10 @@ class NostrService {
     /// The SDK handles the full NIP-59 flow internally (rumor → seal → gift wrap).
     /// Sends to recipient's inbox relays (kind 10050) + default relays for redundancy.
     func sendGiftWrapDM(senderKeys: Keys, receiverPubkeyHex: String, rumor: UnsignedEvent, targetRelays: [String]? = nil) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] sendGiftWrapDM blocked — Nostr not activated")
+            return
+        }
         let receiver = try PublicKey.parse(publicKey: receiverPubkeyHex)
         let signer = NostrSigner.keys(keys: senderKeys)
         let client = Client(signer: signer)
@@ -350,6 +402,10 @@ class NostrService {
     /// Publish the user's kind 10050 DM inbox relay preferences (NIP-17).
     /// Replaceable — overwrites any previous 10050.
     func publishInboxRelays(keys: Keys, relays: [String]) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishInboxRelays blocked — Nostr not activated")
+            return
+        }
         var tags: [Tag] = []
         for relay in relays {
             tags.append(try Tag.parse(data: ["relay", relay]))
@@ -364,6 +420,10 @@ class NostrService {
     /// Fetch kind 1059 gift wrap events addressed to the user from read relays.
     /// Returns raw events — caller unwraps and filters.
     func fetchGiftWraps(recipientPubkey: PublicKey, since: UInt64? = nil) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchGiftWraps blocked — Nostr not activated")
+            return []
+        }
         let client = try await connectReadClient()
 
         var filter = Filter()
@@ -390,6 +450,10 @@ class NostrService {
 
     /// Unwrap a single gift wrap event. Returns nil if unwrap fails.
     func unwrapGiftWrap(keys: Keys, giftWrap: Event) async -> UnwrappedGift? {
+        guard isActivated else {
+            print("[RAID][Guest] unwrapGiftWrap blocked — Nostr not activated")
+            return nil
+        }
         let signer = NostrSigner.keys(keys: keys)
         do {
             return try await UnwrappedGift.fromGiftWrap(signer: signer, giftWrap: giftWrap)
