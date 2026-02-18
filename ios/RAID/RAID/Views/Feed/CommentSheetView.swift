@@ -1,7 +1,9 @@
 // CommentSheetView.swift
 // RAID Golf
 //
-// Threaded comments on a feed item (NIP-22, kind 1111).
+// Replies/comments on a feed item.
+// Kind 1 text notes → NIP-10 kind 1 reply.
+// Scorecards (kind 1502) → NIP-22 kind 1111 comment.
 
 import SwiftUI
 import GRDB
@@ -10,6 +12,7 @@ import NostrSDK
 struct CommentSheetView: View {
     let eventId: String
     let rawEvent: Event?
+    let isTextNote: Bool
     let dbQueue: DatabaseQueue
 
     @Environment(\.dismiss) private var dismiss
@@ -32,9 +35,9 @@ struct CommentSheetView: View {
                 } else if comments.isEmpty {
                     Spacer()
                     ContentUnavailableView {
-                        Label("No Comments", systemImage: "bubble.left")
+                        Label(isTextNote ? "No Replies" : "No Comments", systemImage: "bubble.left")
                     } description: {
-                        Text("Be the first to comment.")
+                        Text(isTextNote ? "Be the first to reply." : "Be the first to comment.")
                     }
                     Spacer()
                 } else {
@@ -44,7 +47,7 @@ struct CommentSheetView: View {
                 Divider()
                 inputBar
             }
-            .navigationTitle("Comments")
+            .navigationTitle(isTextNote ? "Replies" : "Comments")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -105,7 +108,7 @@ struct CommentSheetView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
-            TextField("Add a comment...", text: $commentText, axis: .vertical)
+            TextField(isTextNote ? "Add a reply..." : "Add a comment...", text: $commentText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
 
@@ -127,7 +130,9 @@ struct CommentSheetView: View {
     private func loadComments() async {
         isLoading = true
         do {
-            let events = try await nostrService.fetchComments(eventId: eventId)
+            let events = isTextNote
+                ? try await nostrService.fetchReplies(eventId: eventId)
+                : try await nostrService.fetchComments(eventId: eventId)
             var rows: [CommentRow] = []
             var pubkeys: Set<String> = []
 
@@ -166,7 +171,11 @@ struct CommentSheetView: View {
         isSending = true
         do {
             let keys = try KeyManager.loadOrCreate().signingKeys()
-            try await nostrService.publishComment(keys: keys, content: text, targetEvent: event)
+            if isTextNote {
+                try await nostrService.publishReply(keys: keys, content: text, replyTo: event)
+            } else {
+                try await nostrService.publishComment(keys: keys, content: text, targetEvent: event)
+            }
 
             // Optimistic append
             let ownHex = keys.publicKey().toHex()

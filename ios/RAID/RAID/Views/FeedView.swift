@@ -13,7 +13,7 @@ struct FeedView: View {
     @State private var viewModel = FeedViewModel()
     @AppStorage("nostrActivated") private var nostrActivated = false
     @State private var showActivation = false
-    @State private var commentItemId: String?
+    @State private var commentTarget: (id: String, isTextNote: Bool)?
 
     var body: some View {
         NavigationStack {
@@ -81,6 +81,7 @@ struct FeedView: View {
 
     private struct CommentSheetBinding: Identifiable {
         let id: String
+        let isTextNote: Bool
     }
 
     // MARK: - Guest State
@@ -287,7 +288,9 @@ struct FeedView: View {
                             viewModel.react(itemId: item.id, nostrService: nostrService)
                         },
                         onComment: {
-                            commentItemId = item.id
+                            let isText: Bool
+                            if case .textNote = item { isText = true } else { isText = false }
+                            commentTarget = (id: item.id, isTextNote: isText)
                         }
                     )
                     .padding(.horizontal)
@@ -298,12 +301,13 @@ struct FeedView: View {
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService) }
         .sheet(item: Binding(
-            get: { commentItemId.map { CommentSheetBinding(id: $0) } },
-            set: { commentItemId = $0?.id }
+            get: { commentTarget.map { CommentSheetBinding(id: $0.id, isTextNote: $0.isTextNote) } },
+            set: { commentTarget = $0.map { ($0.id, $0.isTextNote) } }
         )) { binding in
             CommentSheetView(
                 eventId: binding.id,
                 rawEvent: viewModel.rawEvents[binding.id],
+                isTextNote: binding.isTextNote,
                 dbQueue: dbQueue
             )
         }

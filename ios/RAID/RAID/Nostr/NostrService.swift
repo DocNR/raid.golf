@@ -435,9 +435,83 @@ class NostrService {
         return (counts: counts, ownReacted: ownReacted)
     }
 
+    // MARK: - NIP-10 Text Note Replies
+
+    /// Publish a kind 1 reply to a kind 1 text note (NIP-10 threading).
+    func publishReply(keys: Keys, content: String, replyTo: Event) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishReply blocked — Nostr not activated")
+            return
+        }
+        let builder = try EventBuilder.textNoteReply(content: content, replyTo: replyTo, root: nil, relayUrl: nil)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Fetch kind 1 replies to a specific event (NIP-10 threading).
+    /// Returns verified events sorted by created_at ascending.
+    func fetchReplies(eventId: String) async throws -> [Event] {
+        guard isActivated else { return [] }
+        let id = try EventId.parse(id: eventId)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .kind(kind: Kind(kind: 1))
+            .event(eventId: id)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return verifiedEvents(try events.toVec())
+            .sorted { $0.createdAt().asSecs() < $1.createdAt().asSecs() }
+    }
+
+    /// Fetch reply counts (kind 1 with e-tag) for multiple events. Returns [eventIdHex: count].
+    func fetchReplyCounts(eventIds: [String]) async throws -> [String: Int] {
+        guard isActivated else { return [:] }
+        guard !eventIds.isEmpty else { return [:] }
+
+        let ids = try eventIds.map { try EventId.parse(id: $0) }
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .kind(kind: Kind(kind: 1))
+            .events(ids: ids)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        var counts: [String: Int] = [:]
+        for event in try events.toVec() {
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "e" {
+                    counts[vec[1], default: 0] += 1
+                    break
+                }
+            }
+        }
+
+        return counts
+    }
+
     // MARK: - NIP-22 Comments
 
-    /// Publish a comment on an event (NIP-22, kind 1111).
+    /// Publish a comment on a non-kind-1 event (NIP-22, kind 1111).
+    /// Must NOT be used for kind 1 text notes — use publishReply instead.
     func publishComment(keys: Keys, content: String, targetEvent: Event) async throws {
         guard isActivated else {
             print("[RAID][Guest] publishComment blocked — Nostr not activated")

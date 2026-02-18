@@ -101,10 +101,24 @@ class FeedViewModel {
                 ownReactions = result.ownReacted
             }
 
-            // 7. Fetch comment counts
-            if let counts = try? await nostrService.fetchCommentCounts(eventIds: feedIds) {
-                commentCounts = counts
+            // 7. Fetch reply/comment counts (kind 1 replies for text notes, kind 1111 for scorecards)
+            let textNoteIds = items.compactMap { item -> String? in
+                if case .textNote = item { return item.id } else { return nil }
             }
+            let scorecardIds = items.compactMap { item -> String? in
+                if case .scorecard = item { return item.id } else { return nil }
+            }
+
+            var counts: [String: Int] = [:]
+            if !textNoteIds.isEmpty,
+               let replyCounts = try? await nostrService.fetchReplyCounts(eventIds: textNoteIds) {
+                counts.merge(replyCounts) { $1 }
+            }
+            if !scorecardIds.isEmpty,
+               let commentCountsResult = try? await nostrService.fetchCommentCounts(eventIds: scorecardIds) {
+                counts.merge(commentCountsResult) { $1 }
+            }
+            commentCounts = counts
         } catch {
             errorMessage = error.localizedDescription
         }
