@@ -2,6 +2,10 @@
 
 Known issues and deferred improvements, roughly prioritized.
 
+Numbers match those used in MEMORY.md. Closed items retained for audit trail.
+
+---
+
 ## B-001: Club Name Normalization
 
 **Priority:** Medium (post-Milestone 1)
@@ -35,64 +39,7 @@ Add a club alias / canonical-name mapping layer:
 
 ---
 
-## B-002: Template Versioning
-
-**Priority:** Low (post-Milestone 1)
-**Area:** Templates, Analysis
-
-Adding or removing a metric from a template creates a new `template_hash`.
-Existing `club_subsessions` rows referencing the old hash remain unchanged.
-There is no migration or "upgrade" path from one template version to another.
-
-### Impact
-- Historical analyses remain pinned to the template version used at the time.
-- Re-analysis with a new template creates a new `club_subsessions` row.
-- Users may accumulate multiple template versions for the same club.
-
-### Proposed fix
-- Add template lifecycle UI: mark templates as deprecated, show lineage
-- Optionally allow re-analysis of all sessions with a new template (batch operation)
-
----
-
-## B-003: Shot Editing
-
-**Priority:** Low (post-Milestone 1)
-**Area:** Ingest, Shots
-
-Shots table has immutability triggers (no UPDATE/DELETE).
-If a user imports incorrect data, there is no in-app way to correct it.
-
-### Impact
-- Bad data (e.g., Rapsodo sensor glitch) cannot be edited.
-- Only workaround: re-import corrected CSV as a new session.
-
-### Proposed fix
-- Append-only correction model: INSERT a correction row with FK to original shot.
-- Analysis queries prefer correction rows over originals where present.
-- Alternatively: relax immutability for shots (not recommended; breaks audit trail).
-
----
-
-## B-004: Course Editing
-
-**Priority:** Low (post-Milestone 1)
-**Area:** Scorecard, Courses
-
-Course snapshots have immutability triggers (no UPDATE/DELETE).
-If a user creates a course with incorrect hole data, they cannot edit it.
-
-### Impact
-- Typos or incorrect par values cannot be fixed.
-- Only workaround: create a new course and hide the old one.
-
-### Proposed fix
-- Add hide/archive flag for course snapshots (similar to templates).
-- Alternatively: relax immutability for course snapshots (not recommended).
-
----
-
-## B-005: Multi-Device Round Completion UX
+## B-002: Multi-Device Round Completion UX
 
 **Priority:** Medium (Phase 7+)
 **Area:** Scorecard, Multi-Device Rounds, Nostr
@@ -113,11 +60,11 @@ When the round creator finishes before a joiner, `RoundReviewView` shows stale r
 ### Code pointers
 - `ios/RAID/RAID/Views/RoundReviewView.swift` — review screen (currently uses ActiveRoundStore state)
 - `ios/RAID/RAID/Views/RoundDetailView.swift` — detail screen (fetches 1502 on load)
-- `ios/RAID/RAID/Nostr/NostrClient.swift` — `fetchFinalRecords()` method
+- `ios/RAID/RAID/Nostr/NostrService.swift` — `fetchFinalRecords()` method
 
 ---
 
-## B-006: Camera QR Scanning for Round Join
+## B-003: Camera QR Scanning for Round Join
 
 **Priority:** Low (Phase 7+)
 **Area:** Scorecard, Multi-Device Rounds, UX
@@ -139,13 +86,13 @@ Round join flow currently requires pasting nevent URI. QR scanning with device c
 
 ---
 
-## B-007: Signature Verification on Remote Events
+## B-004: Signature Verification on Remote Events
 
 **Status:** ✅ CLOSED (Phase 8A.4, 2026-02-15)
 **Priority:** High (Phase 7+, security)
 **Area:** Scorecard, Multi-Device Rounds, Nostr
 
-Kind 1502 final records and kind 30501 live scorecards are accepted without verifying that the author's pubkey matches a player in the kind 1501 initiation event's `p` tags.
+Kind 1502 final records and kind 30501 live scorecards were accepted without verifying that the author's pubkey matched a player in the kind 1501 initiation event's `p` tags.
 
 ### Resolution
 - **Phase 8A.3:** All relay fetch methods now call `event.verify() -> Bool` to verify event ID and schnorr signature. Invalid events are silently discarded.
@@ -158,3 +105,132 @@ Kind 1502 final records and kind 30501 live scorecards are accepted without veri
 - `ios/RAID/RAID/Scorecard/ActiveRoundStore.swift` — `fetchRemoteScores()` author check (Phase 8A.4)
 - `ios/RAID/RAID/Views/RoundDetailView.swift` — `fetchRemoteFinalRecords()` author check (Phase 8A.4)
 - `ios/RAID/RAID/Scorecard/RoundPlayerRepository.swift` — `fetchPlayerPubkeys(forRound:)` for roster lookup
+
+---
+
+## B-005: NostrService Profile Cache Concurrency
+
+**Priority:** Low (post-Phase 8C)
+**Area:** Nostr, Threading
+
+`NostrService.profileCache` is a plain `var` dictionary with no synchronization. Multiple async callers (e.g., `resolveProfiles` + `fetchFollowListWithProfiles` overlapping) can write concurrently, causing undefined behavior or crashes under load.
+
+### Impact
+- Rare in practice (fire-and-forget connections are short-lived), but theoretically unsafe.
+- No user-visible crash reported yet.
+
+### Proposed fix
+- Make `NostrService` an `actor`, or
+- Protect `profileCache` with an `NSLock` or serial dispatch queue, or
+- Move cache entirely into `ProfileCacheRepository` (GRDB-backed, already thread-safe).
+
+### Code pointers
+- `ios/RAID/RAID/Nostr/NostrService.swift` — `profileCache` property
+
+---
+
+## B-006: No Outbox Queue for Social Events
+
+**Priority:** Low (post-Phase 8C)
+**Area:** Nostr, Social
+
+Comments, replies, and reactions are published fire-and-forget. If the app is force-quit during the ~1s publish window (after the user taps send but before relay confirms), the event is silently lost. There is no local queue to retry on next launch.
+
+### Impact
+- A user who taps "Send" and immediately force-quits the app may lose their comment.
+- No data loss in the local sense (nothing was stored), but the social action is dropped.
+- Low frequency in practice; not yet user-reported.
+
+### Proposed fix
+- GRDB-backed outbox queue: write event to a `pending_nostr_events` table before publishing.
+- On next app foreground, retry any pending events not yet acknowledged by a relay.
+- On relay `OK` response, mark as sent and delete from queue.
+- Sequence after Phase 8C (NIP-65 relay routing will determine where to send events).
+
+### Code pointers
+- `ios/RAID/RAID/Nostr/NostrService.swift` — `publishReaction()`, `publishComment()`, `publishReply()`
+
+---
+
+## B-007: Social Content Caching
+
+**Priority:** Medium (post-Phase 8C)
+**Area:** Nostr, Social, Performance
+
+The social layer has no local persistence for fetched content. Every visit to a previously-seen feed, thread, or profile triggers a fresh relay round-trip.
+
+### Impact
+- **PFP images:** `AsyncImage` re-fetches from the remote URL on every view appearance — no image cache layer. Avatars flash as gray circles before loading.
+- **Comment threads:** Visiting a thread that was already loaded re-fetches all comments from the relay.
+- **Feed:** The feed is completely lost on app restart — `FeedViewModel` is re-instantiated and repopulates from relay. First-open feed is blank until relay responds.
+- **Profile display lag:** Even after a profile is stored in `nostr_profiles` (GRDB), avatar images are not cached locally, so images always re-download.
+
+### Proposed fix
+- **Image cache:** Use `URLCache` with a configured disk capacity, or wrap `URLSession` to respect cache-control headers.
+- **Comment/reaction persistence:** Store fetched comments and reaction counts in GRDB (`cached_comments`, `cached_reaction_counts` tables) with a TTL or per-feed staleness policy.
+- **Feed persistence:** Persist the last N feed items to GRDB so the feed renders immediately on app start, then refreshes in the background.
+
+### Sequencing
+**Must be implemented after Phase 8C** (NIP-65 relay management). Caching architecture depends on knowing which relays serve which content — relay routing changes in 8C will affect cache invalidation strategy.
+
+### Code pointers
+- `ios/RAID/RAID/Nostr/FeedViewModel.swift` — feed state, no persistence on restart
+- `ios/RAID/RAID/Nostr/NostrService.swift` — `fetchComments()`, `fetchReactions()`, `fetchReplies()`
+- `ios/RAID/RAID/Nostr/ProfileCacheRepository.swift` — profiles cached (GRDB), but avatar images are not
+
+---
+
+## B-008: Template Versioning
+
+**Priority:** Low (post-Milestone 1)
+**Area:** Templates, Analysis
+
+Adding or removing a metric from a template creates a new `template_hash`.
+Existing `club_subsessions` rows referencing the old hash remain unchanged.
+There is no migration or "upgrade" path from one template version to another.
+
+### Impact
+- Historical analyses remain pinned to the template version used at the time.
+- Re-analysis with a new template creates a new `club_subsessions` row.
+- Users may accumulate multiple template versions for the same club.
+
+### Proposed fix
+- Add template lifecycle UI: mark templates as deprecated, show lineage.
+- Optionally allow re-analysis of all sessions with a new template (batch operation).
+
+---
+
+## B-009: Shot Editing
+
+**Priority:** Low (post-Milestone 1)
+**Area:** Ingest, Shots
+
+Shots table has immutability triggers (no UPDATE/DELETE).
+If a user imports incorrect data, there is no in-app way to correct it.
+
+### Impact
+- Bad data (e.g., Rapsodo sensor glitch) cannot be edited.
+- Only workaround: re-import corrected CSV as a new session.
+
+### Proposed fix
+- Append-only correction model: INSERT a correction row with FK to original shot.
+- Analysis queries prefer correction rows over originals where present.
+- Alternatively: relax immutability for shots (not recommended; breaks audit trail).
+
+---
+
+## B-010: Course Editing
+
+**Priority:** Low (post-Milestone 1)
+**Area:** Scorecard, Courses
+
+Course snapshots have immutability triggers (no UPDATE/DELETE).
+If a user creates a course with incorrect hole data, they cannot edit it.
+
+### Impact
+- Typos or incorrect par values cannot be fixed.
+- Only workaround: create a new course and hide the old one.
+
+### Proposed fix
+- Add hide/archive flag for course snapshots (similar to templates).
+- Alternatively: relax immutability for course snapshots (not recommended).
