@@ -14,9 +14,10 @@ class FeedViewModel {
     var errorMessage: String?
     var resolvedProfiles: [String: NostrProfile] = [:]
 
-    // Reactions (NIP-25)
+    // Reactions (NIP-25) & Comments (NIP-22)
     var reactionCounts: [String: Int] = [:]
     var ownReactions: Set<String> = []
+    var commentCounts: [String: Int] = [:]
     var rawEvents: [String: Event] = [:]
 
     enum LoadState {
@@ -98,6 +99,11 @@ class FeedViewModel {
             if let result = try? await nostrService.fetchReactions(eventIds: feedIds, ownPubkeyHex: ownHex) {
                 reactionCounts = result.counts
                 ownReactions = result.ownReacted
+            }
+
+            // 7. Fetch comment counts
+            if let counts = try? await nostrService.fetchCommentCounts(eventIds: feedIds) {
+                commentCounts = counts
             }
         } catch {
             errorMessage = error.localizedDescription

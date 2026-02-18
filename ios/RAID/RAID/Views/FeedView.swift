@@ -4,12 +4,16 @@
 // Social feed from followed users. Shows kind 1 text notes and kind 1502 scorecards.
 
 import SwiftUI
+import GRDB
 
 struct FeedView: View {
+    let dbQueue: DatabaseQueue
+
     @Environment(\.nostrService) private var nostrService
     @State private var viewModel = FeedViewModel()
     @AppStorage("nostrActivated") private var nostrActivated = false
     @State private var showActivation = false
+    @State private var commentItemId: String?
 
     var body: some View {
         NavigationStack {
@@ -71,6 +75,12 @@ struct FeedView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Comment Sheet Binding
+
+    private struct CommentSheetBinding: Identifiable {
+        let id: String
     }
 
     // MARK: - Guest State
@@ -272,8 +282,12 @@ struct FeedView: View {
                         profile: viewModel.resolvedProfiles[item.pubkeyHex],
                         reactionCount: viewModel.reactionCounts[item.id] ?? 0,
                         hasReacted: viewModel.ownReactions.contains(item.id),
+                        commentCount: viewModel.commentCounts[item.id] ?? 0,
                         onReact: {
                             viewModel.react(itemId: item.id, nostrService: nostrService)
+                        },
+                        onComment: {
+                            commentItemId = item.id
                         }
                     )
                     .padding(.horizontal)
@@ -283,5 +297,15 @@ struct FeedView: View {
             }
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService) }
+        .sheet(item: Binding(
+            get: { commentItemId.map { CommentSheetBinding(id: $0) } },
+            set: { commentItemId = $0?.id }
+        )) { binding in
+            CommentSheetView(
+                eventId: binding.id,
+                rawEvent: viewModel.rawEvents[binding.id],
+                dbQueue: dbQueue
+            )
+        }
     }
 }

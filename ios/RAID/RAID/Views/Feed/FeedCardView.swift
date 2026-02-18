@@ -10,7 +10,9 @@ struct FeedCardView: View {
     let profile: NostrProfile?
     var reactionCount: Int = 0
     var hasReacted: Bool = false
+    var commentCount: Int = 0
     var onReact: (() -> Void)?
+    var onComment: (() -> Void)?
 
     private let avatarSize: CGFloat = 40
     private let avatarSpacing: CGFloat = 10
@@ -70,6 +72,21 @@ struct FeedCardView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(hasReacted)
+
+                Button {
+                    onComment?()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.left")
+                            .foregroundStyle(.secondary)
+                        if commentCount > 0 {
+                            Text("\(commentCount)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
 
                 Spacer()
             }

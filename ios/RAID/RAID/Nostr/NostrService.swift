@@ -435,6 +435,86 @@ class NostrService {
         return (counts: counts, ownReacted: ownReacted)
     }
 
+    // MARK: - NIP-22 Comments
+
+    /// Publish a comment on an event (NIP-22, kind 1111).
+    func publishComment(keys: Keys, content: String, targetEvent: Event) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishComment blocked — Nostr not activated")
+            return
+        }
+        let target = CommentTarget.event(
+            id: targetEvent.id(),
+            relayHint: nil,
+            pubkeyHint: targetEvent.author(),
+            kind: targetEvent.kind()
+        )
+        let builder = try EventBuilder.comment(content: content, commentTo: target, root: nil)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Fetch comments (kind 1111) on a specific event.
+    /// Returns verified events sorted by created_at ascending.
+    func fetchComments(eventId: String) async throws -> [Event] {
+        guard isActivated else { return [] }
+        let id = try EventId.parse(id: eventId)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .kind(kind: Kind(kind: 1111))
+            .event(eventId: id)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+        return verifiedEvents(try events.toVec())
+            .sorted { $0.createdAt().asSecs() < $1.createdAt().asSecs() }
+    }
+
+    /// Fetch comment counts for multiple events. Returns [eventIdHex: count].
+    func fetchCommentCounts(eventIds: [String]) async throws -> [String: Int] {
+        guard isActivated else { return [:] }
+        guard !eventIds.isEmpty else { return [:] }
+
+        let ids = try eventIds.map { try EventId.parse(id: $0) }
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .kind(kind: Kind(kind: 1111))
+            .events(ids: ids)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        var counts: [String: Int] = [:]
+        for event in try events.toVec() {
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                // NIP-22 uses uppercase E for root, lowercase e for parent
+                if vec.count >= 2 && (vec[0] == "E" || vec[0] == "e") {
+                    counts[vec[1], default: 0] += 1
+                    break
+                }
+            }
+        }
+
+        return counts
+    }
+
     // MARK: - NIP-51 Clubhouse (Follow Set)
 
     /// Fetch the user's Clubhouse list (kind 30000, d="clubhouse").

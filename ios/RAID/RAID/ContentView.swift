@@ -24,7 +24,7 @@ struct ContentView: View {
         ZStack(alignment: .leading) {
             // Main content
             TabView(selection: $selectedTab) {
-                FeedView()
+                FeedView(dbQueue: dbQueue)
                     .tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
                     .tag(Tab.feed)
 
