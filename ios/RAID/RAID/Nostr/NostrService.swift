@@ -376,6 +376,63 @@ class NostrService {
         return verifiedEvents(try events.toVec())
     }
 
+    // MARK: - NIP-51 Clubhouse (Follow Set)
+
+    /// Fetch the user's Clubhouse list (kind 30000, d="clubhouse").
+    /// Returns pubkey hex strings of members, or empty if no list found.
+    func fetchClubhouse(pubkeyHex: String) async throws -> [String] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchClubhouse blocked — Nostr not activated")
+            return []
+        }
+        let pubkey = try PublicKey.parse(publicKey: pubkeyHex)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .author(author: pubkey)
+            .kind(kind: Kind(kind: 30000))
+            .identifier(identifier: "clubhouse")
+            .limit(limit: 1)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        guard let event = events.first(),
+              verifiedEvents([event]).first != nil else {
+            return []
+        }
+
+        // Extract p-tags (member pubkeys)
+        let tags = event.tags().toVec()
+        var members: [String] = []
+        for tag in tags {
+            let vec = tag.asVec()
+            if vec.count >= 2 && vec[0] == "p" {
+                members.append(vec[1])
+            }
+        }
+        return members
+    }
+
+    /// Publish the user's Clubhouse list (kind 30000, d="clubhouse").
+    /// Addressable replaceable — relays keep only the newest per (author, kind, d-tag).
+    func publishClubhouse(keys: Keys, memberPubkeyHexes: [String]) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishClubhouse blocked — Nostr not activated")
+            return
+        }
+        let pubkeys = try memberPubkeyHexes.map { try PublicKey.parse(publicKey: $0) }
+        let builder = EventBuilder.followSet(identifier: "clubhouse", publicKeys: pubkeys)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
     // MARK: - NIP-17 Gift Wrap DMs
 
     /// Fetch a user's kind 10050 DM inbox relay list (NIP-17).

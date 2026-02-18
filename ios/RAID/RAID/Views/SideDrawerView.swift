@@ -52,6 +52,14 @@ struct SideDrawerView: View {
                     presentSheet { drawerState.showPractice = true }
                 }
 
+                drawerMenuItem(icon: "person.2", label: "Clubhouse") {
+                    if nostrActivated {
+                        presentSheet { drawerState.showClubhouse = true }
+                    } else {
+                        showActivationAlert = true
+                    }
+                }
+
                 drawerMenuItem(icon: "key.horizontal", label: "Keys & Relays") {
                     if nostrActivated {
                         presentSheet { drawerState.showKeysRelays = true }

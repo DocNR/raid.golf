@@ -277,10 +277,14 @@ private struct PlayerPickerSheet: View {
     @State private var npubInput = ""
     @State private var npubError: String?
 
+    // Clubhouse members (loaded from GRDB)
+    @State private var clubhouseProfiles: [NostrProfile] = []
+
     var body: some View {
         NavigationStack {
             List {
                 selectedSection
+                clubhouseSection
                 followsSection
                 addByKeySection
             }
@@ -300,6 +304,7 @@ private struct PlayerPickerSheet: View {
                 }
             }
             .task {
+                await loadClubhouseMembers()
                 await loadFollowList()
             }
             .sheet(isPresented: $showNpubEntry) {
@@ -328,6 +333,17 @@ private struct PlayerPickerSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var clubhouseSection: some View {
+        if !clubhouseProfiles.isEmpty {
+            Section("Clubhouse") {
+                ForEach(clubhouseProfiles) { profile in
+                    followRow(profile: profile)
                 }
             }
         }
@@ -496,6 +512,18 @@ private struct PlayerPickerSheet: View {
             }
         } catch {
             npubError = "Invalid npub or hex key."
+        }
+    }
+
+    private func loadClubhouseMembers() async {
+        let repo = ClubhouseRepository(dbQueue: dbQueue)
+        guard let pubkeys = try? repo.allPubkeyHexes(), !pubkeys.isEmpty else { return }
+        let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
+        if let profiles = try? await nostrService.resolveProfiles(
+            pubkeyHexes: pubkeys, cacheRepo: cacheRepo
+        ) {
+            clubhouseProfiles = pubkeys.compactMap { profiles[$0] }
+                .filter { $0.pubkeyHex != creatorPubkeyHex }
         }
     }
 

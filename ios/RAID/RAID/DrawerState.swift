@@ -15,6 +15,7 @@ class DrawerState {
 
     // Sheet presentation state (driven from drawer menu taps)
     var showPractice: Bool = false
+    var showClubhouse: Bool = false
     var showKeysRelays: Bool = false
     var showAbout: Bool = false
 

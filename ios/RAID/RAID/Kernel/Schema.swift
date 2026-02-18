@@ -643,6 +643,23 @@ struct Schema {
             try db.execute(sql: "CREATE INDEX idx_nostr_profiles_nip05        ON nostr_profiles(nip05)")
         }
 
+        // ============================================================
+        // v10_create_clubhouse_members: NIP-51 Clubhouse Local Cache
+        //
+        // Mutable table for the user's curated "Clubhouse" player list.
+        // Synced to/from a NIP-51 kind 30000 follow set (d="clubhouse").
+        // No immutability triggers — same pattern as v8/v9.
+        // ============================================================
+        migrator.registerMigration("v10_create_clubhouse_members") { db in
+            try db.execute(sql: """
+                CREATE TABLE clubhouse_members (
+                    pubkey_hex TEXT NOT NULL PRIMARY KEY
+                                   CHECK(length(pubkey_hex) = 64),
+                    added_at   TEXT NOT NULL
+                )
+                """)
+        }
+
         return migrator
     }
 
