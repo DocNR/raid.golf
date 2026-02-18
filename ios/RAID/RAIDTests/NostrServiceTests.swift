@@ -190,6 +190,7 @@ final class NostrServiceTests: XCTestCase {
     private static let fiatjafPubkeyHex = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"
 
     func testLive_FetchFollowList() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["RAID_LIVE_TESTS"] == "1", "Set RAID_LIVE_TESTS=1 to run live relay tests")
         let pubkey = try PublicKey.parse(publicKey: Self.testAccountPubkeyHex)
         let followList = try await service.fetchFollowList(pubkey: pubkey)
 
@@ -210,6 +211,7 @@ final class NostrServiceTests: XCTestCase {
     }
 
     func testLive_FetchProfiles() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["RAID_LIVE_TESTS"] == "1", "Set RAID_LIVE_TESTS=1 to run live relay tests")
         let profiles = try await service.fetchProfiles(pubkeyHexes: [Self.fiatjafPubkeyHex])
 
         XCTAssertEqual(profiles.count, 1, "Should fetch exactly 1 profile")
@@ -220,6 +222,7 @@ final class NostrServiceTests: XCTestCase {
     }
 
     func testLive_FetchFollowListWithProfiles() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["RAID_LIVE_TESTS"] == "1", "Set RAID_LIVE_TESTS=1 to run live relay tests")
         // End-to-end: single connection fetches follow list + all profiles
         let pubkey = try PublicKey.parse(publicKey: Self.testAccountPubkeyHex)
         let (follows, profiles) = try await service.fetchFollowListWithProfiles(pubkey: pubkey)

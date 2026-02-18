@@ -56,6 +56,11 @@ struct FeedView: View {
             .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
             .task { await viewModel.loadIfNeeded(nostrService: nostrService) }
+            .onChange(of: nostrActivated) { _, newValue in
+                if newValue {
+                    Task { await viewModel.refresh(nostrService: nostrService) }
+                }
+            }
             .fullScreenCover(isPresented: $showActivation) {
                 WelcomeView { activated in
                     nostrActivated = activated

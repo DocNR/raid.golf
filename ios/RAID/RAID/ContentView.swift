@@ -86,6 +86,14 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
+        .onChange(of: hasCompletedOnboarding) { _, newValue in
+            if !newValue {
+                // Delay to let drawer/sheet dismiss animations complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    showOnboarding = true
+                }
+            }
+        }
         .task {
             if nostrActivated {
                 await fetchOwnProfile()
