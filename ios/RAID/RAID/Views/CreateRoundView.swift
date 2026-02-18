@@ -32,6 +32,9 @@ struct CreateRoundView: View {
     @State private var npubInput = ""
     @State private var npubError: String?
     @State private var isMultiDevice = false
+    @State private var searchQuery = ""
+    @State private var searchResults: [NostrProfile] = []
+    @State private var showFollowBrowse = false
 
     var body: some View {
         NavigationStack {
@@ -98,7 +101,10 @@ struct CreateRoundView: View {
                     Text(error)
                 }
             }
-            .task { checkNostrKeys() }
+            .task {
+                checkNostrKeys()
+                seedProfileCache()
+            }
         }
     }
 
@@ -112,7 +118,7 @@ struct CreateRoundView: View {
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
             } else {
-                // Manual npub entry
+                // Manual npub entry — unchanged
                 HStack {
                     TextField("Add player by npub...", text: $npubInput)
                         .textInputAutocapitalization(.never)
@@ -127,52 +133,91 @@ struct CreateRoundView: View {
                         .font(.caption)
                 }
 
-                // Follow list loading
-                if followOrder.isEmpty && !isLoadingFollows {
+                // Search bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search by name or nip05...", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: searchQuery) { _, _ in performSearch() }
+                }
+
+                // Search results
+                ForEach(searchResults, id: \.pubkeyHex) { profile in
+                    let isSelected = selectedPlayers[profile.pubkeyHex] != nil
                     Button {
-                        Task { await loadFollowList() }
+                        togglePlayer(pubkeyHex: profile.pubkeyHex, profile: profile)
                     } label: {
-                        Label("Load Follow List", systemImage: "person.2")
-                    }
-                }
-
-                if isLoadingFollows {
-                    HStack {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Loading follows...")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if let followLoadError {
-                    Text(followLoadError)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                }
-
-                // Follow list (selectable)
-                ForEach(followOrder, id: \.self) { pubkeyHex in
-                    if let profile = followProfiles[pubkeyHex] {
-                        let isSelected = selectedPlayers[pubkeyHex] != nil
-                        Button {
-                            togglePlayer(pubkeyHex: pubkeyHex, profile: profile)
-                        } label: {
-                            HStack(spacing: 10) {
-                                ProfileAvatarView(pictureURL: profile.picture, size: 32)
-                                Text(profile.displayLabel)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.blue)
-                                }
+                        HStack(spacing: 10) {
+                            ProfileAvatarView(pictureURL: profile.picture, size: 32)
+                            Text(profile.displayLabel)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
                             }
                         }
                     }
                 }
 
-                // Selected players (manually added, not in follow list)
+                // No-results hint
+                if searchQuery.count >= 2 && searchResults.isEmpty {
+                    Text("No cached profiles match. Load follows below or add by npub.")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+
+                // Browse all follows (lazy)
+                DisclosureGroup("Browse All Follows", isExpanded: $showFollowBrowse) {
+                    if followOrder.isEmpty && !isLoadingFollows {
+                        Button {
+                            Task { await loadFollowList() }
+                        } label: {
+                            Label("Load Follow List", systemImage: "person.2")
+                        }
+                    }
+                    if isLoadingFollows {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading follows...")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let followLoadError {
+                        Text(followLoadError)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    ForEach(followOrder, id: \.self) { pubkeyHex in
+                        if let profile = followProfiles[pubkeyHex] {
+                            let isSelected = selectedPlayers[pubkeyHex] != nil
+                            Button {
+                                togglePlayer(pubkeyHex: pubkeyHex, profile: profile)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    ProfileAvatarView(pictureURL: profile.picture, size: 32)
+                                    Text(profile.displayLabel)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .onChange(of: showFollowBrowse) { _, newValue in
+                    if newValue && followOrder.isEmpty && !isLoadingFollows {
+                        Task { await loadFollowList() }
+                    }
+                }
+
+                // Selected players (manually added, not in follow list or search results)
                 let manuallyAdded = selectedPlayers.filter { followProfiles[$0.key] == nil }
                 ForEach(Array(manuallyAdded.values)) { profile in
                     Button {
@@ -189,7 +234,7 @@ struct CreateRoundView: View {
                     }
                 }
 
-                // Multi-device toggle
+                // Multi-device toggle — unchanged
                 if !selectedPlayers.isEmpty {
                     Toggle("Each player uses their own device", isOn: $isMultiDevice)
                 }
@@ -210,6 +255,23 @@ struct CreateRoundView: View {
     }
 
     // MARK: - Player Actions
+
+    private func performSearch() {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else {
+            searchResults = []
+            return
+        }
+        let repo = ProfileCacheRepository(dbQueue: dbQueue)
+        searchResults = (try? repo.searchProfiles(query: q, limit: 20)) ?? []
+    }
+
+    private func seedProfileCache() {
+        let profiles = nostrService.profileCache
+        guard !profiles.isEmpty else { return }
+        let repo = ProfileCacheRepository(dbQueue: dbQueue)
+        try? repo.upsertProfiles(Array(profiles.values))
+    }
 
     private func checkNostrKeys() {
         guard UserDefaults.standard.bool(forKey: "nostrActivated") else {
