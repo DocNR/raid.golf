@@ -269,7 +269,12 @@ struct FeedView: View {
                 ForEach(viewModel.items) { item in
                     FeedCardView(
                         item: item,
-                        profile: viewModel.resolvedProfiles[item.pubkeyHex]
+                        profile: viewModel.resolvedProfiles[item.pubkeyHex],
+                        reactionCount: viewModel.reactionCounts[item.id] ?? 0,
+                        hasReacted: viewModel.ownReactions.contains(item.id),
+                        onReact: {
+                            viewModel.react(itemId: item.id, nostrService: nostrService)
+                        }
                     )
                     .padding(.horizontal)
 

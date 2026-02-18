@@ -14,6 +14,11 @@ class FeedViewModel {
     var errorMessage: String?
     var resolvedProfiles: [String: NostrProfile] = [:]
 
+    // Reactions (NIP-25)
+    var reactionCounts: [String: Int] = [:]
+    var ownReactions: Set<String> = []
+    var rawEvents: [String: Event] = [:]
+
     enum LoadState {
         case idle
         case guest
@@ -86,11 +91,41 @@ class FeedViewModel {
             resolvedProfiles = pubkeyHexes.reduce(into: [:]) { dict, hex in
                 dict[hex] = nostrService.profileCache[hex]
             }
+
+            // 6. Fetch reaction counts + own reactions (single relay connection)
+            let ownHex = keyManager.signingKeys().publicKey().toHex()
+            let feedIds = items.map(\.id)
+            if let result = try? await nostrService.fetchReactions(eventIds: feedIds, ownPubkeyHex: ownHex) {
+                reactionCounts = result.counts
+                ownReactions = result.ownReacted
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
+    }
+
+    // MARK: - Reactions
+
+    func react(itemId: String, nostrService: NostrService) {
+        guard !ownReactions.contains(itemId),
+              let event = rawEvents[itemId] else { return }
+
+        // Optimistic update
+        ownReactions.insert(itemId)
+        reactionCounts[itemId, default: 0] += 1
+
+        Task {
+            do {
+                let keys = try KeyManager.loadOrCreate().signingKeys()
+                try await nostrService.publishReaction(keys: keys, event: event)
+            } catch {
+                // Revert optimistic update on failure
+                ownReactions.remove(itemId)
+                reactionCounts[itemId, default: 1] -= 1
+            }
+        }
     }
 
     // MARK: - Event Processing
@@ -99,6 +134,11 @@ class FeedViewModel {
         var kind1Events: [Event] = []
         var kind1502Events: [Event] = []
         var quotedScorecardIds: Set<String> = []
+
+        // Store raw events for reaction publishing (needs full Event object)
+        for event in events {
+            rawEvents[event.id().toHex()] = event
+        }
 
         // Pass 1: categorize events, collect all e-tag IDs from kind-1 events
         for event in events {

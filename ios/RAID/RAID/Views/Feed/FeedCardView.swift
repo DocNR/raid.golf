@@ -8,6 +8,9 @@ import SwiftUI
 struct FeedCardView: View {
     let item: FeedItem
     let profile: NostrProfile?
+    var reactionCount: Int = 0
+    var hasReacted: Bool = false
+    var onReact: (() -> Void)?
 
     private let avatarSize: CGFloat = 40
     private let avatarSpacing: CGFloat = 10
@@ -49,6 +52,30 @@ struct FeedCardView: View {
                 }
             }
             .padding(.leading, avatarSize + avatarSpacing)
+
+            // Reaction bar
+            HStack(spacing: 16) {
+                Button {
+                    onReact?()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: hasReacted ? "heart.fill" : "heart")
+                            .foregroundStyle(hasReacted ? .red : .secondary)
+                        if reactionCount > 0 {
+                            Text("\(reactionCount)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(hasReacted)
+
+                Spacer()
+            }
+            .font(.subheadline)
+            .padding(.leading, avatarSize + avatarSpacing)
+            .padding(.top, 4)
         }
         .padding(.vertical, 10)
     }

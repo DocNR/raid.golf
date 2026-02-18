@@ -376,6 +376,65 @@ class NostrService {
         return verifiedEvents(try events.toVec())
     }
 
+    // MARK: - NIP-25 Reactions
+
+    /// Publish a reaction to an event (NIP-25, kind 7).
+    /// reaction: "+" for like, or emoji string like "🔥".
+    func publishReaction(keys: Keys, event: Event, reaction: String = "+") async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishReaction blocked — Nostr not activated")
+            return
+        }
+        let builder = EventBuilder.reaction(event: event, reaction: reaction)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Fetch reactions (kind 7) for a batch of event IDs in a single relay connection.
+    /// Returns counts per event and the set of event IDs the given user has reacted to.
+    func fetchReactions(eventIds: [String], ownPubkeyHex: String?) async throws -> (counts: [String: Int], ownReacted: Set<String>) {
+        guard isActivated else { return (counts: [:], ownReacted: []) }
+        guard !eventIds.isEmpty else { return (counts: [:], ownReacted: []) }
+
+        let client = try await connectReadClient()
+
+        // kind 7 events referencing any of these event IDs
+        let ids = try eventIds.map { try EventId.parse(id: $0) }
+        let filter = Filter()
+            .kind(kind: Kind(kind: 7))
+            .events(ids: ids)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        var counts: [String: Int] = [:]
+        var ownReacted: Set<String> = []
+
+        for event in try events.toVec() {
+            // Find which event this reaction references via e-tag
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "e" {
+                    let refId = vec[1]
+                    counts[refId, default: 0] += 1
+                    if let own = ownPubkeyHex, event.author().toHex() == own {
+                        ownReacted.insert(refId)
+                    }
+                    break
+                }
+            }
+        }
+
+        return (counts: counts, ownReacted: ownReacted)
+    }
+
     // MARK: - NIP-51 Clubhouse (Follow Set)
 
     /// Fetch the user's Clubhouse list (kind 30000, d="clubhouse").
