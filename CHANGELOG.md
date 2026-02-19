@@ -134,9 +134,10 @@ This project versions **behavior and rules**, not files.
     - **Swipe-to-cycle relay direction:** Swipe right on any relay row in Keys & Relays to cycle R&W → Read → Write → R&W. Uses `.swipeActions(edge: .leading)` with color-coded tint matching the next state. Auto-publishes kind 10002 on each change.
     - **DM Inbox (NIP-17) section:** New "DM Inbox (NIP-17)" section in Keys & Relays showing kind 10050 relays. Supports add/delete with auto-publish via `NostrService.publishInboxRelays(keys:relays:)` and `fetchInboxRelays(pubkeyHex:)`.
     - **In-memory cache sync fix:** `persistAndPublish()` now calls `NostrService.updateRelayListCache(pubkeyHex:relays:)` after GRDB writes. Previously, local relay edits were persisted and published but the in-memory cache was stale, causing the old relay list to reappear when reopening the screen.
-  - Files added: `RelayCacheRepository.swift`
+    - **Outbox routing unit tests:** Extracted `buildRelayPlan(authorRelayMap:maxRelays:)` as a static pure-function on `NostrService` for testability. 18 new tests in `OutboxRoutingTests.swift` covering: URL normalization, metadata relay blocklist, coverage-sort ordering, 6-relay cap, orphan sweep into default relays, deduplication, empty input, single-relay, all-orphaned edge cases.
+  - Files added: `RelayCacheRepository.swift`, `OutboxRoutingTests.swift`
   - Files changed: `Schema.swift`, `NostrService.swift`, `NostrProfileView.swift`, `FeedViewModel.swift`, `FeedView.swift`, `ContentView.swift`
-  - 255 total tests (233 baseline + 17 new RelayCacheRepository tests + 5 other), 0 failures
+  - 273 total tests (233 baseline + 17 RelayCacheRepository + 18 OutboxRouting + 5 other), 0 failures
   - No kernel changes
 
 - **iOS Phase 8B: Nostr Identity + NIP-17 DM Invites**
