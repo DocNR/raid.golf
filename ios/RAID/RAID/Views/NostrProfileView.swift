@@ -39,6 +39,13 @@ struct NostrProfileView: View {
     @State private var newRelayMarker: String? = nil
     @State private var addRelayError: String?
 
+    // DM inbox relay state
+    @State private var inboxRelays: [String] = []
+    @State private var isLoadingInbox = false
+    @State private var showAddInbox = false
+    @State private var newInboxURL = ""
+    @State private var addInboxError: String?
+
     /// Single source of truth — reads from shared DrawerState, not local @State.
     private var profile: NostrProfile? { drawerState.ownProfile }
 
@@ -48,6 +55,7 @@ struct NostrProfileView: View {
                 identitySection
                 importSection
                 relaySection
+                inboxRelaySection
                 warningSection
             }
             .navigationTitle("Keys & Relays")
@@ -83,12 +91,16 @@ struct NostrProfileView: View {
                     await refreshProfile()
                 }
                 await loadRelays()
+                await loadInboxRelays()
             }
             .sheet(isPresented: $showImportSheet) {
                 importSheet
             }
             .sheet(isPresented: $showAddRelay) {
                 addRelaySheet
+            }
+            .sheet(isPresented: $showAddInbox) {
+                addInboxSheet
             }
         }
     }
@@ -213,6 +225,44 @@ struct NostrProfileView: View {
         }
     }
 
+    private var inboxRelaySection: some View {
+        Section {
+            if isLoadingInbox {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Text("Loading inbox relays...")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if inboxRelays.isEmpty {
+                Text("No DM inbox relays published.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(inboxRelays, id: \.self) { url in
+                    HStack {
+                        Image(systemName: "envelope")
+                            .foregroundStyle(.secondary)
+                        Text(url)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                }
+                .onDelete(perform: deleteInboxRelays)
+            }
+
+            Button {
+                showAddInbox = true
+            } label: {
+                Label("Add Inbox Relay", systemImage: "plus.circle")
+            }
+        } header: {
+            Text("DM Inbox (NIP-17)")
+        } footer: {
+            Text("Private relays where encrypted DMs are delivered. 1\u{2013}2 recommended.")
+        }
+    }
+
     @ViewBuilder
     private func relayRow(_ relay: CachedRelayEntry) -> some View {
         HStack {
@@ -231,6 +281,30 @@ struct NostrProfileView: View {
                 .foregroundStyle(markerColor(relay.marker))
                 .clipShape(Capsule())
         }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                let next: String? = switch relay.marker {
+                case nil: "read"
+                case "read": "write"
+                default: nil
+                }
+                setMarker(for: relay, marker: next)
+            } label: {
+                let nextMarker: String? = switch relay.marker {
+                case nil: "read"
+                case "read": "write"
+                default: nil
+                }
+                Label(markerLabel(nextMarker), systemImage: "arrow.triangle.2.circlepath")
+            }
+            .tint(nextMarkerColor(relay.marker))
+        }
+    }
+
+    private func setMarker(for relay: CachedRelayEntry, marker: String?) {
+        guard let index = relays.firstIndex(where: { $0.url == relay.url }) else { return }
+        relays[index] = CachedRelayEntry(url: relay.url, marker: marker)
+        persistAndPublish()
     }
 
     private func markerLabel(_ marker: String?) -> String {
@@ -248,6 +322,14 @@ struct NostrProfileView: View {
         case "read": return .green
         case "write": return .orange
         default: return .secondary
+        }
+    }
+
+    private func nextMarkerColor(_ currentMarker: String?) -> Color {
+        switch currentMarker {
+        case nil: return .green      // next is Read
+        case "read": return .orange  // next is Write
+        default: return .blue        // next is R/W
         }
     }
 
@@ -368,6 +450,47 @@ struct NostrProfileView: View {
         }
     }
 
+    // MARK: - Add Inbox Relay Sheet
+
+    private var addInboxSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("wss://relay.example.com", text: $newInboxURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .font(.system(.body, design: .monospaced))
+
+                    if let error = addInboxError {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                } header: {
+                    Text("Inbox Relay URL")
+                } footer: {
+                    Text("Paid relays like nostr.wine work best for DM privacy.")
+                }
+            }
+            .navigationTitle("Add Inbox Relay")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        newInboxURL = ""
+                        addInboxError = nil
+                        showAddInbox = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { addInboxRelay() }
+                        .disabled(newInboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func loadIdentity() {
@@ -468,12 +591,62 @@ struct NostrProfileView: View {
         let pubkeyHex = km.signingKeys().publicKey().toHex()
         let repo = RelayCacheRepository(dbQueue: dbQueue)
         let list = CachedRelayList(pubkeyHex: pubkeyHex, relays: relays, cachedAt: Date())
-        try? repo.upsertRelayList(list)
+        _ = try? repo.upsertRelayList(list)
+
+        // Keep in-memory cache in sync so resolveRelayLists doesn't return stale data
+        nostrService.updateRelayListCache(pubkeyHex: pubkeyHex, relays: relays)
 
         // Auto-publish fire-and-forget
         Task {
             let keys = km.signingKeys()
             try? await nostrService.publishRelayList(keys: keys, relays: relays)
+        }
+    }
+
+    // MARK: - Inbox Relay Actions
+
+    private func loadInboxRelays() async {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        let pubkeyHex = km.signingKeys().publicKey().toHex()
+
+        isLoadingInbox = true
+        defer { isLoadingInbox = false }
+
+        if let relayURLs = try? await nostrService.fetchInboxRelays(pubkeyHex: pubkeyHex) {
+            inboxRelays = relayURLs
+        }
+    }
+
+    private func addInboxRelay() {
+        let url = newInboxURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return }
+        guard url.hasPrefix("wss://") || url.hasPrefix("ws://") else {
+            addInboxError = "URL must start with wss:// or ws://"
+            return
+        }
+        guard !inboxRelays.contains(url) else {
+            addInboxError = "Relay already in list"
+            return
+        }
+
+        inboxRelays.append(url)
+        publishInboxRelays()
+
+        newInboxURL = ""
+        addInboxError = nil
+        showAddInbox = false
+    }
+
+    private func deleteInboxRelays(at offsets: IndexSet) {
+        inboxRelays.remove(atOffsets: offsets)
+        publishInboxRelays()
+    }
+
+    private func publishInboxRelays() {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        Task {
+            let keys = km.signingKeys()
+            try? await nostrService.publishInboxRelays(keys: keys, relays: inboxRelays)
         }
     }
 

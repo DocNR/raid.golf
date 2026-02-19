@@ -91,8 +91,9 @@ class FeedViewModel {
                         continue
                     }
                 }
-                // No relay list or no write relays → use defaults
-                authorRelayMap[hex] = NostrService.defaultReadRelays
+                // No relay list or no write relays → use content relays (not defaultReadRelays
+                // which includes metadata-only relays like purplepag.es)
+                authorRelayMap[hex] = NostrService.defaultPublishRelays
             }
 
             // 4. Fetch feed events via outbox routing

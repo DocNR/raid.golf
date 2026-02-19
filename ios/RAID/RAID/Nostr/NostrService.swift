@@ -33,6 +33,12 @@ class NostrService {
     /// Cleared on app restart.
     private(set) var relayListCache: [String: [CachedRelayEntry]] = [:]
 
+    /// Update the in-memory relay list cache for a given pubkey.
+    /// Call after local edits to prevent stale cache from overriding user changes.
+    func updateRelayListCache(pubkeyHex: String, relays: [CachedRelayEntry]) {
+        relayListCache[pubkeyHex] = relays
+    }
+
     // MARK: - Activation Gate
 
     /// Whether Nostr features are active. Guest users have this set to false.

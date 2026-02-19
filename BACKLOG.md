@@ -180,6 +180,25 @@ The social layer has no local persistence for fetched content. Every visit to a 
 
 ---
 
+## B-011: Relay Management UX Polish
+
+**Priority:** Low (post-Phase 8C)
+**Area:** Nostr, Relay Management, UX
+
+The Keys & Relays screen manages NIP-65 relay lists and NIP-17 DM inbox relays. Core functionality (add, remove, edit direction, swipe-to-cycle) is complete. Several UX improvements remain.
+
+### Missing features
+- **Online/offline indicator:** Green/red dot showing relay connectivity status.
+- **Latency display:** Ping time (ms) per relay, shown as secondary text.
+- **Paid/free indicator:** Fetch NIP-11 relay info document to detect payment requirements.
+- **Relay info sheet:** Tap relay to see NIP-11 metadata (name, description, supported NIPs, limits).
+
+### Code pointers
+- `ios/RAID/RAID/Views/NostrProfileView.swift` — `relayRow()`, `relaySection`, `inboxRelaySection`
+- NIP-11 info fetch: `curl -H "Accept: application/nostr+json" <relay_url>` — needs Swift equivalent
+
+---
+
 ## B-008: Template Versioning
 
 **Priority:** Low (post-Milestone 1)
