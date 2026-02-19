@@ -278,7 +278,7 @@ class NostrService {
     /// Fetch feed events using NIP-65 outbox routing.
     /// Fans out to authors' write relays (capped at 6), with orphan safety net via default relays.
     /// Deduplicates by event ID across relay results. Per-relay failures are non-fatal.
-    func fetchFeedEventsOutbox(authorRelayMap: [String: [String]]) async throws -> [Event] {
+    func fetchFeedEventsOutbox(authorRelayMap: [String: [String]], keys: Keys? = nil) async throws -> [Event] {
         guard isActivated else {
             print("[RAID][Guest] fetchFeedEventsOutbox blocked — Nostr not activated")
             return []
@@ -296,28 +296,39 @@ class NostrService {
             }
         }
 
-        // 2. Sort relays by author-coverage (most authors first), take top 6
+        // 2. Remove metadata-only relays that never carry content events
+        let metadataOnlyRelays: Set<String> = [
+            "wss://purplepag.es",
+            "wss://user.kindpag.es",
+            "wss://relay.nos.social",
+        ]
+        for url in metadataOnlyRelays {
+            relayAuthorMap.removeValue(forKey: url)
+        }
+
+        // 3. Sort relays by author-coverage (most authors first), take top 6
         let maxRelays = 6
         let sortedRelays = relayAuthorMap.keys.sorted {
             relayAuthorMap[$0]!.count > relayAuthorMap[$1]!.count
         }
         let topRelays = Array(sortedRelays.prefix(maxRelays))
 
-        // 3. Orphan safety net: find authors not covered by top relays
+        // 4. Orphan safety net: find authors not covered by top relays
         let coveredAuthors = topRelays.reduce(into: Set<String>()) { result, url in
             result.formUnion(relayAuthorMap[url] ?? [])
         }
         let orphanedAuthors = allAuthors.subtracting(coveredAuthors)
 
-        // 4. Build final relay plan: top relays + default relays with orphans
+        // 5. Build final relay plan: top relays + default relays with orphans
         var relayPlan: [String: [String]] = [:]  // [relayURL: [authorHex]]
         for url in topRelays {
             relayPlan[url] = Array(relayAuthorMap[url] ?? [])
         }
 
-        // Add default relays for orphaned authors (and as general fallback)
+        // Add default content relays for orphaned authors (use publishRelays, not readRelays
+        // which includes metadata-only relays like purplepag.es)
         let defaultRelayAuthors = orphanedAuthors.isEmpty ? [] : Array(orphanedAuthors)
-        for defaultURL in Self.defaultReadRelays {
+        for defaultURL in Self.defaultPublishRelays {
             let normalized = normalizedRelayURL(defaultURL)
             if relayPlan[normalized] != nil {
                 // Default relay already in top relays — merge orphans in
@@ -334,12 +345,12 @@ class NostrService {
 
         print("[RAID][Outbox] Fan-out: \(relayPlan.count) relays, \(allAuthors.count) authors (\(orphanedAuthors.count) orphaned)")
 
-        // 5. Fan out with TaskGroup — one connection per relay, 8s total timeout each
+        // 6. Fan out with TaskGroup — one connection per relay, 8s total timeout each
         var allEvents: [Event] = []
         await withTaskGroup(of: [Event].self) { group in
             for (relayURL, authorHexes) in relayPlan {
                 group.addTask {
-                    await self.fetchFeedFromRelay(relayURL: relayURL, authorHexes: authorHexes)
+                    await self.fetchFeedFromRelay(relayURL: relayURL, authorHexes: authorHexes, keys: keys)
                 }
             }
             for await relayEvents in group {
@@ -347,7 +358,7 @@ class NostrService {
             }
         }
 
-        // 6. Dedup by event ID
+        // 7. Dedup by event ID
         var seen = Set<String>()
         var unique: [Event] = []
         for event in allEvents {
@@ -362,12 +373,18 @@ class NostrService {
 
     /// Fetch feed events from a single relay for specific authors.
     /// Per-relay failure is non-fatal — returns empty array on error.
-    private func fetchFeedFromRelay(relayURL: String, authorHexes: [String]) async -> [Event] {
+    private func fetchFeedFromRelay(relayURL: String, authorHexes: [String], keys: Keys? = nil) async -> [Event] {
         let pubkeys = authorHexes.compactMap { try? PublicKey.parse(publicKey: $0) }
         guard !pubkeys.isEmpty else { return [] }
 
         do {
-            let client = Client()
+            let client: Client
+            if let keys {
+                let signer = NostrSigner.keys(keys: keys)
+                client = ClientBuilder().signer(signer: signer).build()
+            } else {
+                client = Client()
+            }
             let url = try RelayUrl.parse(url: relayURL)
             _ = try await client.addRelay(url: url)
             await client.connect()

@@ -110,12 +110,30 @@ This project versions **behavior and rules**, not files.
     - `.renderingMode(.original)` so toolbar button shows actual photo colors, not system tint
   - No schema changes, no kernel changes
 
-- **iOS Phase 8C.4: Feed Merge Stability (quick win)**
-  - `FeedViewModel.refresh()` now merges new items into existing state instead of wholesale replacement
-  - Previously-seen posts are retained across refreshes; unfollowed authors are filtered out via `followSet`
-  - Items reset on app restart (fresh `FeedViewModel` instance) — no hard-refresh UI required
-  - Fixes: posts vanishing when a relay returns a stale kind-3 contact list on a subsequent refresh
-  - File changed: `ios/RAID/RAID/Nostr/FeedViewModel.swift`
+- **iOS Phase 8C: NIP-65 Relay Management**
+  - **PR C1: Relay List Cache (data layer)**
+    - Schema v11: `nostr_relay_lists` table (pubkey_hex PK, relay_json TEXT, cached_at TEXT; mutable, no triggers, outside kernel)
+    - `RelayCacheRepository.swift` — `CachedRelayEntry` (url, marker, isWrite/isRead computed), `CachedRelayList` (pubkeyHex, relays, cachedAt, writeRelays/readRelays computed)
+    - Repository methods: upsert, upsertBatch, fetch, fetchBatch, writeRelays(forPubkey:), delete, deleteAll
+    - `NostrService` additions: `relayListCache: [String: [CachedRelayEntry]]` in-memory dict, `fetchRelayLists(pubkeyHexes:)` (batch kind 10002, newest-wins per author), `publishRelayList(keys:relays:)` (kind 10002 with `r` tags), `resolveRelayLists(pubkeyHexes:cacheRepo:)` (3-layer: memory → GRDB → relay, 24h TTL)
+    - 17 new tests in `RelayCacheRepositoryTests.swift`
+  - **PR C2: Relay Management UI**
+    - `NostrProfileView.swift` overhauled: dynamic relay section with loading state, empty state with bootstrap button, ForEach with swipe-to-delete, color-coded marker badges (R&W blue, Read-only green, Write-only orange)
+    - Add Relay sheet: URL text field + segmented direction picker (Read & Write / Read Only / Write Only)
+    - Auto-publishes kind 10002 relay list on add, remove, or bootstrap (fire-and-forget)
+    - `ContentView` passes `dbQueue` to `NostrProfileView`
+  - **PR C3: Smart Outbox Routing + Feed Merge Stability**
+    - `fetchFeedEventsOutbox(authorRelayMap:keys:)`: groups authors by write relay, sorts relays by author-coverage frequency, caps at 6 relay connections, TaskGroup fan-out with 8s per-relay timeouts, deduplicates events by ID across relays
+    - `fetchFeedFromRelay(relayURL:authorHexes:keys:)`: single-relay helper with NIP-42 AUTH support via `ClientBuilder().signer(signer:).build()`
+    - Metadata-only relay blocklist: `purplepag.es`, `user.kindpag.es`, `relay.nos.social` excluded from content fetches
+    - Orphan fallback (authors with no kind 10002) uses `defaultPublishRelays` (content relays), not `defaultReadRelays`
+    - `normalizedRelayURL()` extension strips trailing slashes for consistent relay URL keying
+    - `FeedViewModel`: accepts `dbQueue` parameter, uses outbox routing in `refresh()`, 150-item feed cap, timing diagnostics
+    - Feed merge stability: `refresh()` merges new items into existing state; previously-seen posts retained across refreshes, unfollowed authors filtered via `followSet`
+  - Files added: `RelayCacheRepository.swift`
+  - Files changed: `Schema.swift`, `NostrService.swift`, `NostrProfileView.swift`, `FeedViewModel.swift`, `FeedView.swift`, `ContentView.swift`
+  - 255 total tests (233 baseline + 17 new RelayCacheRepository tests + 5 other), 0 failures
+  - No kernel changes
 
 - **iOS Phase 8B: Nostr Identity + NIP-17 DM Invites**
   - **8B.1: Identity & Profiles**
