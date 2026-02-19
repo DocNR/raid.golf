@@ -29,6 +29,10 @@ class NostrService {
     /// and fetchFollowListWithProfiles. Cleared on app restart.
     private(set) var profileCache: [String: NostrProfile] = [:]
 
+    /// Session-scoped relay list cache. Populated by resolveRelayLists, fetchRelayLists.
+    /// Cleared on app restart.
+    private(set) var relayListCache: [String: [CachedRelayEntry]] = [:]
+
     // MARK: - Activation Gate
 
     /// Whether Nostr features are active. Guest users have this set to false.
@@ -800,6 +804,152 @@ class NostrService {
             print("[RAID][GiftWrap] Failed to unwrap event: \(error)")
             return nil
         }
+    }
+
+    // MARK: - NIP-65 Relay List
+
+    /// Fetch kind 10002 relay list metadata for multiple pubkeys in a single batch.
+    /// Handles replaceable events: picks newest created_at per author.
+    func fetchRelayLists(pubkeyHexes: [String]) async throws -> [String: [CachedRelayEntry]] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchRelayLists blocked — Nostr not activated")
+            return [:]
+        }
+        guard !pubkeyHexes.isEmpty else { return [:] }
+
+        let pubkeys = pubkeyHexes.compactMap { try? PublicKey.parse(publicKey: $0) }
+        guard !pubkeys.isEmpty else { return [:] }
+
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .authors(authors: pubkeys)
+            .kind(kind: Kind(kind: 10002))
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        // Kind 10002 is replaceable — keep newest per author
+        var newest: [String: Event] = [:]
+        for event in verifiedEvents(try events.toVec()) {
+            let authorHex = event.author().toHex()
+            if let existing = newest[authorHex] {
+                if event.createdAt().asSecs() > existing.createdAt().asSecs() {
+                    newest[authorHex] = event
+                }
+            } else {
+                newest[authorHex] = event
+            }
+        }
+
+        // Parse r-tags into CachedRelayEntry
+        var result: [String: [CachedRelayEntry]] = [:]
+        for (authorHex, event) in newest {
+            var entries: [CachedRelayEntry] = []
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "r" {
+                    let url = vec[1]
+                    let marker: String? = vec.count >= 3 ? vec[2] : nil
+                    entries.append(CachedRelayEntry(url: url, marker: marker))
+                }
+            }
+            result[authorHex] = entries
+        }
+
+        // Warm in-memory cache
+        for (key, entries) in result {
+            relayListCache[key] = entries
+        }
+
+        return result
+    }
+
+    /// Publish the user's NIP-65 relay list (kind 10002).
+    /// Replaceable — overwrites any previous 10002.
+    func publishRelayList(keys: Keys, relays: [CachedRelayEntry]) async throws -> String {
+        guard isActivated else {
+            print("[RAID][Guest] publishRelayList blocked — Nostr not activated")
+            return ""
+        }
+        var tags: [Tag] = []
+        for relay in relays {
+            if let marker = relay.marker {
+                tags.append(try Tag.parse(data: ["r", relay.url, marker]))
+            } else {
+                tags.append(try Tag.parse(data: ["r", relay.url]))
+            }
+        }
+
+        let builder = EventBuilder(kind: Kind(kind: 10002), content: "")
+            .tags(tags: tags)
+
+        return try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Resolve relay lists from cache (in-memory then GRDB) or fetch uncached keys from relays.
+    /// Three-layer lookup: in-memory → GRDB (24h TTL) → relay fetch.
+    func resolveRelayLists(pubkeyHexes: [String], cacheRepo: RelayCacheRepository? = nil) async throws -> [String: [CachedRelayEntry]] {
+        if !isActivated {
+            return pubkeyHexes.reduce(into: [:]) { result, hex in
+                result[hex] = relayListCache[hex]
+            }
+        }
+
+        let ttl: TimeInterval = 24 * 60 * 60  // 24 hours
+        var result: [String: [CachedRelayEntry]] = [:]
+        var uncachedAfterMemory: [String] = []
+
+        // Layer 1: in-memory
+        for hex in pubkeyHexes {
+            if let cached = relayListCache[hex] {
+                result[hex] = cached
+            } else {
+                uncachedAfterMemory.append(hex)
+            }
+        }
+
+        // Layer 2: GRDB (with 24h TTL check)
+        var uncachedAfterDB: [String] = []
+        if let repo = cacheRepo {
+            for hex in uncachedAfterMemory {
+                if let cached = try? repo.fetchRelayList(pubkeyHex: hex),
+                   Date().timeIntervalSince(cached.cachedAt) < ttl {
+                    result[hex] = cached.relays
+                    relayListCache[hex] = cached.relays  // warm in-memory cache
+                } else {
+                    uncachedAfterDB.append(hex)
+                }
+            }
+        } else {
+            uncachedAfterDB = uncachedAfterMemory
+        }
+
+        // Layer 3: relay fetch
+        if !uncachedAfterDB.isEmpty {
+            let fetched = try await fetchRelayLists(pubkeyHexes: uncachedAfterDB)
+            for (key, entries) in fetched {
+                relayListCache[key] = entries
+                result[key] = entries
+            }
+            // Persist to GRDB
+            if let repo = cacheRepo {
+                let lists = fetched.map { (hex, entries) in
+                    CachedRelayList(pubkeyHex: hex, relays: entries, cachedAt: Date())
+                }
+                try? repo.upsertRelayLists(lists)
+            }
+        }
+
+        return result
     }
 
     // MARK: - Private Helpers

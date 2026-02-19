@@ -660,6 +660,24 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v11_create_nostr_relay_lists: NIP-65 Relay List Cache
+        //
+        // Mutable cache for NIP-65 kind 10002 relay list metadata.
+        // No immutability triggers — same pattern as v8/v9/v10.
+        // relay_json stores JSON array of {url, marker} objects.
+        // ============================================================
+        migrator.registerMigration("v11_create_nostr_relay_lists") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_relay_lists (
+                    pubkey_hex TEXT NOT NULL PRIMARY KEY
+                                   CHECK(length(pubkey_hex) = 64),
+                    relay_json TEXT NOT NULL,
+                    cached_at  TEXT NOT NULL
+                )
+                """)
+        }
+
         return migrator
     }
 
