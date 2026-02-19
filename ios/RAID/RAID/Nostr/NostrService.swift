@@ -275,6 +275,125 @@ class NostrService {
         return verifiedEvents(try events.toVec())
     }
 
+    /// Fetch feed events using NIP-65 outbox routing.
+    /// Fans out to authors' write relays (capped at 6), with orphan safety net via default relays.
+    /// Deduplicates by event ID across relay results. Per-relay failures are non-fatal.
+    func fetchFeedEventsOutbox(authorRelayMap: [String: [String]]) async throws -> [Event] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchFeedEventsOutbox blocked — Nostr not activated")
+            return []
+        }
+        guard !authorRelayMap.isEmpty else { return [] }
+
+        let allAuthors = Set(authorRelayMap.keys)
+
+        // 1. Normalize URLs and build relayURL → Set<authorHex> map
+        var relayAuthorMap: [String: Set<String>] = [:]
+        for (authorHex, relayURLs) in authorRelayMap {
+            for url in relayURLs {
+                let normalized = normalizedRelayURL(url)
+                relayAuthorMap[normalized, default: []].insert(authorHex)
+            }
+        }
+
+        // 2. Sort relays by author-coverage (most authors first), take top 6
+        let maxRelays = 6
+        let sortedRelays = relayAuthorMap.keys.sorted {
+            relayAuthorMap[$0]!.count > relayAuthorMap[$1]!.count
+        }
+        let topRelays = Array(sortedRelays.prefix(maxRelays))
+
+        // 3. Orphan safety net: find authors not covered by top relays
+        let coveredAuthors = topRelays.reduce(into: Set<String>()) { result, url in
+            result.formUnion(relayAuthorMap[url] ?? [])
+        }
+        let orphanedAuthors = allAuthors.subtracting(coveredAuthors)
+
+        // 4. Build final relay plan: top relays + default relays with orphans
+        var relayPlan: [String: [String]] = [:]  // [relayURL: [authorHex]]
+        for url in topRelays {
+            relayPlan[url] = Array(relayAuthorMap[url] ?? [])
+        }
+
+        // Add default relays for orphaned authors (and as general fallback)
+        let defaultRelayAuthors = orphanedAuthors.isEmpty ? [] : Array(orphanedAuthors)
+        for defaultURL in Self.defaultReadRelays {
+            let normalized = normalizedRelayURL(defaultURL)
+            if relayPlan[normalized] != nil {
+                // Default relay already in top relays — merge orphans in
+                if !defaultRelayAuthors.isEmpty {
+                    var existing = Set(relayPlan[normalized]!)
+                    existing.formUnion(orphanedAuthors)
+                    relayPlan[normalized] = Array(existing)
+                }
+            } else if !defaultRelayAuthors.isEmpty {
+                // Default relay not in top — add it for orphans
+                relayPlan[normalized] = defaultRelayAuthors
+            }
+        }
+
+        print("[RAID][Outbox] Fan-out: \(relayPlan.count) relays, \(allAuthors.count) authors (\(orphanedAuthors.count) orphaned)")
+
+        // 5. Fan out with TaskGroup — one connection per relay, 8s total timeout each
+        var allEvents: [Event] = []
+        await withTaskGroup(of: [Event].self) { group in
+            for (relayURL, authorHexes) in relayPlan {
+                group.addTask {
+                    await self.fetchFeedFromRelay(relayURL: relayURL, authorHexes: authorHexes)
+                }
+            }
+            for await relayEvents in group {
+                allEvents.append(contentsOf: relayEvents)
+            }
+        }
+
+        // 6. Dedup by event ID
+        var seen = Set<String>()
+        var unique: [Event] = []
+        for event in allEvents {
+            let id = event.id().toHex()
+            if seen.insert(id).inserted {
+                unique.append(event)
+            }
+        }
+
+        return verifiedEvents(unique)
+    }
+
+    /// Fetch feed events from a single relay for specific authors.
+    /// Per-relay failure is non-fatal — returns empty array on error.
+    private func fetchFeedFromRelay(relayURL: String, authorHexes: [String]) async -> [Event] {
+        let pubkeys = authorHexes.compactMap { try? PublicKey.parse(publicKey: $0) }
+        guard !pubkeys.isEmpty else { return [] }
+
+        do {
+            let client = Client()
+            let url = try RelayUrl.parse(url: relayURL)
+            _ = try await client.addRelay(url: url)
+            await client.connect()
+
+            let filter = Filter()
+                .authors(authors: pubkeys)
+                .kinds(kinds: [Kind(kind: 1), Kind(kind: NIP101gKind.finalRoundRecord)])
+                .hashtag(hashtag: "golf")
+                .limit(limit: 50)
+
+            let events = try await client.fetchEvents(filter: filter, timeout: 8)
+            await client.disconnect()
+            let verified = verifiedEvents(try events.toVec())
+            print("[RAID][Outbox] \(relayURL): \(verified.count) events from \(authorHexes.count) authors")
+            return verified
+        } catch {
+            print("[RAID][Outbox] \(relayURL) failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// Strip trailing slash from relay URLs for consistent grouping.
+    private func normalizedRelayURL(_ url: String) -> String {
+        url.hasSuffix("/") ? String(url.dropLast()) : url
+    }
+
     // MARK: - Live Scorecard Fetch
 
     /// Fetch kind 30501 live scorecard events for a round (by initiation event ID).

@@ -3,6 +3,7 @@
 
 import Foundation
 import NostrSDK
+import GRDB
 
 @Observable
 class FeedViewModel {
@@ -33,13 +34,13 @@ class FeedViewModel {
 
     // MARK: - Load
 
-    func loadIfNeeded(nostrService: NostrService) async {
+    func loadIfNeeded(nostrService: NostrService, dbQueue: DatabaseQueue) async {
         guard !hasLoaded else { return }
         hasLoaded = true
-        await refresh(nostrService: nostrService)
+        await refresh(nostrService: nostrService, dbQueue: dbQueue)
     }
 
-    func refresh(nostrService: NostrService) async {
+    func refresh(nostrService: NostrService, dbQueue: DatabaseQueue) async {
         guard nostrService.isActivated else {
             loadState = .guest
             isLoading = false
@@ -68,10 +69,30 @@ class FeedViewModel {
                 return
             }
 
-            // 3. Fetch feed events
-            let events = try await nostrService.fetchFeedEvents(followedPubkeys: follows)
+            // 3. Resolve relay lists for all follows (3-layer cache, 24h TTL)
+            let cacheRepo = RelayCacheRepository(dbQueue: dbQueue)
+            let relayMap = try await nostrService.resolveRelayLists(
+                pubkeyHexes: follows, cacheRepo: cacheRepo
+            )
 
-            // 4. Process into FeedItems (batch relay fetches)
+            // Build authorRelayMap: [authorHex: [writeRelayURLs]]
+            var authorRelayMap: [String: [String]] = [:]
+            for hex in follows {
+                if let entries = relayMap[hex] {
+                    let writeURLs = entries.filter(\.isWrite).map(\.url)
+                    if !writeURLs.isEmpty {
+                        authorRelayMap[hex] = writeURLs
+                        continue
+                    }
+                }
+                // No relay list or no write relays → use defaults
+                authorRelayMap[hex] = NostrService.defaultReadRelays
+            }
+
+            // 4. Fetch feed events via outbox routing
+            let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap)
+
+            // 5. Process into FeedItems (batch relay fetches)
             let processed = await processEvents(events, nostrService: nostrService)
 
             // Merge: keep previously-seen items that aren't in this fetch,
@@ -81,6 +102,7 @@ class FeedViewModel {
             let newIds = Set(processed.map(\.id))
             let retained = items.filter { !newIds.contains($0.id) && followSet.contains($0.pubkeyHex) }
             items = (processed + retained).sorted { $0.createdAt > $1.createdAt }
+            if items.count > 150 { items = Array(items.prefix(150)) }
             loadState = .loaded
 
             // 5. Resolve profiles for all authors; snapshot into resolvedProfiles for stable UI reads
