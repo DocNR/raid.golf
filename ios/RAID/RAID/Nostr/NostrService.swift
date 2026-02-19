@@ -293,63 +293,10 @@ class NostrService {
 
         let allAuthors = Set(authorRelayMap.keys)
 
-        // 1. Normalize URLs and build relayURL → Set<authorHex> map
-        var relayAuthorMap: [String: Set<String>] = [:]
-        for (authorHex, relayURLs) in authorRelayMap {
-            for url in relayURLs {
-                let normalized = normalizedRelayURL(url)
-                relayAuthorMap[normalized, default: []].insert(authorHex)
-            }
-        }
+        // Steps 1-5: pure relay plan building (extracted for testability)
+        let (relayPlan, orphanCount) = Self.buildRelayPlan(authorRelayMap: authorRelayMap)
 
-        // 2. Remove metadata-only relays that never carry content events
-        let metadataOnlyRelays: Set<String> = [
-            "wss://purplepag.es",
-            "wss://user.kindpag.es",
-            "wss://relay.nos.social",
-        ]
-        for url in metadataOnlyRelays {
-            relayAuthorMap.removeValue(forKey: url)
-        }
-
-        // 3. Sort relays by author-coverage (most authors first), take top 6
-        let maxRelays = 6
-        let sortedRelays = relayAuthorMap.keys.sorted {
-            relayAuthorMap[$0]!.count > relayAuthorMap[$1]!.count
-        }
-        let topRelays = Array(sortedRelays.prefix(maxRelays))
-
-        // 4. Orphan safety net: find authors not covered by top relays
-        let coveredAuthors = topRelays.reduce(into: Set<String>()) { result, url in
-            result.formUnion(relayAuthorMap[url] ?? [])
-        }
-        let orphanedAuthors = allAuthors.subtracting(coveredAuthors)
-
-        // 5. Build final relay plan: top relays + default relays with orphans
-        var relayPlan: [String: [String]] = [:]  // [relayURL: [authorHex]]
-        for url in topRelays {
-            relayPlan[url] = Array(relayAuthorMap[url] ?? [])
-        }
-
-        // Add default content relays for orphaned authors (use publishRelays, not readRelays
-        // which includes metadata-only relays like purplepag.es)
-        let defaultRelayAuthors = orphanedAuthors.isEmpty ? [] : Array(orphanedAuthors)
-        for defaultURL in Self.defaultPublishRelays {
-            let normalized = normalizedRelayURL(defaultURL)
-            if relayPlan[normalized] != nil {
-                // Default relay already in top relays — merge orphans in
-                if !defaultRelayAuthors.isEmpty {
-                    var existing = Set(relayPlan[normalized]!)
-                    existing.formUnion(orphanedAuthors)
-                    relayPlan[normalized] = Array(existing)
-                }
-            } else if !defaultRelayAuthors.isEmpty {
-                // Default relay not in top — add it for orphans
-                relayPlan[normalized] = defaultRelayAuthors
-            }
-        }
-
-        print("[RAID][Outbox] Fan-out: \(relayPlan.count) relays, \(allAuthors.count) authors (\(orphanedAuthors.count) orphaned)")
+        print("[RAID][Outbox] Fan-out: \(relayPlan.count) relays, \(allAuthors.count) authors (\(orphanCount) orphaned)")
 
         // 6. Fan out with TaskGroup — one connection per relay, 8s total timeout each
         var allEvents: [Event] = []
@@ -413,8 +360,82 @@ class NostrService {
     }
 
     /// Strip trailing slash from relay URLs for consistent grouping.
-    private func normalizedRelayURL(_ url: String) -> String {
+    static func normalizedRelayURL(_ url: String) -> String {
         url.hasSuffix("/") ? String(url.dropLast()) : url
+    }
+
+    /// Build an outbox relay plan from an author→relays map.
+    ///
+    /// Pure data transformation — no network calls. Extracted for testability.
+    ///
+    /// Steps:
+    ///   1. Normalize URLs and invert to relayURL → Set<authorHex>.
+    ///   2. Remove metadata-only relays (purplepag.es, user.kindpag.es, relay.nos.social).
+    ///   3. Sort by author-coverage descending, cap at `maxRelays`.
+    ///   4. Identify authors not covered by the top relays (orphans).
+    ///   5. Route orphans to `defaultPublishRelays`; merge if relay already in plan.
+    ///
+    /// - Returns: `relayPlan` mapping relay URL → [authorHex], and `orphanCount`.
+    static func buildRelayPlan(
+        authorRelayMap: [String: [String]],
+        maxRelays: Int = 6
+    ) -> (relayPlan: [String: [String]], orphanCount: Int) {
+        guard !authorRelayMap.isEmpty else { return ([:], 0) }
+
+        let allAuthors = Set(authorRelayMap.keys)
+
+        // 1. Normalize URLs and build relayURL → Set<authorHex> map
+        var relayAuthorMap: [String: Set<String>] = [:]
+        for (authorHex, relayURLs) in authorRelayMap {
+            for url in relayURLs {
+                let normalized = normalizedRelayURL(url)
+                relayAuthorMap[normalized, default: []].insert(authorHex)
+            }
+        }
+
+        // 2. Remove metadata-only relays that never carry content events
+        let metadataOnlyRelays: Set<String> = [
+            "wss://purplepag.es",
+            "wss://user.kindpag.es",
+            "wss://relay.nos.social",
+        ]
+        for url in metadataOnlyRelays {
+            relayAuthorMap.removeValue(forKey: url)
+        }
+
+        // 3. Sort relays by author-coverage (most authors first), take top N
+        let sortedRelays = relayAuthorMap.keys.sorted {
+            relayAuthorMap[$0]!.count > relayAuthorMap[$1]!.count
+        }
+        let topRelays = Array(sortedRelays.prefix(maxRelays))
+
+        // 4. Orphan safety net: find authors not covered by top relays
+        let coveredAuthors = topRelays.reduce(into: Set<String>()) { result, url in
+            result.formUnion(relayAuthorMap[url] ?? [])
+        }
+        let orphanedAuthors = allAuthors.subtracting(coveredAuthors)
+
+        // 5. Build final relay plan: top relays + default relays with orphans
+        var relayPlan: [String: [String]] = [:]
+        for url in topRelays {
+            relayPlan[url] = Array(relayAuthorMap[url] ?? [])
+        }
+
+        let defaultRelayAuthors = orphanedAuthors.isEmpty ? [] : Array(orphanedAuthors)
+        for defaultURL in Self.defaultPublishRelays {
+            let normalized = normalizedRelayURL(defaultURL)
+            if relayPlan[normalized] != nil {
+                if !defaultRelayAuthors.isEmpty {
+                    var existing = Set(relayPlan[normalized]!)
+                    existing.formUnion(orphanedAuthors)
+                    relayPlan[normalized] = Array(existing)
+                }
+            } else if !defaultRelayAuthors.isEmpty {
+                relayPlan[normalized] = defaultRelayAuthors
+            }
+        }
+
+        return (relayPlan, orphanedAuthors.count)
     }
 
     // MARK: - Live Scorecard Fetch
