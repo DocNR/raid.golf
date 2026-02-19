@@ -70,7 +70,7 @@ struct ContentView: View {
             ClubhouseView(dbQueue: dbQueue)
         }
         .sheet(isPresented: Bindable(drawerState).showKeysRelays) {
-            NostrProfileView()
+            NostrProfileView(dbQueue: dbQueue)
         }
         .sheet(isPresented: Bindable(drawerState).showAbout) {
             AboutView()

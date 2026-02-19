@@ -27,7 +27,7 @@ struct FeedView: View {
                         Text(error)
                     } actions: {
                         Button("Try Again") {
-                            Task { await viewModel.refresh(nostrService: nostrService) }
+                            Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
                         }
                     }
                 } else {
@@ -59,10 +59,10 @@ struct FeedView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
-            .task { await viewModel.loadIfNeeded(nostrService: nostrService) }
+            .task { await viewModel.loadIfNeeded(nostrService: nostrService, dbQueue: dbQueue) }
             .onChange(of: nostrActivated) { _, newValue in
                 if newValue {
-                    Task { await viewModel.refresh(nostrService: nostrService) }
+                    Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
                 }
             }
             .fullScreenCover(isPresented: $showActivation) {
@@ -70,7 +70,7 @@ struct FeedView: View {
                     nostrActivated = activated
                     showActivation = false
                     if activated {
-                        Task { await viewModel.refresh(nostrService: nostrService) }
+                        Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
                     }
                 }
             }
@@ -302,6 +302,6 @@ struct FeedView: View {
                 }
             }
         }
-        .refreshable { await viewModel.refresh(nostrService: nostrService) }
+        .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
     }
 }

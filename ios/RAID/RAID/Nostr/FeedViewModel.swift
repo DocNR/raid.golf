@@ -3,6 +3,7 @@
 
 import Foundation
 import NostrSDK
+import GRDB
 
 @Observable
 class FeedViewModel {
@@ -33,13 +34,13 @@ class FeedViewModel {
 
     // MARK: - Load
 
-    func loadIfNeeded(nostrService: NostrService) async {
+    func loadIfNeeded(nostrService: NostrService, dbQueue: DatabaseQueue) async {
         guard !hasLoaded else { return }
         hasLoaded = true
-        await refresh(nostrService: nostrService)
+        await refresh(nostrService: nostrService, dbQueue: dbQueue)
     }
 
-    func refresh(nostrService: NostrService) async {
+    func refresh(nostrService: NostrService, dbQueue: DatabaseQueue) async {
         guard nostrService.isActivated else {
             loadState = .guest
             isLoading = false
@@ -50,6 +51,8 @@ class FeedViewModel {
         errorMessage = nil
 
         do {
+            let t0 = CFAbsoluteTimeGetCurrent()
+
             // 1. Get user's pubkey
             guard KeyManager.hasExistingKey() else {
                 loadState = .noKey
@@ -61,6 +64,8 @@ class FeedViewModel {
 
             // 2. Fetch follow list + profiles in one connection
             let (follows, _) = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
+            let t1 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 2 follow list: \(String(format: "%.1f", t1 - t0))s (\(follows.count) follows)")
 
             guard !follows.isEmpty else {
                 loadState = .noFollows
@@ -68,11 +73,38 @@ class FeedViewModel {
                 return
             }
 
-            // 3. Fetch feed events
-            let events = try await nostrService.fetchFeedEvents(followedPubkeys: follows)
+            // 3. Resolve relay lists for all follows (3-layer cache, 24h TTL)
+            let cacheRepo = RelayCacheRepository(dbQueue: dbQueue)
+            let relayMap = try await nostrService.resolveRelayLists(
+                pubkeyHexes: follows, cacheRepo: cacheRepo
+            )
+            let t2 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 3 relay lists: \(String(format: "%.1f", t2 - t1))s")
 
-            // 4. Process into FeedItems (batch relay fetches)
+            // Build authorRelayMap: [authorHex: [writeRelayURLs]]
+            var authorRelayMap: [String: [String]] = [:]
+            for hex in follows {
+                if let entries = relayMap[hex] {
+                    let writeURLs = entries.filter(\.isWrite).map(\.url)
+                    if !writeURLs.isEmpty {
+                        authorRelayMap[hex] = writeURLs
+                        continue
+                    }
+                }
+                // No relay list or no write relays → use content relays (not defaultReadRelays
+                // which includes metadata-only relays like purplepag.es)
+                authorRelayMap[hex] = NostrService.defaultPublishRelays
+            }
+
+            // 4. Fetch feed events via outbox routing
+            let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap, keys: keyManager.signingKeys())
+            let t3 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 4 outbox fan-out: \(String(format: "%.1f", t3 - t2))s (\(events.count) events)")
+
+            // 5. Process into FeedItems (batch relay fetches)
             let processed = await processEvents(events, nostrService: nostrService)
+            let t4 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 5 process events: \(String(format: "%.1f", t4 - t3))s")
 
             // Merge: keep previously-seen items that aren't in this fetch,
             // so a flaky relay response doesn't nuke posts.
@@ -81,9 +113,10 @@ class FeedViewModel {
             let newIds = Set(processed.map(\.id))
             let retained = items.filter { !newIds.contains($0.id) && followSet.contains($0.pubkeyHex) }
             items = (processed + retained).sorted { $0.createdAt > $1.createdAt }
+            if items.count > 150 { items = Array(items.prefix(150)) }
             loadState = .loaded
 
-            // 5. Resolve profiles for all authors; snapshot into resolvedProfiles for stable UI reads
+            // 6. Resolve profiles for all authors; snapshot into resolvedProfiles for stable UI reads
             let pubkeyHexes = Array(Set(items.map(\.pubkeyHex)))
             let uncached = pubkeyHexes.filter { nostrService.profileCache[$0] == nil }
             if !uncached.isEmpty {
@@ -92,8 +125,10 @@ class FeedViewModel {
             resolvedProfiles = pubkeyHexes.reduce(into: [:]) { dict, hex in
                 dict[hex] = nostrService.profileCache[hex]
             }
+            let t5 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 6 profiles: \(String(format: "%.1f", t5 - t4))s")
 
-            // 6. Fetch reaction counts + own reactions (single relay connection)
+            // 7. Fetch reaction counts + own reactions (single relay connection)
             let ownHex = keyManager.signingKeys().publicKey().toHex()
             let feedIds = items.map(\.id)
             if let result = try? await nostrService.fetchReactions(eventIds: feedIds, ownPubkeyHex: ownHex) {
@@ -101,7 +136,7 @@ class FeedViewModel {
                 ownReactions = result.ownReacted
             }
 
-            // 7. Fetch reply/comment counts (kind 1 replies for text notes, kind 1111 for scorecards)
+            // 8. Fetch reply/comment counts (kind 1 replies for text notes, kind 1111 for scorecards)
             let textNoteIds = items.compactMap { item -> String? in
                 if case .textNote = item { return item.id } else { return nil }
             }
@@ -119,6 +154,9 @@ class FeedViewModel {
                 counts.merge(commentCountsResult) { $1 }
             }
             commentCounts = counts
+            let t6 = CFAbsoluteTimeGetCurrent()
+            print("[RAID][Feed] Step 7-8 reactions+comments: \(String(format: "%.1f", t6 - t5))s")
+            print("[RAID][Feed] Total: \(String(format: "%.1f", t6 - t0))s")
         } catch {
             errorMessage = error.localizedDescription
         }

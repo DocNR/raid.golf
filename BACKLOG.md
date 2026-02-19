@@ -145,7 +145,7 @@ Comments, replies, and reactions are published fire-and-forget. If the app is fo
 - GRDB-backed outbox queue: write event to a `pending_nostr_events` table before publishing.
 - On next app foreground, retry any pending events not yet acknowledged by a relay.
 - On relay `OK` response, mark as sent and delete from queue.
-- Sequence after Phase 8C (NIP-65 relay routing will determine where to send events).
+- Phase 8C (NIP-65 relay routing) is complete. Outbox-routed send queue can now use the established relay routing logic to determine where to send events.
 
 ### Code pointers
 - `ios/RAID/RAID/Nostr/NostrService.swift` — `publishReaction()`, `publishComment()`, `publishReply()`
@@ -171,12 +171,31 @@ The social layer has no local persistence for fetched content. Every visit to a 
 - **Feed persistence:** Persist the last N feed items to GRDB so the feed renders immediately on app start, then refreshes in the background.
 
 ### Sequencing
-**Must be implemented after Phase 8C** (NIP-65 relay management). Caching architecture depends on knowing which relays serve which content — relay routing changes in 8C will affect cache invalidation strategy.
+**Phase 8C is complete.** This is now the clear next optimization target. Timing profiling from Phase 8C shows the feed first-load bottleneck is ~15s, with the serial relay connection paths (follow list fetch, relay resolution, event processing) as the primary contributors — not outbox fan-out (~1.5s). Caching architecture should account for the NIP-65 relay routing established in 8C when designing cache invalidation.
 
 ### Code pointers
 - `ios/RAID/RAID/Nostr/FeedViewModel.swift` — feed state, no persistence on restart
 - `ios/RAID/RAID/Nostr/NostrService.swift` — `fetchComments()`, `fetchReactions()`, `fetchReplies()`
 - `ios/RAID/RAID/Nostr/ProfileCacheRepository.swift` — profiles cached (GRDB), but avatar images are not
+
+---
+
+## B-011: Relay Management UX Polish
+
+**Priority:** Low (post-Phase 8C)
+**Area:** Nostr, Relay Management, UX
+
+The Keys & Relays screen manages NIP-65 relay lists and NIP-17 DM inbox relays. Core functionality (add, remove, edit direction, swipe-to-cycle) is complete. Several UX improvements remain.
+
+### Missing features
+- **Online/offline indicator:** Green/red dot showing relay connectivity status.
+- **Latency display:** Ping time (ms) per relay, shown as secondary text.
+- **Paid/free indicator:** Fetch NIP-11 relay info document to detect payment requirements.
+- **Relay info sheet:** Tap relay to see NIP-11 metadata (name, description, supported NIPs, limits).
+
+### Code pointers
+- `ios/RAID/RAID/Views/NostrProfileView.swift` — `relayRow()`, `relaySection`, `inboxRelaySection`
+- NIP-11 info fetch: `curl -H "Accept: application/nostr+json" <relay_url>` — needs Swift equivalent
 
 ---
 

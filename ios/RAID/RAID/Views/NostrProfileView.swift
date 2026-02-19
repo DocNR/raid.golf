@@ -1,15 +1,19 @@
 // NostrProfileView.swift
 // RAID Golf
 //
-// Nostr identity sheet: own profile display, key import, nsec backup, relay info.
+// Nostr identity sheet: own profile display, key import, nsec backup, relay management.
 //
 // Profile state lives in DrawerState (single source of truth).
 // This view reads from drawerState.ownProfile — no local duplicate.
+// Relay list is loaded from GRDB cache then refreshed from relays.
 
 import SwiftUI
 import NostrSDK
+import GRDB
 
 struct NostrProfileView: View {
+    let dbQueue: DatabaseQueue
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.nostrService) private var nostrService
     @Environment(\.drawerState) private var drawerState
@@ -27,6 +31,21 @@ struct NostrProfileView: View {
     @State private var importError: String?
     @State private var showOrphanWarning = false
 
+    // Relay state
+    @State private var relays: [CachedRelayEntry] = []
+    @State private var isLoadingRelays = false
+    @State private var showAddRelay = false
+    @State private var newRelayURL = ""
+    @State private var newRelayMarker: String? = nil
+    @State private var addRelayError: String?
+
+    // DM inbox relay state
+    @State private var inboxRelays: [String] = []
+    @State private var isLoadingInbox = false
+    @State private var showAddInbox = false
+    @State private var newInboxURL = ""
+    @State private var addInboxError: String?
+
     /// Single source of truth — reads from shared DrawerState, not local @State.
     private var profile: NostrProfile? { drawerState.ownProfile }
 
@@ -36,6 +55,7 @@ struct NostrProfileView: View {
                 identitySection
                 importSection
                 relaySection
+                inboxRelaySection
                 warningSection
             }
             .navigationTitle("Keys & Relays")
@@ -70,9 +90,17 @@ struct NostrProfileView: View {
                 if profile == nil {
                     await refreshProfile()
                 }
+                await loadRelays()
+                await loadInboxRelays()
             }
             .sheet(isPresented: $showImportSheet) {
                 importSheet
+            }
+            .sheet(isPresented: $showAddRelay) {
+                addRelaySheet
+            }
+            .sheet(isPresented: $showAddInbox) {
+                addInboxSheet
             }
         }
     }
@@ -158,15 +186,150 @@ struct NostrProfileView: View {
     }
 
     private var relaySection: some View {
-        Section("Relays") {
-            ForEach(NostrService.defaultPublishRelays, id: \.self) { relay in
+        Section {
+            if isLoadingRelays {
                 HStack {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+                    Spacer()
+                    ProgressView()
+                    Text("Loading relays...")
                         .foregroundStyle(.secondary)
-                    Text(relay)
-                        .font(.system(.body, design: .monospaced))
+                    Spacer()
                 }
+            } else if relays.isEmpty {
+                Text("No relay list published.")
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    bootstrapDefaults()
+                } label: {
+                    Label("Publish Default Relay List", systemImage: "antenna.radiowaves.left.and.right")
+                }
+            } else {
+                ForEach(Array(relays.enumerated()), id: \.element.url) { _, relay in
+                    relayRow(relay)
+                }
+                .onDelete(perform: deleteRelays)
             }
+
+            Button {
+                showAddRelay = true
+            } label: {
+                Label("Add Relay", systemImage: "plus.circle")
+            }
+        } header: {
+            Text("Relays")
+        } footer: {
+            if relays.count > 5 {
+                Text("NIP-65 recommends 2\u{2013}4 relays per category.")
+            }
+        }
+    }
+
+    private var inboxRelaySection: some View {
+        Section {
+            if isLoadingInbox {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Text("Loading inbox relays...")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if inboxRelays.isEmpty {
+                Text("No DM inbox relays published.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(inboxRelays, id: \.self) { url in
+                    HStack {
+                        Image(systemName: "envelope")
+                            .foregroundStyle(.secondary)
+                        Text(url)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                }
+                .onDelete(perform: deleteInboxRelays)
+            }
+
+            Button {
+                showAddInbox = true
+            } label: {
+                Label("Add Inbox Relay", systemImage: "plus.circle")
+            }
+        } header: {
+            Text("DM Inbox (NIP-17)")
+        } footer: {
+            Text("Private relays where encrypted DMs are delivered. 1\u{2013}2 recommended.")
+        }
+    }
+
+    @ViewBuilder
+    private func relayRow(_ relay: CachedRelayEntry) -> some View {
+        HStack {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .foregroundStyle(.secondary)
+            Text(relay.url)
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1)
+            Spacer()
+            Text(markerLabel(relay.marker))
+                .font(.caption2)
+                .fontWeight(.medium)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(markerColor(relay.marker).opacity(0.15))
+                .foregroundStyle(markerColor(relay.marker))
+                .clipShape(Capsule())
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                let next: String? = switch relay.marker {
+                case nil: "read"
+                case "read": "write"
+                default: nil
+                }
+                setMarker(for: relay, marker: next)
+            } label: {
+                let nextMarker: String? = switch relay.marker {
+                case nil: "read"
+                case "read": "write"
+                default: nil
+                }
+                Label(markerLabel(nextMarker), systemImage: "arrow.triangle.2.circlepath")
+            }
+            .tint(nextMarkerColor(relay.marker))
+        }
+    }
+
+    private func setMarker(for relay: CachedRelayEntry, marker: String?) {
+        guard let index = relays.firstIndex(where: { $0.url == relay.url }) else { return }
+        relays[index] = CachedRelayEntry(url: relay.url, marker: marker)
+        persistAndPublish()
+    }
+
+    private func markerLabel(_ marker: String?) -> String {
+        switch marker {
+        case nil: return "R/W"
+        case "read": return "Read"
+        case "write": return "Write"
+        default: return marker ?? ""
+        }
+    }
+
+    private func markerColor(_ marker: String?) -> Color {
+        switch marker {
+        case nil: return .blue
+        case "read": return .green
+        case "write": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func nextMarkerColor(_ currentMarker: String?) -> Color {
+        switch currentMarker {
+        case nil: return .green      // next is Read
+        case "read": return .orange  // next is Write
+        default: return .blue        // next is R/W
         }
     }
 
@@ -236,6 +399,98 @@ struct NostrProfileView: View {
         }
     }
 
+    // MARK: - Add Relay Sheet
+
+    private var addRelaySheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("wss://relay.example.com", text: $newRelayURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .font(.system(.body, design: .monospaced))
+
+                    if let error = addRelayError {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                } header: {
+                    Text("Relay URL")
+                }
+
+                Section {
+                    Picker("Direction", selection: $newRelayMarker) {
+                        Text("Read & Write").tag(nil as String?)
+                        Text("Read Only").tag("read" as String?)
+                        Text("Write Only").tag("write" as String?)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Relay Type")
+                }
+            }
+            .navigationTitle("Add Relay")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        newRelayURL = ""
+                        newRelayMarker = nil
+                        addRelayError = nil
+                        showAddRelay = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { addRelay() }
+                        .disabled(newRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    // MARK: - Add Inbox Relay Sheet
+
+    private var addInboxSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("wss://relay.example.com", text: $newInboxURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .font(.system(.body, design: .monospaced))
+
+                    if let error = addInboxError {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                } header: {
+                    Text("Inbox Relay URL")
+                } footer: {
+                    Text("Paid relays like nostr.wine work best for DM privacy.")
+                }
+            }
+            .navigationTitle("Add Inbox Relay")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        newInboxURL = ""
+                        addInboxError = nil
+                        showAddInbox = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { addInboxRelay() }
+                        .disabled(newInboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func loadIdentity() {
@@ -272,6 +527,130 @@ struct NostrProfileView: View {
             drawerState.ownProfile = profiles[pubkeyHex]
         }
     }
+
+    // MARK: - Relay Actions
+
+    private func loadRelays() async {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        let pubkeyHex = km.signingKeys().publicKey().toHex()
+
+        isLoadingRelays = true
+        defer { isLoadingRelays = false }
+
+        let cacheRepo = RelayCacheRepository(dbQueue: dbQueue)
+
+        // Load from GRDB first (instant)
+        if let cached = try? cacheRepo.fetchRelayList(pubkeyHex: pubkeyHex) {
+            relays = cached.relays
+        }
+
+        // Then fetch from relays in background (overwrites if newer)
+        if let resolved = try? await nostrService.resolveRelayLists(
+            pubkeyHexes: [pubkeyHex], cacheRepo: cacheRepo
+        ), let entries = resolved[pubkeyHex] {
+            relays = entries
+        }
+    }
+
+    private func addRelay() {
+        let url = newRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return }
+        guard url.hasPrefix("wss://") || url.hasPrefix("ws://") else {
+            addRelayError = "URL must start with wss:// or ws://"
+            return
+        }
+        guard !relays.contains(where: { $0.url == url }) else {
+            addRelayError = "Relay already in list"
+            return
+        }
+
+        let entry = CachedRelayEntry(url: url, marker: newRelayMarker)
+        relays.append(entry)
+        persistAndPublish()
+
+        newRelayURL = ""
+        newRelayMarker = nil
+        addRelayError = nil
+        showAddRelay = false
+    }
+
+    private func deleteRelays(at offsets: IndexSet) {
+        relays.remove(atOffsets: offsets)
+        persistAndPublish()
+    }
+
+    private func bootstrapDefaults() {
+        relays = NostrService.defaultPublishRelays.map {
+            CachedRelayEntry(url: $0, marker: nil)
+        }
+        persistAndPublish()
+    }
+
+    private func persistAndPublish() {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        let pubkeyHex = km.signingKeys().publicKey().toHex()
+        let repo = RelayCacheRepository(dbQueue: dbQueue)
+        let list = CachedRelayList(pubkeyHex: pubkeyHex, relays: relays, cachedAt: Date())
+        _ = try? repo.upsertRelayList(list)
+
+        // Keep in-memory cache in sync so resolveRelayLists doesn't return stale data
+        nostrService.updateRelayListCache(pubkeyHex: pubkeyHex, relays: relays)
+
+        // Auto-publish fire-and-forget
+        Task {
+            let keys = km.signingKeys()
+            try? await nostrService.publishRelayList(keys: keys, relays: relays)
+        }
+    }
+
+    // MARK: - Inbox Relay Actions
+
+    private func loadInboxRelays() async {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        let pubkeyHex = km.signingKeys().publicKey().toHex()
+
+        isLoadingInbox = true
+        defer { isLoadingInbox = false }
+
+        if let relayURLs = try? await nostrService.fetchInboxRelays(pubkeyHex: pubkeyHex) {
+            inboxRelays = relayURLs
+        }
+    }
+
+    private func addInboxRelay() {
+        let url = newInboxURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return }
+        guard url.hasPrefix("wss://") || url.hasPrefix("ws://") else {
+            addInboxError = "URL must start with wss:// or ws://"
+            return
+        }
+        guard !inboxRelays.contains(url) else {
+            addInboxError = "Relay already in list"
+            return
+        }
+
+        inboxRelays.append(url)
+        publishInboxRelays()
+
+        newInboxURL = ""
+        addInboxError = nil
+        showAddInbox = false
+    }
+
+    private func deleteInboxRelays(at offsets: IndexSet) {
+        inboxRelays.remove(atOffsets: offsets)
+        publishInboxRelays()
+    }
+
+    private func publishInboxRelays() {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        Task {
+            let keys = km.signingKeys()
+            try? await nostrService.publishInboxRelays(keys: keys, relays: inboxRelays)
+        }
+    }
+
+    // MARK: - Import Actions
 
     private func performImport() {
         importError = nil
