@@ -11,6 +11,7 @@ struct SideDrawerView: View {
     let dbQueue: DatabaseQueue
 
     @Environment(\.drawerState) private var drawerState
+    @Environment(\.nostrService) private var nostrService
 
     @AppStorage("nostrActivated") private var nostrActivated = false
     @State private var showActivationAlert = false
@@ -280,6 +281,15 @@ struct SideDrawerView: View {
         UserDefaults.standard.set(false, forKey: "nostrActivated")
         drawerState.ownProfile = nil
         drawerState.close()
+
+        // Clear all Nostr caches (GRDB + in-memory + URL)
+        nostrService.clearCaches()
+        URLCache.shared.removeAllCachedResponses()
+        try? FeedEventCacheRepository(dbQueue: dbQueue).deleteAll()
+        try? FollowListCacheRepository(dbQueue: dbQueue).deleteAll()
+        try? ProfileCacheRepository(dbQueue: dbQueue).deleteAll()
+        try? RelayCacheRepository(dbQueue: dbQueue).deleteAll()
+        try? SocialCountCacheRepository(dbQueue: dbQueue).deleteAll()
     }
 
     private func performDeleteAllData() {

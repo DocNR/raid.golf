@@ -303,5 +303,12 @@ struct FeedView: View {
             }
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
+        .overlay(alignment: .top) {
+            if viewModel.isBackgroundRefreshing {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: .infinity)
+            }
+        }
     }
 }

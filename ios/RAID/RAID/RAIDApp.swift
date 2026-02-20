@@ -11,6 +11,14 @@ struct RAIDApp: App {
     @State private var nostrService = NostrService()
     @State private var drawerState = DrawerState()
 
+    init() {
+        // Larger URL cache so AsyncImage avatar images persist across launches
+        URLCache.shared = URLCache(
+            memoryCapacity: 50 * 1024 * 1024,   // 50 MB
+            diskCapacity: 200 * 1024 * 1024      // 200 MB
+        )
+    }
+
     private let dbQueue: DatabaseQueue = {
         do {
             let supportDir = try FileManager.default.url(

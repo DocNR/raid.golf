@@ -33,10 +33,24 @@ class NostrService {
     /// Cleared on app restart.
     private(set) var relayListCache: [String: [CachedRelayEntry]] = [:]
 
+    /// Warm the in-memory profile cache from externally resolved profiles (e.g., GRDB).
+    /// Called by Phase A so Phase B's resolveProfiles skips GRDB re-reads for already-loaded profiles.
+    func warmProfileCache(_ profiles: [String: NostrProfile]) {
+        for (hex, profile) in profiles {
+            profileCache[hex] = profile
+        }
+    }
+
     /// Update the in-memory relay list cache for a given pubkey.
     /// Call after local edits to prevent stale cache from overriding user changes.
     func updateRelayListCache(pubkeyHex: String, relays: [CachedRelayEntry]) {
         relayListCache[pubkeyHex] = relays
+    }
+
+    /// Clear all in-memory caches (called on sign-out).
+    func clearCaches() {
+        profileCache = [:]
+        relayListCache = [:]
     }
 
     // MARK: - Activation Gate
@@ -263,11 +277,13 @@ class NostrService {
 
         let client = try await connectReadClient()
 
+        let since = Timestamp.fromSecs(secs: UInt64(Date().timeIntervalSince1970 - 7 * 24 * 3600))
         let filter = Filter()
             .authors(authors: pubkeys)
             .kinds(kinds: [Kind(kind: 1), Kind(kind: NIP101gKind.finalRoundRecord)])
             .hashtag(hashtag: "golf")
-            .limit(limit: 50)
+            .since(timestamp: since)
+            .limit(limit: 100)
 
         let events: Events
         do {
@@ -342,11 +358,13 @@ class NostrService {
             _ = try await client.addRelay(url: url)
             await client.connect()
 
+            let since = Timestamp.fromSecs(secs: UInt64(Date().timeIntervalSince1970 - 7 * 24 * 3600))
             let filter = Filter()
                 .authors(authors: pubkeys)
                 .kinds(kinds: [Kind(kind: 1), Kind(kind: NIP101gKind.finalRoundRecord)])
                 .hashtag(hashtag: "golf")
-                .limit(limit: 50)
+                .since(timestamp: since)
+                .limit(limit: 100)
 
             let events = try await client.fetchEvents(filter: filter, timeout: 8)
             await client.disconnect()
@@ -1080,11 +1098,12 @@ class NostrService {
             }
         }
 
-        // Layer 2: GRDB (with 24h TTL check)
+        // Layer 2: GRDB (with 24h TTL check) — single batch query instead of per-key loop
         var uncachedAfterDB: [String] = []
         if let repo = cacheRepo {
+            let dbResults = (try? repo.fetchRelayLists(pubkeyHexes: uncachedAfterMemory)) ?? [:]
             for hex in uncachedAfterMemory {
-                if let cached = try? repo.fetchRelayList(pubkeyHex: hex),
+                if let cached = dbResults[hex],
                    Date().timeIntervalSince(cached.cachedAt) < ttl {
                     result[hex] = cached.relays
                     relayListCache[hex] = cached.relays  // warm in-memory cache

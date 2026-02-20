@@ -82,6 +82,23 @@ class ProfileCacheRepository {
         }
     }
 
+    /// Batch fetch profiles by pubkey hexes. Returns dict keyed by pubkeyHex.
+    func fetchProfiles(pubkeyHexes: [String]) throws -> [String: NostrProfile] {
+        guard !pubkeyHexes.isEmpty else { return [:] }
+        return try dbQueue.read { db in
+            let placeholders = Array(repeating: "?", count: pubkeyHexes.count).joined(separator: ", ")
+            let rows = try Row.fetchAll(db,
+                sql: "SELECT * FROM nostr_profiles WHERE pubkey_hex IN (\(placeholders))",
+                arguments: StatementArguments(pubkeyHexes))
+            var result: [String: NostrProfile] = [:]
+            for row in rows {
+                let profile = rowToProfile(row)
+                result[profile.pubkeyHex] = profile
+            }
+            return result
+        }
+    }
+
     /// Fetch one profile by pubkey hex. Returns nil if not cached.
     func fetchProfile(pubkeyHex: String) throws -> NostrProfile? {
         try dbQueue.read { db in
@@ -124,6 +141,13 @@ class ProfileCacheRepository {
     }
 
     // MARK: - Private
+
+    /// Delete all cached profiles (called on sign-out).
+    func deleteAll() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM nostr_profiles")
+        }
+    }
 
     private func rowToProfile(_ row: Row) -> NostrProfile {
         NostrProfile(

@@ -678,6 +678,86 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v12_create_nostr_follow_lists: Follow List Cache
+        //
+        // Mutable cache for kind 3 contact list (NIP-02).
+        // follows_json: JSON array of pubkey hex strings.
+        // event_created_at: created_at of the kind 3 event (for future
+        //   staleness detection in fetch-modify-publish guard).
+        // cached_at: local timestamp for TTL (1 hour).
+        // No immutability triggers — same pattern as v8/v9/v10/v11.
+        // ============================================================
+        migrator.registerMigration("v12_create_nostr_follow_lists") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_follow_lists (
+                    pubkey_hex        TEXT NOT NULL PRIMARY KEY
+                                          CHECK(length(pubkey_hex) = 64),
+                    follows_json      TEXT NOT NULL,
+                    event_created_at  INTEGER NOT NULL,
+                    cached_at         TEXT NOT NULL
+                )
+                """)
+        }
+
+        // ============================================================
+        // v13_create_nostr_feed_events: Feed Event Cache
+        //
+        // Mutable cache for kind 1, 1501, 1502 Nostr events.
+        // raw_json stores the full signed event JSON for deserialization
+        // via Event.fromJson(json:). content + tags_json + metadata
+        // columns are denormalized for potential future SQL filtering.
+        // Pruned by count (200 newest by created_at) — no TTL.
+        // No immutability triggers — same pattern as v8–v12.
+        // ============================================================
+        migrator.registerMigration("v13_create_nostr_feed_events") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_feed_events (
+                    event_id_hex  TEXT NOT NULL PRIMARY KEY
+                                      CHECK(length(event_id_hex) = 64),
+                    pubkey_hex    TEXT NOT NULL
+                                      CHECK(length(pubkey_hex) = 64),
+                    kind          INTEGER NOT NULL,
+                    created_at    INTEGER NOT NULL,
+                    content       TEXT NOT NULL,
+                    tags_json     TEXT NOT NULL,
+                    raw_json      TEXT NOT NULL,
+                    fetched_at    TEXT NOT NULL
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_feed_events_created ON nostr_feed_events(created_at DESC)")
+        }
+
+        // ============================================================
+        // v14_create_social_count_caches: Reaction & Comment Count Cache
+        //
+        // Mutable caches for reaction counts (NIP-25) and comment/reply
+        // counts (NIP-22/NIP-10) per feed event. Upserted each Phase B
+        // refresh, read in Phase A for instant count display.
+        // own_reacted: event ID of the user's own reaction (nil if none).
+        // No immutability triggers — same pattern as v8–v13.
+        // ============================================================
+        migrator.registerMigration("v14_create_social_count_caches") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_reaction_counts (
+                    event_id_hex  TEXT NOT NULL PRIMARY KEY
+                                      CHECK(length(event_id_hex) = 64),
+                    count         INTEGER NOT NULL DEFAULT 0,
+                    own_reacted   INTEGER NOT NULL DEFAULT 0,
+                    cached_at     TEXT NOT NULL
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE TABLE nostr_comment_counts (
+                    event_id_hex  TEXT NOT NULL PRIMARY KEY
+                                      CHECK(length(event_id_hex) = 64),
+                    count         INTEGER NOT NULL DEFAULT 0,
+                    cached_at     TEXT NOT NULL
+                )
+                """)
+        }
+
         return migrator
     }
 

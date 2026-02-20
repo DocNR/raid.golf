@@ -599,7 +599,7 @@ struct NostrProfileView: View {
         // Auto-publish fire-and-forget
         Task {
             let keys = km.signingKeys()
-            try? await nostrService.publishRelayList(keys: keys, relays: relays)
+            _ = try? await nostrService.publishRelayList(keys: keys, relays: relays)
         }
     }
 
