@@ -23,6 +23,8 @@ class FeedViewModel {
 
     /// True while a background relay sync (Phase B) is running on top of cached content.
     var isBackgroundRefreshing = false
+    /// 0.0–1.0 progress through Phase B steps; drives the determinate progress bar.
+    var refreshProgress: Double = 0
 
     // Pagination
     /// True while loading the next page of older events.
@@ -74,6 +76,7 @@ class FeedViewModel {
         } else {
             isBackgroundRefreshing = true
         }
+        refreshProgress = 0
         errorMessage = nil
 
         // Reset pagination on fresh refresh
@@ -116,6 +119,7 @@ class FeedViewModel {
             }
             let t1 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 2 follow list: \(String(format: "%.1f", t1 - t0))s (\(follows.count) follows)")
+            refreshProgress = 0.2
 
             guard !follows.isEmpty else {
                 loadState = .noFollows
@@ -130,6 +134,7 @@ class FeedViewModel {
             )
             let t2 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 3 relay lists: \(String(format: "%.1f", t2 - t1))s")
+            refreshProgress = 0.35
 
             // Build authorRelayMap: [authorHex: [writeRelayURLs]]
             var authorRelayMap: [String: [String]] = [:]
@@ -155,11 +160,13 @@ class FeedViewModel {
             let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap, keys: cachedKeys)
             let t3 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 4 outbox fan-out: \(String(format: "%.1f", t3 - t2))s (\(events.count) events)")
+            refreshProgress = 0.7
 
             // 5. Process into FeedItems (batch relay fetches)
             let processed = await processEvents(events, nostrService: nostrService, dbQueue: dbQueue)
             let t4 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 5 process events: \(String(format: "%.1f", t4 - t3))s")
+            refreshProgress = 0.8
 
             // Merge: keep previously-seen items that aren't in this fetch,
             // so a flaky relay response doesn't nuke posts.
@@ -240,12 +247,14 @@ class FeedViewModel {
             let t5 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 6-8 enrichment (parallel): \(String(format: "%.1f", t5 - t4))s")
             print("[RAID][Feed] Total: \(String(format: "%.1f", t5 - t0))s")
+            refreshProgress = 1.0
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
         isBackgroundRefreshing = false
+        refreshProgress = 0
     }
 
     // MARK: - Pagination

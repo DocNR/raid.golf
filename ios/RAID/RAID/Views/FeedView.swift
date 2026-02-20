@@ -60,6 +60,7 @@ struct FeedView: View {
                         feedList
                             .toolbarVisibility(barsVisible ? .visible : .hidden, for: .navigationBar)
                             .toolbarVisibility(barsVisible ? .visible : .hidden, for: .tabBar)
+                            .animation(.spring(duration: 0.45, bounce: 0), value: barsVisible)
                     }
                 }
             }
@@ -333,9 +334,11 @@ struct FeedView: View {
         .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
         .overlay(alignment: .top) {
             if viewModel.isBackgroundRefreshing {
-                ProgressView()
+                ProgressView(value: viewModel.refreshProgress)
                     .progressViewStyle(.linear)
+                    .tint(.accentColor)
                     .frame(maxWidth: .infinity)
+                    .animation(.easeInOut(duration: 0.4), value: viewModel.refreshProgress)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .feedScrollToTop)) { _ in
@@ -344,23 +347,17 @@ struct FeedView: View {
         .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, new in
             if new < 50 {
                 // Near top — always show bars
-                if !barsVisible {
-                    withAnimation(.easeInOut(duration: 0.2)) { barsVisible = true }
-                }
+                if !barsVisible { barsVisible = true }
                 scrollCheckpoint = new
             } else {
                 let delta = new - scrollCheckpoint
-                if delta > 30 {
+                if delta > 40 {
                     // Scrolled down — hide bars
-                    if barsVisible {
-                        withAnimation(.easeInOut(duration: 0.2)) { barsVisible = false }
-                    }
+                    if barsVisible { barsVisible = false }
                     scrollCheckpoint = new
-                } else if delta < -30 {
+                } else if delta < -40 {
                     // Scrolled up — show bars
-                    if !barsVisible {
-                        withAnimation(.easeInOut(duration: 0.2)) { barsVisible = true }
-                    }
+                    if !barsVisible { barsVisible = true }
                     scrollCheckpoint = new
                 }
             }
