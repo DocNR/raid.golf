@@ -20,10 +20,24 @@ struct ContentView: View {
         case feed, play, courses
     }
 
+    /// Custom binding that detects a tap on the already-selected Feed tab
+    /// and posts a scroll-to-top notification.
+    private var tabBinding: Binding<Tab> {
+        Binding(
+            get: { selectedTab },
+            set: { newTab in
+                if newTab == .feed && selectedTab == .feed {
+                    NotificationCenter.default.post(name: .feedScrollToTop, object: nil)
+                }
+                selectedTab = newTab
+            }
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             // Main content
-            TabView(selection: $selectedTab) {
+            TabView(selection: tabBinding) {
                 FeedView(dbQueue: dbQueue)
                     .tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
                     .tag(Tab.feed)

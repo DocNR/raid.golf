@@ -268,8 +268,10 @@ struct FeedView: View {
     // MARK: - Feed List
 
     private var feedList: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: 0) {
+                Color.clear.frame(height: 0).id("feedTop")
                 ForEach(viewModel.items) { item in
                     NavigationLink {
                         ThreadDetailView(
@@ -330,5 +332,13 @@ struct FeedView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .feedScrollToTop)) { _ in
+            withAnimation { proxy.scrollTo("feedTop", anchor: .top) }
+        }
+        } // ScrollViewReader
     }
+}
+
+extension Notification.Name {
+    static let feedScrollToTop = Notification.Name("feedScrollToTop")
 }
