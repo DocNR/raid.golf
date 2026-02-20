@@ -2,7 +2,8 @@
 // RAID Golf
 //
 // Design tokens for the golf scorecard UI.
-// Colors, spacing, typography constants used across all scorecard views.
+// All grid measurements, score colors, and notation helpers live here.
+// No scorecard view file should contain magic numbers.
 
 import SwiftUI
 
@@ -13,7 +14,7 @@ extension Color {
     static let scoreEagle = Color(red: 0.18, green: 0.49, blue: 0.20)
 
     /// Green for birdie (-1) — slightly lighter than eagle
-    static let scoreBirdie = Color(red: 0.22, green: 0.56, blue: 0.24)
+    static let scoreBirdie = Color(red: 0.22, green: 0.55, blue: 0.16)
 
     /// Amber/orange for bogey (+1)
     static let scoreBogey = Color(red: 0.83, green: 0.33, blue: 0.00)
@@ -25,44 +26,91 @@ extension Color {
 // MARK: - Scorecard Layout Constants
 
 enum ScorecardLayout {
-    /// Fixed width for row labels ("Hole", "Par", "SI", player names)
-    static let rowLabelWidth: CGFloat = 48
+    // -- Grid column widths --
 
-    /// Fixed width for each hole column
-    static let holeColumnWidth: CGFloat = 36
+    /// Fixed width of the row label column (Hole/Par/SI/player name). Non-scrolling.
+    static let rowLabelWidth: CGFloat = 56
 
-    /// Fixed width for OUT/IN/TOTAL summary columns
+    /// Fixed width of each individual hole column in the scrolling grid.
+    static let holeColumnWidth: CGFloat = 34
+
+    /// Fixed width of OUT, IN, and TOTAL summary columns.
     static let summaryColumnWidth: CGFloat = 44
 
-    /// Horizontal padding within each cell
-    static let cellHPadding: CGFloat = 2
+    // -- Grid cell padding --
 
-    /// Vertical padding within each cell
-    static let cellVPadding: CGFloat = 6
+    /// Left + right padding within each cell.
+    static let cellHPadding: CGFloat = 3
 
-    /// Gap between grid sections (front 9, summary, back 9)
-    static let sectionGap: CGFloat = 2
+    /// Top + bottom padding within each cell.
+    static let cellVPadding: CGFloat = 7
 
-    /// Height of the mini scorecard strip in Layout B
-    static let miniCardHeight: CGFloat = 120
+    // -- Grid row heights --
 
-    /// Corner radius for the mini-card container
+    /// Height of the hole-number header row.
+    static let headerRowHeight: CGFloat = 28
+
+    /// Height of each player score row (accommodates notation overlays).
+    static let scoreRowHeight: CGFloat = 36
+
+    /// Height of the Par row.
+    static let parRowHeight: CGFloat = 26
+
+    /// Height of the Stroke Index (handicap) row.
+    static let siRowHeight: CGFloat = 22
+
+    // -- Grid visual --
+
+    /// Stroke weight for internal grid dividers.
+    static let gridLineWeight: CGFloat = 0.5
+
+    /// Heavier stroke for the semantic break between course definition and scores.
+    static let gridSemanticDividerWeight: CGFloat = 1.0
+
+    /// Gap between 9-hole block and OUT/IN/TOT column.
+    static let sectionGap: CGFloat = 4
+
+    // -- Mini scorecard (Layout B header) --
+
+    /// Height of the MiniScorecardView strip.
+    static let miniCardHeight: CGFloat = 72
+
+    /// Diameter of the current-hole indicator dot.
+    static let currentHoleDotSize: CGFloat = 4
+
+    /// Corner radius for the mini-card container.
     static let miniCardCornerRadius: CGFloat = 12
 
-    /// Corner radius for focused hole panel
-    static let focusedPanelCornerRadius: CGFloat = 16
+    // -- Score notation geometry --
 
-    /// Corner radius for score notation overlays
-    static let notationCornerRadius: CGFloat = 2
+    /// Outer diameter of notation circle / side of notation square.
+    static let notationOuterSize: CGFloat = 28
 
-    /// Minimum tap target size (Apple HIG)
+    /// Inner ring size for double-circle/double-square.
+    static let notationInnerSize: CGFloat = 20
+
+    /// Stroke weight for all outline notation shapes.
+    static let notationStrokeWeight: CGFloat = 1.5
+
+    /// Corner radius for bogey/double-bogey squares.
+    static let notationSquareRadius: CGFloat = 2
+
+    // -- General --
+
+    /// Minimum accessible tap target size (Apple HIG).
     static let minTapTarget: CGFloat = 44
 
-    /// Score cell size (square) in the grid
-    static let scoreCellSize: CGFloat = 32
+    /// Corner radius for focused hole panel.
+    static let focusedPanelCornerRadius: CGFloat = 16
 
-    /// Score cell size in mini card
-    static let miniScoreCellSize: CGFloat = 28
+    /// Font size for the focused hole number display.
+    static let focusedHoleNumberSize: CGFloat = 48
+
+    /// Font size for the focused stroke count display.
+    static let focusedStrokeCountSize: CGFloat = 72
+
+    /// Minimum frame width for stroke count to prevent layout shift on digit change.
+    static let strokeCountMinWidth: CGFloat = 120
 }
 
 // MARK: - Score Classification

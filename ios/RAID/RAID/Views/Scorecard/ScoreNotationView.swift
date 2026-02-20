@@ -7,8 +7,8 @@
 import SwiftUI
 
 /// Displays a score number with standard golf notation overlay.
-/// - Circle: birdie (-1)
-/// - Double circle: eagle (-2) or albatross (-3)
+/// - Circle: birdie (-1), eagle (-2)
+/// - Double circle: albatross (-3 or better)
 /// - Square: bogey (+1)
 /// - Double square: double bogey (+2)
 /// - Filled square: triple bogey or worse (+3+)
@@ -16,10 +16,16 @@ import SwiftUI
 struct ScoreNotationView: View {
     let strokes: Int
     let par: Int
+    /// Outer size of the notation shape. Score text scales to fit.
     let size: CGFloat
 
     private var classification: ScoreRelativeToPar {
         ScoreRelativeToPar(strokes: strokes, par: par)
+    }
+
+    /// Inner ring size for double-circle/double-square (proportional).
+    private var innerSize: CGFloat {
+        size * (CGFloat(ScorecardLayout.notationInnerSize) / CGFloat(ScorecardLayout.notationOuterSize))
     }
 
     var body: some View {
@@ -29,14 +35,14 @@ struct ScoreNotationView: View {
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(strokes), \(classification.accessibilityLabel)")
+        .accessibilityLabel("Hole, \(strokes) strokes, \(classification.accessibilityLabel)")
     }
 
     @ViewBuilder
     private var scoreText: some View {
         let isFilled = classification == .triplePlus
         Text("\(strokes)")
-            .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))
+            .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(isFilled ? .white : classification.color)
             .lineLimit(1)
@@ -45,69 +51,53 @@ struct ScoreNotationView: View {
 
     @ViewBuilder
     private var notationShape: some View {
+        let strokeWeight = ScorecardLayout.notationStrokeWeight
+        let cornerRadius = ScorecardLayout.notationSquareRadius
+
         switch classification {
         case .albatross:
             // Double concentric circles
             ZStack {
                 Circle()
-                    .strokeBorder(classification.color, lineWidth: 1.5)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
                 Circle()
-                    .strokeBorder(classification.color, lineWidth: 1.5)
-                    .padding(3)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize, height: innerSize)
             }
 
         case .eagle:
-            // Single circle (thicker to distinguish from birdie)
+            // Single circle
             Circle()
-                .strokeBorder(classification.color, lineWidth: 2)
+                .strokeBorder(classification.color, lineWidth: strokeWeight)
 
         case .birdie:
             // Single circle
             Circle()
-                .strokeBorder(classification.color, lineWidth: 1.5)
+                .strokeBorder(classification.color, lineWidth: strokeWeight)
 
         case .par:
             // No decoration
             EmptyView()
 
         case .bogey:
-            // Single square
-            RoundedRectangle(cornerRadius: ScorecardLayout.notationCornerRadius)
-                .strokeBorder(classification.color, lineWidth: 1.5)
+            // Single rounded square
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(classification.color, lineWidth: strokeWeight)
 
         case .doubleBogey:
             // Double concentric squares
             ZStack {
-                RoundedRectangle(cornerRadius: ScorecardLayout.notationCornerRadius)
-                    .strokeBorder(classification.color, lineWidth: 1.5)
-                RoundedRectangle(cornerRadius: ScorecardLayout.notationCornerRadius)
-                    .strokeBorder(classification.color, lineWidth: 1.5)
-                    .padding(3)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize, height: innerSize)
             }
 
         case .triplePlus:
             // Filled square
-            RoundedRectangle(cornerRadius: ScorecardLayout.notationCornerRadius)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(classification.color)
         }
-    }
-}
-
-/// Simplified notation for compact contexts (mini scorecard).
-/// Shows just the number with a small color indicator dot.
-struct CompactScoreView: View {
-    let strokes: Int
-    let par: Int
-
-    private var classification: ScoreRelativeToPar {
-        ScoreRelativeToPar(strokes: strokes, par: par)
-    }
-
-    var body: some View {
-        Text("\(strokes)")
-            .font(.caption2.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(classification.color)
-            .accessibilityLabel("\(strokes), \(classification.accessibilityLabel)")
     }
 }
