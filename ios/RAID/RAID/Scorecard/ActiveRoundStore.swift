@@ -54,6 +54,12 @@ class ActiveRoundStore {
         return scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
     }
 
+    /// True if the current hole has an explicitly recorded score (confirmed by user interaction).
+    var currentHoleConfirmed: Bool {
+        guard let hole = currentHole else { return false }
+        return scores[currentPlayerIndex]?[hole.holeNumber] != nil
+    }
+
     var holesScored: Int {
         holes.filter { scores[currentPlayerIndex]?[$0.holeNumber] != nil }.count
     }
@@ -198,9 +204,9 @@ class ActiveRoundStore {
     func advanceHole() {
         saveCurrentScore()
         if multiDeviceMode {
-            // Snapshot confirmed scores BEFORE ensureCurrentHoleHasDefault adds unconfirmed par
             let confirmedScores = scores[0] ?? [:]
             Task { [confirmedScores] in await publishLiveScorecard(overrideScores: confirmedScores) }
+            if !isFetchingRemoteScores { Task { await fetchRemoteScores() } }
         }
         if shouldCyclePlayers && currentPlayerIndex < players.count - 1 {
             currentPlayerIndex += 1
@@ -208,7 +214,6 @@ class ActiveRoundStore {
             currentHoleIndex += 1
             currentPlayerIndex = 0
         }
-        ensureCurrentHoleHasDefault()
     }
 
     func retreatHole() {
@@ -216,6 +221,7 @@ class ActiveRoundStore {
         if multiDeviceMode {
             let confirmedScores = scores[0] ?? [:]
             Task { [confirmedScores] in await publishLiveScorecard(overrideScores: confirmedScores) }
+            if !isFetchingRemoteScores { Task { await fetchRemoteScores() } }
         }
         if shouldCyclePlayers && currentPlayerIndex > 0 {
             currentPlayerIndex -= 1
@@ -223,13 +229,23 @@ class ActiveRoundStore {
             currentHoleIndex -= 1
             currentPlayerIndex = shouldCyclePlayers ? players.count - 1 : 0
         }
-        ensureCurrentHoleHasDefault()
+    }
+
+    /// Confirms the current hole at par without changing the stroke count.
+    /// Called when the user taps the dimmed score display in the focused hole panel.
+    func confirmCurrentHoleAtPar() {
+        guard let hole = currentHole else { return }
+        if scores[currentPlayerIndex] == nil {
+            scores[currentPlayerIndex] = [:]
+        }
+        if scores[currentPlayerIndex]?[hole.holeNumber] == nil {
+            scores[currentPlayerIndex]?[hole.holeNumber] = hole.par
+        }
     }
 
     func switchPlayer(to index: Int) {
         saveCurrentScore()
         currentPlayerIndex = index
-        ensureCurrentHoleHasDefault()
     }
 
     /// Jump directly to a specific hole index (0-based).
@@ -241,12 +257,12 @@ class ActiveRoundStore {
         if multiDeviceMode {
             let confirmedScores = scores[0] ?? [:]
             Task { [confirmedScores] in await publishLiveScorecard(overrideScores: confirmedScores) }
+            if !isFetchingRemoteScores { Task { await fetchRemoteScores() } }
         }
         currentHoleIndex = index
         if shouldCyclePlayers {
             currentPlayerIndex = 0
         }
-        ensureCurrentHoleHasDefault()
     }
 
     func finishRound(dismiss: @escaping () -> Void) {
@@ -570,35 +586,11 @@ class ActiveRoundStore {
 
     // MARK: - Persistence
 
-    /// Populate the current hole's default par in memory if no entry exists.
-    /// This ensures holesScored and isFinishEnabled reflect the current hole
-    /// immediately on arrival, not just after navigating away.
-    private func ensureCurrentHoleHasDefault() {
-        guard let hole = currentHole else { return }
-
-        // Ensure player's scores dict exists
-        if scores[currentPlayerIndex] == nil {
-            scores[currentPlayerIndex] = [:]
-        }
-
-        // Populate default if not already scored
-        if scores[currentPlayerIndex]?[hole.holeNumber] == nil {
-            scores[currentPlayerIndex]?[hole.holeNumber] = hole.par
-        }
-    }
-
-    /// Always persist the displayed value — including default par.
-    /// Append-only: each call inserts a new row in hole_scores.
+    /// Persists the current hole's score only if it has been explicitly confirmed.
+    /// No-op for unconfirmed holes (nil in scores dict). Append-only into hole_scores.
     private func saveCurrentScore() {
         guard let dbQueue = dbQueue, let hole = currentHole else { return }
-
-        let strokes = scores[currentPlayerIndex]?[hole.holeNumber] ?? hole.par
-
-        // Ensure player's scores dict exists and mark as scored
-        if scores[currentPlayerIndex] == nil {
-            scores[currentPlayerIndex] = [:]
-        }
-        scores[currentPlayerIndex]?[hole.holeNumber] = strokes
+        guard let strokes = scores[currentPlayerIndex]?[hole.holeNumber] else { return }
 
         do {
             let scoreRepo = HoleScoreRepository(dbQueue: dbQueue)
@@ -654,9 +646,9 @@ class ActiveRoundStore {
                 currentHoleIndex = holes.count - 1
             }
 
-            // Note: ensureCurrentHoleHasDefault() intentionally NOT called here.
-            // Display uses currentStrokes fallback (par). Hole is only "scored" when
-            // user navigates (Next/Previous) or interacts (+/-).
+            // Holes with no entry in scores dict are "unconfirmed" — they display par
+            // via the currentStrokes fallback but are not persisted. Confirmation requires
+            // an explicit user gesture (tap dimmed score, or +/-).
 
             // Debug logging
             let loadedScores = scores[0] ?? [:]

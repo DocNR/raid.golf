@@ -29,13 +29,13 @@ enum ScorecardLayout {
     // -- Grid column widths --
 
     /// Fixed width of the row label column (Hole/Par/SI/player name). Non-scrolling.
-    static let rowLabelWidth: CGFloat = 56
+    static let rowLabelWidth: CGFloat = 48
 
     /// Fixed width of each individual hole column in the scrolling grid.
-    static let holeColumnWidth: CGFloat = 34
+    static let holeColumnWidth: CGFloat = 30
 
     /// Fixed width of OUT, IN, and TOTAL summary columns.
-    static let summaryColumnWidth: CGFloat = 44
+    static let summaryColumnWidth: CGFloat = 36
 
     // -- Grid cell padding --
 

@@ -59,6 +59,7 @@ struct ScorecardGridView: View {
                     rowLabel(label, style: .player, isRemote: isRemote)
                 }
             }
+            .frame(width: ScorecardLayout.rowLabelWidth + 2 * ScorecardLayout.cellHPadding)
 
             // Scrolling right area (hole columns + summary columns)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -115,8 +116,8 @@ struct ScorecardGridView: View {
             .foregroundStyle(isRemote ? .secondary : style.foreground)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .frame(width: ScorecardLayout.rowLabelWidth, height: style.rowHeight, alignment: .leading)
-            .padding(.horizontal, ScorecardLayout.cellHPadding + 4)
+            .frame(width: ScorecardLayout.rowLabelWidth, height: style.rowHeight, alignment: .center)
+            .padding(.horizontal, ScorecardLayout.cellHPadding)
     }
 
     // MARK: - Hole Number Row

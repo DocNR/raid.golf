@@ -7,12 +7,13 @@
 import SwiftUI
 
 /// Displays a score number with standard golf notation overlay.
-/// - Circle: birdie (-1), eagle (-2)
-/// - Double circle: albatross (-3 or better)
-/// - Square: bogey (+1)
-/// - Double square: double bogey (+2)
-/// - Filled square: triple bogey or worse (+3+)
+/// - Single circle: birdie (-1)
+/// - Double circle: eagle (-2)
+/// - Triple circle: albatross (-3 or better)
 /// - No decoration: par (0)
+/// - Single square: bogey (+1)
+/// - Double square: double bogey (+2)
+/// - Triple square: triple bogey or worse (+3+)
 struct ScoreNotationView: View {
     let strokes: Int
     let par: Int
@@ -40,11 +41,10 @@ struct ScoreNotationView: View {
 
     @ViewBuilder
     private var scoreText: some View {
-        let isFilled = classification == .triplePlus
         Text("\(strokes)")
             .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(isFilled ? .white : classification.color)
+            .foregroundStyle(Color.primary)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
     }
@@ -56,6 +56,19 @@ struct ScoreNotationView: View {
 
         switch classification {
         case .albatross:
+            // Triple concentric circles
+            ZStack {
+                Circle()
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                Circle()
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize, height: innerSize)
+                Circle()
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize * 0.55, height: innerSize * 0.55)
+            }
+
+        case .eagle:
             // Double concentric circles
             ZStack {
                 Circle()
@@ -64,11 +77,6 @@ struct ScoreNotationView: View {
                     .strokeBorder(classification.color, lineWidth: strokeWeight)
                     .frame(width: innerSize, height: innerSize)
             }
-
-        case .eagle:
-            // Single circle
-            Circle()
-                .strokeBorder(classification.color, lineWidth: strokeWeight)
 
         case .birdie:
             // Single circle
@@ -95,9 +103,17 @@ struct ScoreNotationView: View {
             }
 
         case .triplePlus:
-            // Filled square
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(classification.color)
+            // Triple concentric squares
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize, height: innerSize)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(classification.color, lineWidth: strokeWeight)
+                    .frame(width: innerSize * 0.55, height: innerSize * 0.55)
+            }
         }
     }
 }

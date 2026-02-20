@@ -151,8 +151,8 @@ struct RoundDetailView: View {
                     .disabled(isFetchingRemote)
                 }
 
-                // Classic scorecard grid
-                ScorecardGridView(
+                // Split scorecard (front nine / back nine / totals)
+                ScorecardSplitView(
                     holes: holes,
                     scores: allPlayerScores,
                     playerLabels: gridPlayerLabels,
@@ -160,96 +160,16 @@ struct RoundDetailView: View {
                 )
                 .padding(.horizontal, 8)
 
-                // Summary stats
-                summarySection
             }
             .padding(.vertical, 8)
         }
     }
 
-    private var summarySection: some View {
-        VStack(spacing: 0) {
-            // Show per-player summary in multiplayer
-            if isMultiplayer {
-                ForEach(players.indices, id: \.self) { index in
-                    let playerScores = allPlayerScores[index] ?? [:]
-                    let strokes = holes.reduce(0) { sum, hole in
-                        sum + (playerScores[hole.holeNumber] ?? 0)
-                    }
-                    let diff = strokes - totalPar
-                    let hasScores = !playerScores.isEmpty
-
-                    HStack {
-                        Text(playerDisplayLabel(for: index))
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        if hasScores {
-                            Text("\(strokes)")
-                                .font(.headline.monospacedDigit())
-                            let diffColor: Color = diff > 0 ? .scoreDouble : (diff < 0 ? .scoreEagle : .secondary)
-                            Text(diff.scoreToParString)
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(diffColor)
-                        } else {
-                            Text("-")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-
-                    if index < players.count - 1 {
-                        Divider().padding(.horizontal)
-                    }
-                }
-                .padding(.vertical, 4)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal, 8)
-            } else {
-                // Solo summary
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Total")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("\(totalStrokes)")
-                            .font(.title.weight(.bold).monospacedDigit())
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("Score")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        let diff = totalStrokes - totalPar
-                        let diffColor: Color = diff > 0 ? .scoreDouble : (diff < 0 ? .scoreEagle : .primary)
-                        Text(diff == 0 ? "Even" : diff.scoreToParString)
-                            .font(.title.weight(.bold).monospacedDigit())
-                            .foregroundStyle(diffColor)
-                    }
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal, 8)
-            }
-        }
-    }
 
     private func playerDisplayLabel(for index: Int) -> String {
         if isMultiDeviceRound && index == 0 { return "You" }
         guard index < players.count else { return "P\(index + 1)" }
         return playerProfiles[players[index].playerPubkey]?.displayLabel ?? "P\(index + 1)"
-    }
-
-    private var totalPar: Int {
-        holes.reduce(0) { $0 + $1.par }
-    }
-
-    private var totalStrokes: Int {
-        holes.reduce(0) { sum, hole in
-            sum + (scores[hole.holeNumber] ?? 0)
-        }
     }
 
     // MARK: - Share
