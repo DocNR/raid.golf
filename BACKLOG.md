@@ -199,6 +199,36 @@ The Keys & Relays screen manages NIP-65 relay lists and NIP-17 DM inbox relays. 
 
 ---
 
+## B-012: Hybrid Multiplayer — Mixed Same-Device and Multi-Device Players
+
+**Priority:** Low (post-Phase 7)
+**Area:** Scorecard, Multi-Device Rounds, Nostr
+
+Currently the app has two mutually exclusive multiplayer modes:
+- **Same-device:** one device scores for all players (segmented picker UI).
+- **Multi-device:** each device scores for exactly one player (`playerIndex = 0`).
+
+There is no support for a hybrid: e.g., a 4-player round where P1 and P2 share a device but P3 and P4 each use their own device.
+
+### What needs to change
+
+The core abstraction is a **device ownership model**: replace the binary `multiDeviceMode: Bool` with `ownedPlayerIndices: Set<Int>`, tracking which player slots this device controls.
+
+Downstream changes:
+- **Round join flow** — when joining, let the user indicate how many players they are scoring for. Allocate that many player slots and record them as owned.
+- **`ActiveRoundStore`** — player picker UI shows for `ownedPlayerIndices.count > 1`. `isFinishEnabled` gates on all owned players having all holes scored.
+- **Kind 30501 (live scorecard)** — publish one event per owned player index (not just index 0).
+- **Kind 1502 (final records)** — publish one event per owned player index.
+- **`fetchRemoteScores()`** — remote scores are scores for non-owned indices.
+- **Inline scorecard** — "You" rows are all owned players; remote rows are unowned.
+
+### Code pointers
+- `ios/RAID/RAID/Scorecard/ActiveRoundStore.swift` — `multiDeviceMode`, `publishLiveScorecard()`, `publishFinalRecords()`, `isFinishEnabled`
+- `ios/RAID/RAID/Views/JoinRoundView.swift` — join flow (currently claims one slot)
+- `ios/RAID/RAID/Nostr/NIP101gEventBuilder.swift` — `buildLiveScorecardEvent()`, `buildFinalRecordEvent()`
+
+---
+
 ## B-008: Template Versioning
 
 **Priority:** Low (post-Milestone 1)
