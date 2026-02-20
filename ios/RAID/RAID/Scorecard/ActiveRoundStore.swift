@@ -232,6 +232,23 @@ class ActiveRoundStore {
         ensureCurrentHoleHasDefault()
     }
 
+    /// Jump directly to a specific hole index (0-based).
+    /// Saves the current hole's score before jumping, then ensures the target hole has a default.
+    /// Semantically identical to calling advanceHole()/retreatHole() — no new completion model needed.
+    func jumpToHole(index: Int) {
+        guard index >= 0, index < holes.count, index != currentHoleIndex else { return }
+        saveCurrentScore()
+        if multiDeviceMode {
+            let confirmedScores = scores[0] ?? [:]
+            Task { [confirmedScores] in await publishLiveScorecard(overrideScores: confirmedScores) }
+        }
+        currentHoleIndex = index
+        if shouldCyclePlayers {
+            currentPlayerIndex = 0
+        }
+        ensureCurrentHoleHasDefault()
+    }
+
     func finishRound(dismiss: @escaping () -> Void) {
         guard let dbQueue = dbQueue else { return }
         isCompleting = true

@@ -109,22 +109,29 @@ struct RoundDetailView: View {
         }
     }
 
-    private var scorecardView: some View {
-        List {
-            if isMultiplayer {
-                Section {
-                    Picker("Player", selection: $selectedPlayerIndex) {
-                        ForEach(players.indices, id: \.self) { index in
-                            Text(playerDisplayLabel(for: index)).tag(index)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
+    /// Player labels for the scorecard grid
+    private var gridPlayerLabels: [Int: String] {
+        var labels: [Int: String] = [:]
+        for player in players {
+            labels[player.playerIndex] = playerDisplayLabel(for: player.playerIndex)
+        }
+        if labels.isEmpty {
+            labels[0] = "You"
+        }
+        return labels
+    }
 
-            // Fetch remote scores for multi-device rounds
-            if isMultiDeviceRound {
-                Section {
+    /// Remote player indices for dimmed treatment
+    private var remotePlayerIndices: Set<Int> {
+        guard isMultiDeviceRound else { return [] }
+        return Set(players.filter { $0.playerIndex > 0 }.map(\.playerIndex))
+    }
+
+    private var scorecardView: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Fetch remote scores button for multi-device rounds
+                if isMultiDeviceRound {
                     Button {
                         Task { await fetchRemoteFinalRecords() }
                     } label: {
@@ -138,99 +145,93 @@ struct RoundDetailView: View {
                                     .foregroundStyle(.green)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
                     }
                     .disabled(isFetchingRemote)
                 }
-            }
 
-            if holes.count == 18 {
-                nineHoleSection(title: "Front 9", holes: Array(holes.prefix(9)))
-                nineHoleSection(title: "Back 9", holes: Array(holes.suffix(9)))
-            } else {
-                nineHoleSection(title: "Scorecard", holes: holes)
-            }
+                // Classic scorecard grid
+                ScorecardGridView(
+                    holes: holes,
+                    scores: allPlayerScores,
+                    playerLabels: gridPlayerLabels,
+                    remotePlayerIndices: remotePlayerIndices
+                )
+                .padding(.horizontal, 8)
 
-            totalSection
+                // Summary stats
+                summarySection
+            }
+            .padding(.vertical, 8)
         }
     }
 
-    private func nineHoleSection(title: String, holes: [CourseHoleRecord]) -> some View {
-        Section(title) {
-            ForEach(holes, id: \.holeNumber) { hole in
-                HStack {
-                    Text("Hole \(hole.holeNumber)")
-                        .frame(width: 60, alignment: .leading)
+    private var summarySection: some View {
+        VStack(spacing: 0) {
+            // Show per-player summary in multiplayer
+            if isMultiplayer {
+                ForEach(players.indices, id: \.self) { index in
+                    let playerScores = allPlayerScores[index] ?? [:]
+                    let strokes = holes.reduce(0) { sum, hole in
+                        sum + (playerScores[hole.holeNumber] ?? 0)
+                    }
+                    let diff = strokes - totalPar
+                    let hasScores = !playerScores.isEmpty
 
-                    Text("Par \(hole.par)")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 50, alignment: .leading)
-
-                    Spacer()
-
-                    if let strokes = scores[hole.holeNumber] {
-                        let diff = strokes - hole.par
-
-                        HStack(spacing: 8) {
+                    HStack {
+                        Text(playerDisplayLabel(for: index))
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        if hasScores {
                             Text("\(strokes)")
-                                .font(.headline)
-
-                            if diff != 0 {
-                                Text(diff > 0 ? "+\(diff)" : "\(diff)")
-                                    .font(.caption)
-                                    .foregroundStyle(diff > 0 ? .red : .green)
-                            }
+                                .font(.headline.monospacedDigit())
+                            let diffColor: Color = diff > 0 ? .scoreDouble : (diff < 0 ? .scoreEagle : .secondary)
+                            Text(diff.scoreToParString)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(diffColor)
+                        } else {
+                            Text("-")
+                                .foregroundStyle(.secondary)
                         }
-                    } else {
-                        Text("-")
-                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                    if index < players.count - 1 {
+                        Divider().padding(.horizontal)
                     }
                 }
-            }
-
-            // Subtotal for this nine
-            let ninePar = holes.reduce(0) { $0 + $1.par }
-            let nineStrokes = holes.reduce(0) { sum, hole in
-                sum + (scores[hole.holeNumber] ?? 0)
-            }
-            let nineDiff = nineStrokes - ninePar
-
-            HStack {
-                Text("Subtotal")
-                    .font(.headline)
-                Spacer()
-                HStack(spacing: 8) {
-                    Text("\(nineStrokes)")
-                        .font(.headline)
-                    Text("(\(nineDiff > 0 ? "+" : "")\(nineDiff))")
-                        .font(.caption)
-                        .foregroundStyle(nineDiff > 0 ? .red : (nineDiff < 0 ? .green : .secondary))
+                .padding(.vertical, 4)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 8)
+            } else {
+                // Solo summary
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text("\(totalStrokes)")
+                            .font(.title.weight(.bold).monospacedDigit())
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Score")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        let diff = totalStrokes - totalPar
+                        let diffColor: Color = diff > 0 ? .scoreDouble : (diff < 0 ? .scoreEagle : .primary)
+                        Text(diff == 0 ? "Even" : diff.scoreToParString)
+                            .font(.title.weight(.bold).monospacedDigit())
+                            .foregroundStyle(diffColor)
+                    }
                 }
-            }
-        }
-    }
-
-    private var totalSection: some View {
-        Section {
-            HStack {
-                Text("Total Par")
-                Spacer()
-                Text("\(totalPar)")
-            }
-
-            HStack {
-                Text("Total Strokes")
-                Spacer()
-                Text("\(totalStrokes)")
-                    .font(.headline)
-            }
-
-            HStack {
-                Text("Score")
-                Spacer()
-                let diff = totalStrokes - totalPar
-                Text(diff == 0 ? "Even" : (diff > 0 ? "+\(diff)" : "\(diff)"))
-                    .font(.headline)
-                    .foregroundStyle(diff > 0 ? .red : (diff < 0 ? .green : .primary))
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 8)
             }
         }
     }

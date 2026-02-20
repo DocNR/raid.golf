@@ -4,6 +4,7 @@
 // Live scorecard view for multi-device rounds.
 // Shows local player's scores alongside all other players from round_players.
 // Remote scores populated via 30501 relay fetches.
+// Uses the classic scorecard grid layout.
 
 import SwiftUI
 
@@ -32,10 +33,36 @@ struct LiveScorecardSheet: View {
         myScores.values.reduce(0, +)
     }
 
+    /// All scores merged (local + remote) for the grid
+    private var mergedScores: [Int: [Int: Int]] {
+        var merged: [Int: [Int: Int]] = [0: myScores]
+        for player in otherPlayers {
+            if let remoteScores = store.remoteScores[player.playerPubkey] {
+                merged[player.playerIndex] = remoteScores
+            }
+        }
+        return merged
+    }
+
+    /// Player labels for the grid
+    private var gridPlayerLabels: [Int: String] {
+        var labels: [Int: String] = [0: "You"]
+        for player in otherPlayers {
+            labels[player.playerIndex] = playerDisplayLabel(for: player.playerIndex)
+        }
+        return labels
+    }
+
+    /// Remote player indices for dimmed treatment
+    private var remotePlayerIndices: Set<Int> {
+        Set(otherPlayers.map(\.playerIndex))
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Refresh button
                     Button {
                         Task {
                             await store.fetchRemoteScores()
@@ -52,123 +79,70 @@ struct LiveScorecardSheet: View {
                                     .foregroundStyle(.green)
                             }
                         }
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
                     }
                     .disabled(store.isFetchingRemoteScores)
-                }
 
-                Section("Scorecard") {
-                    // Column headers
-                    HStack(spacing: 12) {
-                        Text("Hole")
-                            .frame(width: 30, alignment: .leading)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text("Par")
-                            .frame(width: 50, alignment: .leading)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("You")
-                            .frame(width: 40, alignment: .center)
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                        ForEach(otherPlayers, id: \.playerPubkey) { player in
-                            Text(playerDisplayLabel(for: player.playerIndex))
-                                .frame(width: 40, alignment: .center)
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                        }
-                    }
+                    // Classic scorecard grid
+                    ScorecardGridView(
+                        holes: store.holes,
+                        scores: mergedScores,
+                        playerLabels: gridPlayerLabels,
+                        currentHoleIndex: store.currentHoleIndex,
+                        currentPlayerIndex: 0,
+                        remotePlayerIndices: remotePlayerIndices
+                    )
+                    .padding(.horizontal, 8)
 
-                    ForEach(store.holes, id: \.holeNumber) { hole in
-                        HStack(spacing: 12) {
-                            Text("\(hole.holeNumber)")
-                                .frame(width: 30, alignment: .leading)
-                                .font(.headline)
-
-                            Text("Par \(hole.par)")
-                                .frame(width: 50, alignment: .leading)
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-
+                    // Player progress section
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("You")
+                                .font(.subheadline.weight(.medium))
                             Spacer()
-
-                            // My score
-                            Text(myScores[hole.holeNumber].map { "\($0)" } ?? "-")
-                                .frame(width: 40, alignment: .center)
-                                .font(.headline)
-
-                            // Other players' scores
-                            ForEach(otherPlayers, id: \.playerPubkey) { player in
-                                let pScores = store.remoteScores[player.playerPubkey] ?? [:]
-                                Text(pScores[hole.holeNumber].map { "\($0)" } ?? "-")
-                                    .frame(width: 40, alignment: .center)
-                                    .font(.caption)
-                                    .foregroundStyle(pScores[hole.holeNumber] != nil ? .primary : .secondary)
+                            Text("\(myScores.count)/\(store.holes.count) holes")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if !myScores.isEmpty {
+                                let diff = myTotal - totalPar
+                                Text(diff.scoreToParString)
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(diff > 0 ? Color.scoreDouble : (diff < 0 ? Color.scoreEagle : .secondary))
                             }
                         }
-                    }
-                }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
 
-                Section("Totals") {
-                    HStack(spacing: 12) {
-                        Text("Total")
-                            .font(.headline)
-
-                        Spacer()
-
-                        // My total
-                        VStack(spacing: 2) {
-                            Text("\(myTotal)")
-                                .font(.headline)
-                            let myDiff = myTotal - totalPar
-                            Text(myDiff == 0 ? "E" : (myDiff > 0 ? "+\(myDiff)" : "\(myDiff)"))
-                                .font(.caption2)
-                                .foregroundStyle(myDiff > 0 ? .red : (myDiff < 0 ? .green : .secondary))
-                        }
-                        .frame(width: 40, alignment: .center)
-
-                        // Other players' totals
                         ForEach(otherPlayers, id: \.playerPubkey) { player in
+                            Divider().padding(.horizontal)
+
                             let pScores = store.remoteScores[player.playerPubkey] ?? [:]
                             let total = pScores.values.reduce(0, +)
                             let diff = total - totalPar
-                            VStack(spacing: 2) {
-                                Text(pScores.isEmpty ? "-" : "\(total)")
+
+                            HStack {
+                                Text(playerDisplayLabel(for: player.playerIndex))
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                Text("\(pScores.count)/\(store.holes.count) holes")
                                     .font(.caption)
+                                    .foregroundStyle(.secondary)
                                 if !pScores.isEmpty {
-                                    Text(diff == 0 ? "E" : (diff > 0 ? "+\(diff)" : "\(diff)"))
-                                        .font(.caption2)
-                                        .foregroundStyle(diff > 0 ? .red : (diff < 0 ? .green : .secondary))
+                                    Text(diff.scoreToParString)
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(diff > 0 ? Color.scoreDouble : (diff < 0 ? Color.scoreEagle : .secondary))
                                 }
                             }
-                            .frame(width: 40, alignment: .center)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
                         }
                     }
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 8)
                 }
-
-                Section("Players") {
-                    HStack {
-                        Text("You")
-                            .font(.headline)
-                        Spacer()
-                        Text("\(myScores.count)/\(store.holes.count) holes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(otherPlayers, id: \.playerPubkey) { player in
-                        let pScores = store.remoteScores[player.playerPubkey] ?? [:]
-                        HStack {
-                            Text(playerDisplayLabel(for: player.playerIndex))
-                                .font(.headline)
-                            Spacer()
-                            Text("\(pScores.count)/\(store.holes.count) holes")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                .padding(.vertical, 8)
             }
             .navigationTitle("Live Scorecard")
             .navigationBarTitleDisplayMode(.inline)
