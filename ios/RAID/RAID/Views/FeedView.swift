@@ -15,6 +15,10 @@ struct FeedView: View {
     @State private var showActivation = false
     @State private var selectedItem: FeedItem?
 
+    // Scroll-to-hide chrome
+    @State private var barsVisible = true
+    @State private var scrollCheckpoint: CGFloat = 0
+
     var body: some View {
         NavigationStack {
             Group {
@@ -54,6 +58,8 @@ struct FeedView: View {
                         }
                     default:
                         feedList
+                            .toolbarVisibility(barsVisible ? .visible : .hidden, for: .navigationBar)
+                            .toolbarVisibility(barsVisible ? .visible : .hidden, for: .tabBar)
                     }
                 }
             }
@@ -334,6 +340,30 @@ struct FeedView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .feedScrollToTop)) { _ in
             withAnimation { proxy.scrollTo("feedTop", anchor: .top) }
+        }
+        .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, new in
+            if new < 50 {
+                // Near top — always show bars
+                if !barsVisible {
+                    withAnimation(.easeInOut(duration: 0.2)) { barsVisible = true }
+                }
+                scrollCheckpoint = new
+            } else {
+                let delta = new - scrollCheckpoint
+                if delta > 30 {
+                    // Scrolled down — hide bars
+                    if barsVisible {
+                        withAnimation(.easeInOut(duration: 0.2)) { barsVisible = false }
+                    }
+                    scrollCheckpoint = new
+                } else if delta < -30 {
+                    // Scrolled up — show bars
+                    if !barsVisible {
+                        withAnimation(.easeInOut(duration: 0.2)) { barsVisible = true }
+                    }
+                    scrollCheckpoint = new
+                }
+            }
         }
         } // ScrollViewReader
     }
