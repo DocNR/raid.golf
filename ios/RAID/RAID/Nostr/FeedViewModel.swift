@@ -24,6 +24,20 @@ class FeedViewModel {
     /// True while a background relay sync (Phase B) is running on top of cached content.
     var isBackgroundRefreshing = false
 
+    // Pagination
+    /// True while loading the next page of older events.
+    var isLoadingMore = false
+    /// False when a page returns 0 new unique events.
+    var hasMoreEvents = true
+    /// created_at of the oldest displayed item; next page uses until = cursor - 1.
+    private var paginationCursor: UInt64? = nil
+    /// Relay plan from last refresh(), reused for pagination (avoids ~15s re-resolution).
+    private var cachedRelayPlan: [String: [String]]? = nil
+    /// Follow set from last refresh(), reused for pagination filtering.
+    private var cachedFollowSet: Set<String>? = nil
+    /// Keys from last refresh(), reused for NIP-42 AUTH during pagination.
+    private var cachedKeys: Keys? = nil
+
     enum LoadState {
         case idle
         case guest
@@ -61,6 +75,14 @@ class FeedViewModel {
             isBackgroundRefreshing = true
         }
         errorMessage = nil
+
+        // Reset pagination on fresh refresh
+        paginationCursor = nil
+        hasMoreEvents = true
+        isLoadingMore = false
+        cachedRelayPlan = nil
+        cachedFollowSet = nil
+        cachedKeys = nil
 
         do {
             let t0 = CFAbsoluteTimeGetCurrent()
@@ -124,8 +146,13 @@ class FeedViewModel {
                 authorRelayMap[hex] = NostrService.defaultPublishRelays
             }
 
+            // Cache relay plan + follow set + keys for pagination reuse
+            self.cachedRelayPlan = authorRelayMap
+            self.cachedFollowSet = Set(follows)
+            self.cachedKeys = keyManager.signingKeys()
+
             // 4. Fetch feed events via outbox routing
-            let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap, keys: keyManager.signingKeys())
+            let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap, keys: cachedKeys)
             let t3 = CFAbsoluteTimeGetCurrent()
             print("[RAID][Feed] Step 4 outbox fan-out: \(String(format: "%.1f", t3 - t2))s (\(events.count) events)")
 
@@ -137,19 +164,24 @@ class FeedViewModel {
             // Merge: keep previously-seen items that aren't in this fetch,
             // so a flaky relay response doesn't nuke posts.
             // Only retain items from authors still in the follow list (respects unfollows).
-            let followSet = Set(follows)
+            let followSet = cachedFollowSet ?? Set(follows)
             let newIds = Set(processed.map(\.id))
             let retained = items.filter { !newIds.contains($0.id) && followSet.contains($0.pubkeyHex) }
             items = (processed + retained).sorted { $0.createdAt > $1.createdAt }
-            if items.count > 150 { items = Array(items.prefix(150)) }
             loadState = .loaded
+
+            // Set initial pagination cursor from oldest displayed item
+            if let oldest = items.last {
+                let ts = oldest.createdAt.timeIntervalSince1970
+                paginationCursor = ts > 0 ? UInt64(ts) : nil
+            }
 
             // Cache all fetched events to GRDB (kind 1, 1501, 1502 + referenced events)
             let feedEventRepo = FeedEventCacheRepository(dbQueue: dbQueue)
             let allEvents = Array(rawEvents.values)
             if !allEvents.isEmpty {
                 try? feedEventRepo.upsertEvents(allEvents)
-                try? feedEventRepo.pruneOldEvents(keepCount: 200)
+                try? feedEventRepo.pruneOldEvents(keepCount: 500)
             }
 
             // 6-8. Enrichment — profiles, reactions, and comments run concurrently
@@ -214,6 +246,137 @@ class FeedViewModel {
 
         isLoading = false
         isBackgroundRefreshing = false
+    }
+
+    // MARK: - Pagination
+
+    /// Fetch the next page of older events using the pagination cursor.
+    /// Reuses the cached relay plan from the last full refresh.
+    func loadNextPage(nostrService: NostrService, dbQueue: DatabaseQueue) async {
+        guard !isLoadingMore, !isLoading, hasMoreEvents,
+              let cursor = paginationCursor,
+              let relayPlan = cachedRelayPlan,
+              let followSet = cachedFollowSet else { return }
+
+        isLoadingMore = true
+
+        do {
+            // Fetch events older than cursor (until is inclusive in NIP-01, so subtract 1)
+            let events = try await nostrService.fetchFeedEventsOutbox(
+                authorRelayMap: relayPlan,
+                keys: cachedKeys,
+                until: cursor - 1,
+                timeout: 5
+            )
+
+            // Process into FeedItems (resolves referenced 1502/1501 events)
+            let processed = await processEvents(events, nostrService: nostrService, dbQueue: dbQueue)
+
+            // Dedup against existing items, filter to followed authors
+            let existingIds = Set(items.map(\.id))
+            let newItems = processed.filter { !existingIds.contains($0.id) && followSet.contains($0.pubkeyHex) }
+
+            if newItems.isEmpty {
+                hasMoreEvents = false
+                isLoadingMore = false
+                return
+            }
+
+            // Merge and re-sort
+            items = (items + newItems).sorted { $0.createdAt > $1.createdAt }
+
+            // Update cursor to new oldest item
+            if let oldest = items.last {
+                paginationCursor = UInt64(oldest.createdAt.timeIntervalSince1970)
+            }
+
+            // Cache new events to GRDB
+            let feedEventRepo = FeedEventCacheRepository(dbQueue: dbQueue)
+            let newEventsList = newItems.compactMap { rawEvents[$0.id] }
+            if !newEventsList.isEmpty {
+                try? feedEventRepo.upsertEvents(newEventsList)
+                try? feedEventRepo.pruneOldEvents(keepCount: 500)
+            }
+
+            // Enrich only new items (profiles, reactions, comments)
+            await enrichNewItems(newItems, nostrService: nostrService, dbQueue: dbQueue)
+
+        } catch {
+            print("[RAID][Feed] Pagination error: \(error.localizedDescription)")
+        }
+
+        isLoadingMore = false
+    }
+
+    /// Enrich only newly loaded items: profiles, reactions, comments.
+    /// Merges results into existing dictionaries (does not overwrite).
+    private func enrichNewItems(_ newItems: [FeedItem], nostrService: NostrService, dbQueue: DatabaseQueue) async {
+        let newPubkeys = Array(Set(newItems.map(\.pubkeyHex)))
+        let uncached = newPubkeys.filter { nostrService.profileCache[$0] == nil }
+        let newIds = newItems.map(\.id)
+        let ownHex = (try? KeyManager.loadOrCreate().signingKeys().publicKey().toHex()) ?? ""
+
+        let textNoteIds = newItems.compactMap { item -> String? in
+            if case .textNote = item { return item.id } else { return nil }
+        }
+        let scorecardIds = newItems.compactMap { item -> String? in
+            if case .scorecard = item { return item.id } else { return nil }
+        }
+
+        let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+
+        // Run all three enrichment tasks concurrently
+        let profilesHandle = Task {
+            if !uncached.isEmpty {
+                _ = try? await nostrService.resolveProfiles(pubkeyHexes: uncached, cacheRepo: profileRepo)
+            }
+        }
+
+        let reactionsHandle = Task { () -> (counts: [String: Int], ownReacted: Set<String>)? in
+            return try? await nostrService.fetchReactions(eventIds: newIds, ownPubkeyHex: ownHex)
+        }
+
+        let commentsHandle = Task { () -> [String: Int] in
+            var counts: [String: Int] = [:]
+            if !textNoteIds.isEmpty,
+               let replyCounts = try? await nostrService.fetchReplyCounts(eventIds: textNoteIds) {
+                counts.merge(replyCounts) { $1 }
+            }
+            if !scorecardIds.isEmpty,
+               let commentCountsResult = try? await nostrService.fetchCommentCounts(eventIds: scorecardIds) {
+                counts.merge(commentCountsResult) { $1 }
+            }
+            return counts
+        }
+
+        // Merge profiles
+        await profilesHandle.value
+        for hex in newPubkeys {
+            if let profile = nostrService.profileCache[hex] {
+                resolvedProfiles[hex] = profile
+            }
+        }
+
+        // Merge reactions (additive)
+        if let result = await reactionsHandle.value {
+            for (id, count) in result.counts {
+                reactionCounts[id] = count
+            }
+            ownReactions.formUnion(result.ownReacted)
+        }
+
+        // Merge comments
+        let newComments = await commentsHandle.value
+        for (id, count) in newComments {
+            commentCounts[id] = count
+        }
+
+        // Persist new social counts to GRDB
+        let socialRepo = SocialCountCacheRepository(dbQueue: dbQueue)
+        if let result = await reactionsHandle.value {
+            try? socialRepo.upsertReactionCounts(result.counts, ownReacted: result.ownReacted)
+        }
+        try? socialRepo.upsertCommentCounts(newComments)
     }
 
     // MARK: - Cache Paint (Phase A)

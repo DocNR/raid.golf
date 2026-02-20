@@ -300,6 +300,26 @@ struct FeedView: View {
 
                     Divider()
                 }
+
+                // Pagination: load older events when scrolled to bottom
+                if viewModel.hasMoreEvents && !viewModel.items.isEmpty {
+                    if viewModel.isLoadingMore {
+                        ProgressView()
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Color.clear
+                            .frame(height: 1)
+                            .onAppear {
+                                Task {
+                                    await viewModel.loadNextPage(
+                                        nostrService: nostrService,
+                                        dbQueue: dbQueue
+                                    )
+                                }
+                            }
+                    }
+                }
             }
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }

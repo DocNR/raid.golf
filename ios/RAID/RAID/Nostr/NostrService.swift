@@ -300,7 +300,7 @@ class NostrService {
     /// Fetch feed events using NIP-65 outbox routing.
     /// Fans out to authors' write relays (capped at 6), with orphan safety net via default relays.
     /// Deduplicates by event ID across relay results. Per-relay failures are non-fatal.
-    func fetchFeedEventsOutbox(authorRelayMap: [String: [String]], keys: Keys? = nil) async throws -> [Event] {
+    func fetchFeedEventsOutbox(authorRelayMap: [String: [String]], keys: Keys? = nil, until: UInt64? = nil, timeout: TimeInterval = 8) async throws -> [Event] {
         guard isActivated else {
             print("[RAID][Guest] fetchFeedEventsOutbox blocked — Nostr not activated")
             return []
@@ -319,7 +319,7 @@ class NostrService {
         await withTaskGroup(of: [Event].self) { group in
             for (relayURL, authorHexes) in relayPlan {
                 group.addTask {
-                    await self.fetchFeedFromRelay(relayURL: relayURL, authorHexes: authorHexes, keys: keys)
+                    await self.fetchFeedFromRelay(relayURL: relayURL, authorHexes: authorHexes, keys: keys, until: until, timeout: timeout)
                 }
             }
             for await relayEvents in group {
@@ -342,7 +342,7 @@ class NostrService {
 
     /// Fetch feed events from a single relay for specific authors.
     /// Per-relay failure is non-fatal — returns empty array on error.
-    private func fetchFeedFromRelay(relayURL: String, authorHexes: [String], keys: Keys? = nil) async -> [Event] {
+    private func fetchFeedFromRelay(relayURL: String, authorHexes: [String], keys: Keys? = nil, until: UInt64? = nil, timeout: TimeInterval = 8) async -> [Event] {
         let pubkeys = authorHexes.compactMap { try? PublicKey.parse(publicKey: $0) }
         guard !pubkeys.isEmpty else { return [] }
 
@@ -358,15 +358,18 @@ class NostrService {
             _ = try await client.addRelay(url: url)
             await client.connect()
 
-            let since = Timestamp.fromSecs(secs: UInt64(Date().timeIntervalSince1970 - 7 * 24 * 3600))
-            let filter = Filter()
+            var filter = Filter()
                 .authors(authors: pubkeys)
                 .kinds(kinds: [Kind(kind: 1), Kind(kind: NIP101gKind.finalRoundRecord)])
                 .hashtag(hashtag: "golf")
-                .since(timestamp: since)
                 .limit(limit: 100)
+            if let until {
+                filter = filter.until(timestamp: Timestamp.fromSecs(secs: until))
+            } else {
+                filter = filter.since(timestamp: Timestamp.fromSecs(secs: UInt64(Date().timeIntervalSince1970 - 7 * 24 * 3600)))
+            }
 
-            let events = try await client.fetchEvents(filter: filter, timeout: 8)
+            let events = try await client.fetchEvents(filter: filter, timeout: timeout)
             await client.disconnect()
             let verified = verifiedEvents(try events.toVec())
             print("[RAID][Outbox] \(relayURL): \(verified.count) events from \(authorHexes.count) authors")
