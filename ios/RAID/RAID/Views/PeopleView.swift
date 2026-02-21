@@ -274,21 +274,27 @@ struct PeopleView: View {
     private func loadFollows() async {
         isLoadingFollows = true
 
-        // 1. Cache-first: load from GRDB
-        if let myHex = creatorPubkeyHex {
-            let repo = FollowListCacheRepository(dbQueue: dbQueue)
-            if let cached = try? repo.fetch(pubkeyHex: myHex) {
-                followOrder = cached.follows
-                await resolveFollowProfiles()
-            }
-        }
-
-        // 2. Relay refresh
         guard let myHex = creatorPubkeyHex else {
             isLoadingFollows = false
             return
         }
 
+        // Phase A: cache-first instant paint from GRDB
+        let followRepo = FollowListCacheRepository(dbQueue: dbQueue)
+        let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+        if let cached = try? followRepo.fetch(pubkeyHex: myHex) {
+            followOrder = cached.follows
+            // Synchronous GRDB read — instant profiles with names/avatars
+            if let cachedProfiles = try? profileRepo.fetchProfiles(pubkeyHexes: cached.follows) {
+                followProfiles = cachedProfiles
+                // Fill stubs for any follows not yet in profile cache
+                for hex in cached.follows where followProfiles[hex] == nil {
+                    followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                }
+            }
+        }
+
+        // Phase B: relay refresh in background
         do {
             let pubkey = try PublicKey.parse(publicKey: myHex)
             let result = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
@@ -302,8 +308,7 @@ struct PeopleView: View {
                 $0.name != nil || $0.displayName != nil || $0.picture != nil
             }
             if !worthCaching.isEmpty {
-                let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
-                try? cacheRepo.upsertProfiles(Array(worthCaching))
+                try? profileRepo.upsertProfiles(Array(worthCaching))
             }
         } catch {
             print("[RAID][People] Follow list relay fetch failed: \(error)")
@@ -312,25 +317,27 @@ struct PeopleView: View {
         isLoadingFollows = false
     }
 
-    private func resolveFollowProfiles() async {
-        guard !followOrder.isEmpty else { return }
-        let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
-        if let profiles = try? await nostrService.resolveProfiles(
-            pubkeyHexes: followOrder, cacheRepo: cacheRepo
-        ) {
-            followProfiles = profiles
-        }
-    }
-
     private func loadClubhouse() async {
         isLoadingClubhouse = true
 
-        // 1. GRDB local
         let repo = ClubhouseRepository(dbQueue: dbQueue)
-        clubhousePubkeys = (try? repo.allPubkeyHexes()) ?? []
-        await resolveClubhouseProfiles()
+        let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
 
-        // 2. Relay refresh
+        // Phase A: GRDB instant paint
+        clubhousePubkeys = (try? repo.allPubkeyHexes()) ?? []
+        if !clubhousePubkeys.isEmpty {
+            if let cachedProfiles = try? profileRepo.fetchProfiles(pubkeyHexes: clubhousePubkeys) {
+                clubhouseMembers = clubhousePubkeys.map { hex in
+                    cachedProfiles[hex] ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                }
+            } else {
+                clubhouseMembers = clubhousePubkeys.map {
+                    NostrProfile(pubkeyHex: $0, name: nil, displayName: nil, picture: nil)
+                }
+            }
+        }
+
+        // Phase B: relay refresh
         guard let hex = creatorPubkeyHex else {
             isLoadingClubhouse = false
             return
@@ -341,30 +348,19 @@ struct PeopleView: View {
             if !remotePubkeys.isEmpty && Set(remotePubkeys) != Set(clubhousePubkeys) {
                 try? repo.replaceAll(pubkeyHexes: remotePubkeys)
                 clubhousePubkeys = remotePubkeys
-                await resolveClubhouseProfiles()
+            }
+            // Resolve all profiles (memory → GRDB → relay) and persist
+            let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
+            if let profiles = try? await nostrService.resolveProfiles(
+                pubkeyHexes: clubhousePubkeys, cacheRepo: cacheRepo
+            ) {
+                clubhouseMembers = clubhousePubkeys.compactMap { profiles[$0] }
             }
         } catch {
             print("[RAID][People] Clubhouse relay fetch failed: \(error)")
         }
 
         isLoadingClubhouse = false
-    }
-
-    private func resolveClubhouseProfiles() async {
-        guard !clubhousePubkeys.isEmpty else {
-            clubhouseMembers = []
-            return
-        }
-        let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
-        if let profiles = try? await nostrService.resolveProfiles(
-            pubkeyHexes: clubhousePubkeys, cacheRepo: cacheRepo
-        ) {
-            clubhouseMembers = clubhousePubkeys.compactMap { profiles[$0] }
-        } else {
-            clubhouseMembers = clubhousePubkeys.map {
-                NostrProfile(pubkeyHex: $0, name: nil, displayName: nil, picture: nil)
-            }
-        }
     }
 
     // MARK: - Following Mutations
