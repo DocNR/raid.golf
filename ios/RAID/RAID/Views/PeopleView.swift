@@ -1,9 +1,9 @@
 // PeopleView.swift
 // RAID Golf
 //
-// Combined Following + Clubhouse management with segmented tabs.
-// Following: NIP-02 kind 3 contact list. Clubhouse: NIP-51 kind 30000 follow set.
-// Swipe left to unfollow/remove. Swipe right on Following to add to Clubhouse.
+// Combined Following + Favorites management with segmented tabs.
+// Following: NIP-02 kind 3 contact list. Favorites: NIP-51 kind 30000 follow set.
+// Swipe left to unfollow/unfavorite. Swipe right on Following to favorite.
 // Paste an npub into the search bar to follow or add someone new.
 
 import SwiftUI
@@ -48,7 +48,7 @@ struct PeopleView: View {
 
     private enum PeopleTab: String, CaseIterable {
         case following = "Following"
-        case clubhouse = "Clubhouse"
+        case clubhouse = "Favorites"
     }
 
     /// If the search text is a valid npub or hex pubkey, returns the hex.
@@ -203,11 +203,11 @@ struct PeopleView: View {
                         }
                     case .clubhouse:
                         if alreadyInClubhouse {
-                            Text("Added")
+                            Text("Favorited")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
-                            Button("Add") {
+                            Button("Favorite") {
                                 addToClubhouse(pubkeyHex: hex, profile: profile)
                                 searchText = ""
                             }
@@ -265,16 +265,16 @@ struct PeopleView: View {
                                     Button {
                                         addToClubhouse(pubkeyHex: hex, profile: followProfiles[hex])
                                     } label: {
-                                        Label("Clubhouse", systemImage: "person.crop.circle.badge.plus")
+                                        Label("Favorite", systemImage: "star")
                                     }
-                                    .tint(.green)
+                                    .tint(.orange)
                                 }
                             }
                         }
                     } header: {
                         Text("\(followOrder.count) Following")
                     } footer: {
-                        Text("Swipe left to unfollow. Swipe right to add to Clubhouse.")
+                        Text("Swipe left to unfollow. Swipe right to favorite.")
                     }
                 }
             }
@@ -304,7 +304,7 @@ struct PeopleView: View {
         }
     }
 
-    // MARK: - Clubhouse Tab
+    // MARK: - Favorites Tab
 
     @ViewBuilder
     private var clubhouseList: some View {
@@ -313,8 +313,8 @@ struct PeopleView: View {
         } else if clubhouseMembers.isEmpty && parsedSearchKeyHex == nil {
             emptyState(
                 icon: "star",
-                title: "No Clubhouse Members",
-                message: "Add people from your follows or paste an npub into the search bar."
+                title: "No Favorites",
+                message: "Favorite people from your follows or paste an npub into the search bar."
             )
         } else {
             List {
@@ -334,14 +334,14 @@ struct PeopleView: View {
                                 Button(role: .destructive) {
                                     removeFromClubhouse(pubkeyHex: profile.pubkeyHex)
                                 } label: {
-                                    Label("Remove", systemImage: "person.badge.minus")
+                                    Label("Unfavorite", systemImage: "star.slash")
                                 }
                             }
                         }
                     } header: {
                         Text("\(clubhouseMembers.count) Members")
                     } footer: {
-                        Text("Swipe left to remove. Syncs across devices via Nostr.")
+                        Text("Swipe left to unfavorite. Syncs across devices via Nostr.")
                     }
                 }
 
@@ -350,7 +350,7 @@ struct PeopleView: View {
                         Button {
                             showClubhouseFollowPicker = true
                         } label: {
-                            Label("Add from Follows", systemImage: "person.crop.circle.badge.plus")
+                            Label("Add from Follows", systemImage: "star.circle")
                         }
                     }
                 }
@@ -562,7 +562,7 @@ struct PeopleView: View {
         }
     }
 
-    // MARK: - Clubhouse Mutations
+    // MARK: - Favorites Mutations
 
     private func addToClubhouse(pubkeyHex: String, profile: NostrProfile?) {
         guard !clubhousePubkeys.contains(pubkeyHex) else { return }

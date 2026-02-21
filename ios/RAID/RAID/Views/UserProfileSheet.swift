@@ -2,7 +2,7 @@
 // RAID Golf
 //
 // Lightweight profile sheet for viewing another user.
-// Shows avatar, name, bio, npub + Follow/Unfollow and Clubhouse actions.
+// Shows avatar, name, bio, npub + Follow/Unfollow and Favorite actions.
 // Presented from PeopleView rows, feed threads, or any player tap.
 
 import SwiftUI
@@ -60,7 +60,7 @@ struct UserProfileSheet: View {
             }
             .nostrActivationAlert(
                 isPresented: $showActivationAlert,
-                message: "Create an account to follow people and manage your Clubhouse.",
+                message: "Create an account to follow people and manage your favorites.",
                 onActivate: { showActivation = true }
             )
             .fullScreenCover(isPresented: $showActivation) {
@@ -209,9 +209,9 @@ struct UserProfileSheet: View {
                     if isTogglingClubhouse {
                         ProgressView().controlSize(.small)
                     } else {
-                        Image(systemName: isInClubhouse ? "person.crop.circle.badge.minus" : "person.crop.circle.badge.plus")
+                        Image(systemName: isInClubhouse ? "star.slash" : "star")
                     }
-                    Text(isInClubhouse ? "Remove" : "Clubhouse")
+                    Text(isInClubhouse ? "Unfavorite" : "Favorite")
                 }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)

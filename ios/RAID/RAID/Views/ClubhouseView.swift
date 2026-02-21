@@ -328,7 +328,7 @@ struct ClubhouseFollowPicker: View {
                 prompt: "Search by name or nip05"
             )
             .onChange(of: searchQuery) { _, _ in performSearch() }
-            .navigationTitle("Add to Clubhouse")
+            .navigationTitle("Add to Favorites")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

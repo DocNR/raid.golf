@@ -341,7 +341,7 @@ private struct PlayerPickerSheet: View {
     @ViewBuilder
     private var clubhouseSection: some View {
         if !clubhouseProfiles.isEmpty {
-            Section("Clubhouse") {
+            Section("Favorites") {
                 ForEach(clubhouseProfiles) { profile in
                     followRow(profile: profile)
                 }
