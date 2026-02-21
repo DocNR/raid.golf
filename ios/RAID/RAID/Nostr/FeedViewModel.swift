@@ -109,12 +109,20 @@ class FeedViewModel {
                Date().timeIntervalSince(cached.cachedAt) < followCacheTTL {
                 follows = cached.follows
             } else {
-                let (fetched, _) = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
+                let (fetched, fetchedProfiles) = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
                 follows = fetched
                 if !follows.isEmpty {
                     try? followListRepo.upsert(CachedFollowList(
                         pubkeyHex: pubkeyHex, follows: follows, eventCreatedAt: 0, cachedAt: Date()
                     ))
+                }
+                // Persist profiles to shared GRDB cache (they'd otherwise only live in-memory)
+                let worthCaching = fetchedProfiles.values.filter {
+                    $0.name != nil || $0.displayName != nil || $0.picture != nil
+                }
+                if !worthCaching.isEmpty {
+                    let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+                    try? profileRepo.upsertProfiles(Array(worthCaching))
                 }
             }
             let t1 = CFAbsoluteTimeGetCurrent()

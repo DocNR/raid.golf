@@ -80,8 +80,8 @@ struct ContentView: View {
         .sheet(isPresented: Bindable(drawerState).showPractice) {
             PracticeView(dbQueue: dbQueue)
         }
-        .sheet(isPresented: Bindable(drawerState).showClubhouse) {
-            ClubhouseView(dbQueue: dbQueue)
+        .sheet(isPresented: Bindable(drawerState).showPeople) {
+            PeopleView(dbQueue: dbQueue)
         }
         .sheet(isPresented: Bindable(drawerState).showKeysRelays) {
             NostrProfileView(dbQueue: dbQueue)

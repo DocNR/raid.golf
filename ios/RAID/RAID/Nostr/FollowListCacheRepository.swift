@@ -65,6 +65,24 @@ class FollowListCacheRepository {
         }
     }
 
+    /// Convenience: update the local cache after publishing a new kind 3.
+    /// Uses the current timestamp for both `eventCreatedAt` and `cachedAt`.
+    func updateLocalFollowList(pubkeyHex: String, follows: [String]) throws {
+        let now = UInt64(Date().timeIntervalSince1970)
+        try upsert(CachedFollowList(
+            pubkeyHex: pubkeyHex,
+            follows: follows,
+            eventCreatedAt: now,
+            cachedAt: Date()
+        ))
+    }
+
+    /// Check whether `ownerPubkeyHex` follows `targetPubkeyHex` in the local cache.
+    func isFollowing(ownerPubkeyHex: String, targetPubkeyHex: String) throws -> Bool {
+        guard let list = try fetch(pubkeyHex: ownerPubkeyHex) else { return false }
+        return list.follows.contains(targetPubkeyHex)
+    }
+
     /// Delete all cached follow lists (called on sign-out).
     func deleteAll() throws {
         try dbQueue.write { db in

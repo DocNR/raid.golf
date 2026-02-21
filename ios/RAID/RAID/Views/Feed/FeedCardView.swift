@@ -12,6 +12,7 @@ struct FeedCardView: View {
     var hasReacted: Bool = false
     var commentCount: Int = 0
     var onReact: (() -> Void)?
+    var onProfileTap: (() -> Void)?
 
     private let avatarSize: CGFloat = 40
     private let avatarSpacing: CGFloat = 10
@@ -19,12 +20,21 @@ struct FeedCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Header: avatar + name · time (center-aligned row)
+            // Avatar + name are tappable → opens profile sheet (intercepts NavigationLink)
             HStack(spacing: avatarSpacing) {
-                ProfileAvatarView(pictureURL: profile?.picture, size: avatarSize)
+                Button {
+                    onProfileTap?()
+                } label: {
+                    HStack(spacing: avatarSpacing) {
+                        ProfileAvatarView(pictureURL: profile?.picture, size: avatarSize)
 
-                Text(profile?.displayLabel ?? String(item.pubkeyHex.prefix(8)) + "...")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                        Text(profile?.displayLabel ?? String(item.pubkeyHex.prefix(8)) + "...")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.plain)
 
                 Text("·")
                     .font(.subheadline)

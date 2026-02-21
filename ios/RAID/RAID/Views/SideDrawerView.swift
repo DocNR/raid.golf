@@ -53,9 +53,9 @@ struct SideDrawerView: View {
                     presentSheet { drawerState.showPractice = true }
                 }
 
-                drawerMenuItem(icon: "person.2", label: "Clubhouse") {
+                drawerMenuItem(icon: "person.2", label: "People") {
                     if nostrActivated {
-                        presentSheet { drawerState.showClubhouse = true }
+                        presentSheet { drawerState.showPeople = true }
                     } else {
                         showActivationAlert = true
                     }

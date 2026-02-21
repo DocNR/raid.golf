@@ -42,6 +42,16 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **Scorecard Redesign (merged 2026-02-19/20)**
+  - Classic grid layout scorecard replacing previous row-based design
+  - Score notation: circles for under-par (birdie/eagle/albatross), squares for over-par (standard golf convention)
+  - `MiniScorecardView`: compact scorecard for live multiplayer scoring
+  - `ScorecardSplitView`: review/detail view with front nine, back nine, and totals as separate cards
+  - `ScorecardDesignTokens`: centralized layout constants for consistent spacing/sizing
+  - Score entry UX: +/- buttons dimmed until active, haptics, consistent Previous/Next nav
+  - "Finish Round" renamed to "Finalize Round" (communicates NIP-101g kind 1502 publish)
+  - 11 files changed; 5 new Scorecard components; no schema changes
+
 - **iOS Phase 8D.B: Social Interactions + Thread UX**
   - **NIP-51 Clubhouse (kind 30000): curated player list**
     - Schema v10: `clubhouse_members` table (mutable, no triggers, outside kernel)

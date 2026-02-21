@@ -246,14 +246,25 @@ class NostrService {
             uncachedAfterDB = uncachedAfterMemory
         }
 
-        // Layer 3: relay fetch
+        // Layer 3: relay fetch for keys missing from both memory and GRDB
         if !uncachedAfterDB.isEmpty {
             let fetched = try await fetchProfiles(pubkeyHexes: uncachedAfterDB)
             for (key, profile) in fetched {
                 profileCache[key] = profile
                 result[key] = profile
             }
-            try? cacheRepo?.upsertProfiles(Array(fetched.values))
+        }
+
+        // Persist all resolved profiles to GRDB — not just relay-fetched ones.
+        // Profiles that entered profileCache via fetchFollowListWithProfiles
+        // are in-memory only; without this they'd be lost on force-quit.
+        if let repo = cacheRepo {
+            let worthCaching = result.values.filter {
+                $0.name != nil || $0.displayName != nil || $0.picture != nil
+            }
+            if !worthCaching.isEmpty {
+                try? repo.upsertProfiles(Array(worthCaching))
+            }
         }
 
         return result
@@ -841,6 +852,25 @@ class NostrService {
         }
         let pubkeys = try memberPubkeyHexes.map { try PublicKey.parse(publicKey: $0) }
         let builder = EventBuilder.followSet(identifier: "clubhouse", publicKeys: pubkeys)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Publish the user's follow list (kind 3 / NIP-02).
+    /// Replaceable — relays keep only the newest kind 3 per author.
+    /// Caller is responsible for updating FollowListCacheRepository after a successful publish.
+    func publishFollowList(keys: Keys, followedPubkeyHexes: [String]) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishFollowList blocked — Nostr not activated")
+            return
+        }
+        var tags: [Tag] = []
+        for hex in followedPubkeyHexes {
+            tags.append(try Tag.parse(data: ["p", hex]))
+        }
+
+        let builder = EventBuilder(kind: Kind(kind: 3), content: "")
+            .tags(tags: tags)
+
         _ = try await publishEvent(keys: keys, builder: builder)
     }
 
