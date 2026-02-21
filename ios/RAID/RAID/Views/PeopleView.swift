@@ -297,6 +297,14 @@ struct PeopleView: View {
             for hex in result.follows where followProfiles[hex] == nil {
                 followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
             }
+            // Persist relay-fetched profiles to shared GRDB cache
+            let worthCaching = result.profiles.values.filter {
+                $0.name != nil || $0.displayName != nil || $0.picture != nil
+            }
+            if !worthCaching.isEmpty {
+                let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
+                try? cacheRepo.upsertProfiles(Array(worthCaching))
+            }
         } catch {
             print("[RAID][People] Follow list relay fetch failed: \(error)")
         }

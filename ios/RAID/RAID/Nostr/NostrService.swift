@@ -246,14 +246,25 @@ class NostrService {
             uncachedAfterDB = uncachedAfterMemory
         }
 
-        // Layer 3: relay fetch
+        // Layer 3: relay fetch for keys missing from both memory and GRDB
         if !uncachedAfterDB.isEmpty {
             let fetched = try await fetchProfiles(pubkeyHexes: uncachedAfterDB)
             for (key, profile) in fetched {
                 profileCache[key] = profile
                 result[key] = profile
             }
-            try? cacheRepo?.upsertProfiles(Array(fetched.values))
+        }
+
+        // Persist all resolved profiles to GRDB — not just relay-fetched ones.
+        // Profiles that entered profileCache via fetchFollowListWithProfiles
+        // are in-memory only; without this they'd be lost on force-quit.
+        if let repo = cacheRepo {
+            let worthCaching = result.values.filter {
+                $0.name != nil || $0.displayName != nil || $0.picture != nil
+            }
+            if !worthCaching.isEmpty {
+                try? repo.upsertProfiles(Array(worthCaching))
+            }
         }
 
         return result
