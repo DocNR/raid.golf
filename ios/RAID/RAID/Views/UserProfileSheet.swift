@@ -227,26 +227,31 @@ struct UserProfileSheet: View {
     // MARK: - Data Loading
 
     private func loadProfile() async {
-        isLoading = true
-
         // Compute npub
         if let pk = try? PublicKey.parse(publicKey: pubkeyHex) {
             npub = try? pk.toBech32()
         }
 
-        // Resolve profile from cache then relay
+        // Phase A: instant paint from GRDB cache (synchronous)
         let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
-        if let profiles = try? await nostrService.resolveProfiles(
-            pubkeyHexes: [pubkeyHex], cacheRepo: cacheRepo
-        ) {
-            profile = profiles[pubkeyHex]
+        if let cached = try? cacheRepo.fetchProfile(pubkeyHex: pubkeyHex) {
+            profile = cached
         }
-
+        // Also check in-memory cache (may have fresher data from current session)
+        if let inMemory = nostrService.profileCache[pubkeyHex] {
+            profile = inMemory
+        }
         if profile == nil {
             profile = NostrProfile(pubkeyHex: pubkeyHex, name: nil, displayName: nil, picture: nil)
         }
-
         isLoading = false
+
+        // Phase B: relay refresh in background
+        if let profiles = try? await nostrService.resolveProfiles(
+            pubkeyHexes: [pubkeyHex], cacheRepo: cacheRepo
+        ), let resolved = profiles[pubkeyHex] {
+            profile = resolved
+        }
     }
 
     private func loadState() {
