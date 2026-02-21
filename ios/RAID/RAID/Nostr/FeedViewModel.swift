@@ -200,7 +200,22 @@ class FeedViewModel {
             }
 
             // 6-8. Enrichment — profiles, reactions, and comments run concurrently
-            let pubkeyHexes = Array(Set(items.map(\.pubkeyHex)))
+            // Collect author pubkeys + any nostr:npub mentions in content
+            var allPubkeys = Set(items.map(\.pubkeyHex))
+            for item in items {
+                let content: String? = {
+                    switch item {
+                    case .textNote(_, _, let c, _): return c
+                    case .scorecard(_, _, let c, _, _, _): return c
+                    }
+                }()
+                if let content {
+                    for hex in RichContentView.mentionedPubkeys(in: content) {
+                        allPubkeys.insert(hex)
+                    }
+                }
+            }
+            let pubkeyHexes = Array(allPubkeys)
             let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
             let uncached = pubkeyHexes.filter { nostrService.profileCache[$0] == nil }
             let ownHex = keyManager.signingKeys().publicKey().toHex()
@@ -328,7 +343,21 @@ class FeedViewModel {
     /// Enrich only newly loaded items: profiles, reactions, comments.
     /// Merges results into existing dictionaries (does not overwrite).
     private func enrichNewItems(_ newItems: [FeedItem], nostrService: NostrService, dbQueue: DatabaseQueue) async {
-        let newPubkeys = Array(Set(newItems.map(\.pubkeyHex)))
+        var allPubkeys = Set(newItems.map(\.pubkeyHex))
+        for item in newItems {
+            let content: String? = {
+                switch item {
+                case .textNote(_, _, let c, _): return c
+                case .scorecard(_, _, let c, _, _, _): return c
+                }
+            }()
+            if let content {
+                for hex in RichContentView.mentionedPubkeys(in: content) {
+                    allPubkeys.insert(hex)
+                }
+            }
+        }
+        let newPubkeys = Array(allPubkeys)
         let uncached = newPubkeys.filter { nostrService.profileCache[$0] == nil }
         let newIds = newItems.map(\.id)
         let ownHex = (try? KeyManager.loadOrCreate().signingKeys().publicKey().toHex()) ?? ""
@@ -438,7 +467,22 @@ class FeedViewModel {
 
         // Load profiles from GRDB so names and PFPs appear immediately on cold launch.
         // Also warm the in-memory profileCache so Phase B's resolveProfiles skips re-reads.
-        let pubkeyHexes = Array(Set(items.map(\.pubkeyHex)))
+        // Include mentioned npubs so @names resolve in content.
+        var allPubkeys = Set(items.map(\.pubkeyHex))
+        for item in items {
+            let content: String? = {
+                switch item {
+                case .textNote(_, _, let c, _): return c
+                case .scorecard(_, _, let c, _, _, _): return c
+                }
+            }()
+            if let content {
+                for hex in RichContentView.mentionedPubkeys(in: content) {
+                    allPubkeys.insert(hex)
+                }
+            }
+        }
+        let pubkeyHexes = Array(allPubkeys)
         let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
         let dbProfiles = (try? profileRepo.fetchProfiles(pubkeyHexes: pubkeyHexes)) ?? [:]
         resolvedProfiles = dbProfiles

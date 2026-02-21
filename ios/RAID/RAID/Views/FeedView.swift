@@ -67,6 +67,13 @@ struct FeedView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
+            .environment(\.openURL, OpenURLAction { url in
+                if url.scheme == "raid" && url.host == "profile" {
+                    profileSheetPubkey = url.lastPathComponent
+                    return .handled
+                }
+                return .systemAction
+            })
             .task { await viewModel.loadIfNeeded(nostrService: nostrService, dbQueue: dbQueue) }
             .onChange(of: nostrActivated) { _, newValue in
                 if newValue {
@@ -295,6 +302,7 @@ struct FeedView: View {
                             profile: viewModel.resolvedProfiles[item.pubkeyHex],
                             rawEvent: viewModel.rawEvents[item.id],
                             dbQueue: dbQueue,
+                            resolvedProfiles: viewModel.resolvedProfiles,
                             reactionCount: viewModel.reactionCounts[item.id] ?? 0,
                             hasReacted: viewModel.ownReactions.contains(item.id),
                             onReact: {
@@ -305,6 +313,7 @@ struct FeedView: View {
                         FeedCardView(
                             item: item,
                             profile: viewModel.resolvedProfiles[item.pubkeyHex],
+                            profiles: viewModel.resolvedProfiles,
                             reactionCount: viewModel.reactionCounts[item.id] ?? 0,
                             hasReacted: viewModel.ownReactions.contains(item.id),
                             commentCount: viewModel.commentCounts[item.id] ?? 0,

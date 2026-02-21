@@ -16,6 +16,7 @@ struct ThreadDetailView: View {
     let rawEvent: Event?
     let dbQueue: DatabaseQueue
 
+    var resolvedProfiles: [String: NostrProfile] = [:]
     var reactionCount: Int = 0
     var hasReacted: Bool = false
     var onReact: (() -> Void)?
@@ -33,6 +34,13 @@ struct ThreadDetailView: View {
     private var isTextNote: Bool {
         if case .textNote = item { return true }
         return false
+    }
+
+    private var allProfiles: [String: NostrProfile] {
+        var result = resolvedProfiles
+        for (k, v) in profiles { result[k] = v }
+        if let profile { result[item.pubkeyHex] = profile }
+        return result
     }
 
     var body: some View {
@@ -122,13 +130,11 @@ struct ThreadDetailView: View {
             // Content (not indented — full width in detail view)
             switch item {
             case .textNote(_, _, let content, _):
-                Text(content)
-                    .font(.body)
+                RichContentView(content: content, profiles: allProfiles, font: .body)
 
             case .scorecard(_, _, let commentary, let record, let courseInfo, _):
                 if let commentary, !commentary.isEmpty {
-                    Text(commentary)
-                        .font(.body)
+                    RichContentView(content: commentary, profiles: allProfiles, font: .body)
                 }
                 ScorecardCardView(record: record, courseInfo: courseInfo)
             }
@@ -192,8 +198,7 @@ struct ThreadDetailView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text(comment.content)
-                    .font(.subheadline)
+                RichContentView(content: comment.content, profiles: allProfiles)
             }
 
             Spacer(minLength: 0)

@@ -8,6 +8,7 @@ import SwiftUI
 struct FeedCardView: View {
     let item: FeedItem
     let profile: NostrProfile?
+    var profiles: [String: NostrProfile] = [:]
     var reactionCount: Int = 0
     var hasReacted: Bool = false
     var commentCount: Int = 0
@@ -51,13 +52,11 @@ struct FeedCardView: View {
             Group {
                 switch item {
                 case .textNote(_, _, let content, _):
-                    Text(content)
-                        .font(.subheadline)
+                    RichContentView(content: content, profiles: profiles)
 
                 case .scorecard(_, _, let commentary, let record, let courseInfo, _):
                     if let commentary, !commentary.isEmpty {
-                        Text(commentary)
-                            .font(.subheadline)
+                        RichContentView(content: commentary, profiles: profiles)
                     }
                     ScorecardCardView(record: record, courseInfo: courseInfo)
                 }
