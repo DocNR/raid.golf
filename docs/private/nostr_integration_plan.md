@@ -16,7 +16,7 @@
 | 7C | 8C | ✅ COMPLETE | 2026-02-18 |
 | 7D | 8D.A | ✅ COMPLETE | 2026-02-17 |
 | 7D | 8D.B | ✅ COMPLETE | 2026-02-18 |
-| 7E | 8E | FUTURE | - |
+| 7E | 8E | 🔄 PARTIAL | 8E.1 complete 2026-02-21 |
 | 7F | 8F | FUTURE | - |
 
 ### Phase 8A Summary (COMPLETE)
@@ -31,7 +31,7 @@
 
 ## Current State
 
-### What Exists (Phase 8D.B, shipped 2026-02-18)
+### What Exists (Phase 8E.1, shipped 2026-02-21)
 
 | Component | File | Status |
 |-----------|------|--------|
@@ -54,15 +54,21 @@
 | Clubhouse | `ClubhouseRepository.swift` + `ClubhouseView.swift` | NIP-51 kind 30000 curated player list; relay sync; GRDB `clubhouse_members` table (schema v10) |
 | Nav structure | `ContentView.swift` + `SideDrawerView.swift` | 3-tab layout (Feed / Play / Courses) + side drawer (Profile, Practice, Keys & Relays, About) |
 | Replaceable event fix | `NostrService.swift` | All replaceable event fetches select newest `created_at` (fixes stale follow-list bug) |
+| Follow list write | `NostrService.swift` | `publishFollowList()` publishes kind 3; merges with existing kind 3 before publishing |
+| Follow list cache write | `FollowListCacheRepository.swift` | `addFollow`, `removeFollow`, `followedPubkeyHexes(for:)` convenience methods |
+| PeopleView | `PeopleView.swift` | Segmented Following/Favorites tabs; search bar doubles as npub entry (inline "Key Match" row); swipe gestures for follow/favorite actions |
+| UserProfileSheet | `UserProfileSheet.swift` | Lightweight other-user profile sheet; follow/unfollow/favorite/unfavorite actions; opened by feed avatar taps |
+| Favorites (UI rename) | `SideDrawerView.swift`, `PeopleView.swift`, et al. | "Clubhouse" renamed to "Favorites" in all user-facing labels; `ClubhouseRepository` and `clubhouse_members` table unchanged |
+| Avatar image cache | `ProfileAvatarView.swift` | `AvatarImageCache` NSCache singleton; eliminates AsyncImage flicker on scroll |
 | Security | `NostrService.swift` | Signature verification on all events; author verification on scoring events |
 | SDK | `rust-nostr-swift` | NostrSDK v0.44.2 |
 
 ### What's Missing
 
 - **No persistent connections** — fire-and-forget kept intentionally
-- **No NIP-51 Golf Buddies extended UX** — Clubhouse (kind 30000) shipped in 8D.B; further Golf Buddies list work deferred to Phase 8E
-- **No follow list publishing** — reads kind 3 but never writes it (Phase 8E)
-- **No full social feed** — feed reads exist (FeedView); follow-list write deferred to 8E
+- **No NIP-51 Golf Buddies extended UX** — Favorites (kind 30000, `clubhouse_members`) shipped in 8D.B; further list UX work deferred to Phase 8E.2+
+- **No activity feed subscription** — feed uses one-shot relay reads; real-time updates via persistent subscriptions deferred to Phase 8E.2 (depends on persistent connections)
+- **No full outbox-routed feed** — outbox routing established in 8C; feed subscription using follow list write path deferred to 8E.2
 
 ---
 
@@ -331,19 +337,26 @@ Note: The NIP-51 Golf Buddies list variant planned for this phase required schem
 
 Note: NIP-25 reactions and NIP-22 comments shipped in Phase 8D.B. Phase 8E focuses on follow management and gossip-based feed routing.
 
-#### 8E.1 — Follow/Unfollow
+#### 8E.1 — Follow/Unfollow + Favorites + Profile Caching ✅ COMPLETE (2026-02-21)
 
-- "Follow" button on player profiles (from round history, search)
-- Publish kind 3 event (replaceable contact list) with all followed pubkeys
-- Merge with existing kind 3 (don't blow away follows from other apps)
+- `publishFollowList(keys:followedPubkeys:)` on `NostrService`: publishes kind 3, merges with existing kind 3 before publishing (preserves follows from other clients)
+- `FollowListCacheRepository` convenience methods: `addFollow`, `removeFollow`, `followedPubkeyHexes(for:)`
+- `PeopleView`: segmented Following/Favorites tabs; search bar doubles as npub entry (inline "Key Match" row with Follow/Favorite buttons); swipe-to-unfollow / swipe-to-favorite / swipe-to-unfavorite
+- `UserProfileSheet`: lightweight other-user profile sheet opened by feed avatar taps and PeopleView row taps; Follow/Unfollow/Favorite/Unfavorite actions inline
+- "Clubhouse" renamed to "Favorites" in all user-facing labels; data layer (`ClubhouseRepository`, `clubhouse_members` table, kind 30000) unchanged
+- `AvatarImageCache` (`NSCache<NSString, UIImage>`) in `ProfileAvatarView`: eliminates AsyncImage flicker on scroll
+- Relay-fetched profiles now persisted to `nostr_profiles` GRDB table (survive app restarts)
+- Phase B relay refresh merges profiles into existing dict (no overwrite flicker)
+- ProfileView "X Following" stat navigates to PeopleView (Following tab)
+- No schema changes, no kernel changes
 
-#### 8E.2 — Activity Feed Improvements
+#### 8E.2 — Activity Feed Improvements (FUTURE)
 
-- Subscription for kind 1501/1502 events from followed pubkeys using outbox relay routing (depends on 8C)
-- Real-time updates via persistent subscriptions (depends on 8C persistent connections)
+- Subscription for kind 1501/1502 events from followed pubkeys using outbox relay routing (depends on 8C — now complete)
+- Real-time updates via persistent subscriptions (persistent connections deferred from 8C)
 - Feed card refinements as needed
 
-**Deliverable:** Users can manage their follow list and the feed uses outbox routing via NIP-65.
+**Deliverable (partial):** Users can follow and unfollow other golfers, manage their Favorites list, and view other-user profiles from the feed. Follow list is published as kind 3 and merges correctly across clients. Feed subscription with outbox routing deferred to 8E.2.
 
 ---
 
@@ -383,7 +396,7 @@ Note: NIP-25 reactions and NIP-22 comments shipped in Phase 8D.B. Phase 8E focus
 |-----|------|-------|----------|
 | NIP-01 | Basic protocol | Done | - |
 | NIP-02 | Follow lists (read) | Done | - |
-| NIP-02 | Follow lists (write) | 8E | High |
+| NIP-02 | Follow lists (write) | Done (Phase 8E.1) | - |
 | NIP-17 | Private DM (gift wrap) | Done (Phase 8B.2) | - |
 | NIP-19 | bech32 encoding | Done (Phase 7A) | - |
 | NIP-21 | nostr: URI scheme | Done (Phase 7A) | - |
@@ -431,8 +444,8 @@ Note: NIP-25 reactions and NIP-22 comments shipped in Phase 8D.B. Phase 8E focus
  ├── 8B (Identity & Profiles)   ✅ COMPLETE (2026-02-18)
  │    └── 8D.A (Guest Mode)     ✅ COMPLETE (2026-02-17)
  │         └── 8D.B (Social)    ✅ COMPLETE (2026-02-18)
- ├── 8C (NIP-65 Relay Lists)    NEXT — needs persistent connections
- │    └── 8E (Social Feed)      FUTURE — needs relay routing from 8C
+ ├── 8C (NIP-65 Relay Lists)    ✅ COMPLETE (2026-02-18)
+ │    └── 8E (Social Feed)      🔄 PARTIAL — 8E.1 COMPLETE (2026-02-21); 8E.2 FUTURE
  └── Onboarding Flow Plan       — separate doc, partially unblocked
 ```
 

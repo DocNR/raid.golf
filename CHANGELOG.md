@@ -42,6 +42,34 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **iOS Phase 8E.1: Follow/Unfollow + Favorites + Profile Caching**
+  - **Follow list write path (`publishFollowList`)**
+    - `NostrService.publishFollowList(keys:followedPubkeys:)` publishes kind 3 contact list
+    - Merges with existing kind 3 on relay before publishing (no silent clobber of follows from other clients)
+    - `FollowListCacheRepository` convenience methods: `addFollow`, `removeFollow`, `followedPubkeyHexes(for:)`
+  - **PeopleView (replaces Clubhouse in side drawer)**
+    - Segmented tabs: "Following" and "Favorites"
+    - Search bar doubles as npub entry — paste any npub1/hex key to see an inline "Key Match" row with Follow and Favorite buttons; no separate import sheet
+    - Swipe-to-unfollow (Following tab), swipe-to-favorite / swipe-to-unfavorite (Favorites tab)
+    - Instant profile paint on open: synchronous GRDB read from `nostr_profiles` cache before relay fetch
+    - Phase B background relay refresh merges profiles into existing dict instead of overwriting (prevents flicker when relay responds)
+  - **UserProfileSheet**
+    - Lightweight other-user profile sheet shown when tapping a profile avatar in the feed or from PeopleView
+    - Shows display name, avatar, about, npub; Follow / Unfollow / Favorite / Unfavorite actions
+    - Feed profile avatar taps now open UserProfileSheet (was previously no-op)
+  - **"Clubhouse" renamed to "Favorites" in all user-facing labels**
+    - All UI strings, button labels, tab names, and sheet titles now say "Favorites"
+    - Internal data layer unchanged: `ClubhouseRepository`, `clubhouse_members` table (schema v10), kind 30000 sync all retain their names
+  - **ProfileAvatarView: NSCache image backing**
+    - `AvatarImageCache` singleton (`NSCache<NSString, UIImage>`) replaces `AsyncImage` for avatar loading
+    - Eliminates gray-circle flicker on scroll; cached images survive list recycling
+    - Applied in `ProfileAvatarView`; all callers benefit transparently
+  - **Profile persistence improvements**
+    - Relay-fetched profiles now written to `nostr_profiles` GRDB table (survive app restarts)
+    - Phase B relay refresh merges into existing `resolvedProfiles` dict instead of replacing it
+  - **ProfileView "X Following" stat** — tappable, navigates to PeopleView (Following tab)
+  - No schema changes, no kernel changes
+
 - **Scorecard Redesign (merged 2026-02-19/20)**
   - Classic grid layout scorecard replacing previous row-based design
   - Score notation: circles for under-par (birdie/eagle/albatross), squares for over-par (standard golf convention)

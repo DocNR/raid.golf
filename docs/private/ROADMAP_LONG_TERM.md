@@ -69,7 +69,7 @@ See: `docs/private/kernel/KERNEL_CONTRACT.md`
 
 ## Current Baseline (As-Is)
 
-> Updated 2026-02-18 after Phase 8D.B (Social Interactions + Thread UX) complete.
+> Updated 2026-02-21 after Phase 8E.1 (Follow/Unfollow + Favorites + Profile Caching) complete.
 
 ### Completed
 - Phase 0 (A–F): Python kernel, all RTMs validated
@@ -101,15 +101,19 @@ See: `docs/private/kernel/KERNEL_CONTRACT.md`
 - NIP-25 reactions, NIP-22 comments, NIP-10 replies, ThreadDetailView (Phase 8D.B)
 - NIP-51 Clubhouse (kind 30000): `clubhouse_members` table (schema v10), ClubhouseView (Phase 8D.B)
 - Replaceable event correctness fix: newest `created_at` wins (Phase 8D.B)
+- Follow list write path: `publishFollowList()` kind 3, merge-before-publish, `FollowListCacheRepository` convenience methods (Phase 8E.1)
+- PeopleView: segmented Following/Favorites tabs, npub-entry search bar, swipe gestures (Phase 8E.1)
+- UserProfileSheet: other-user profile sheet from feed/people taps, follow/favorite actions inline (Phase 8E.1)
+- "Clubhouse" renamed to "Favorites" in all user-facing labels; data layer unchanged (Phase 8E.1)
+- `AvatarImageCache` NSCache singleton in ProfileAvatarView: eliminates scroll flicker (Phase 8E.1)
+- Relay-fetched profiles persisted to GRDB; Phase B refresh merges instead of overwriting (Phase 8E.1)
 - Bundle identifier: `golf.raid.app`
-- 233+ unit/integration tests passing
+- 314 unit/integration tests passing
 - UX Contract v1.1 locked (A.1-A.11)
 
 ### Not Yet Built
-- NIP-65 relay management (user-configurable relays) — Phase 8C (NEXT)
-- Follow list publishing (kind 3 write) — Phase 8E
-- Full social feed with outbox routing — Phase 8E (depends on 8C)
-- NIP-51 Golf Buddies expanded UX (beyond Clubhouse) — Phase 8E (DEFERRED until after 8C)
+- Activity feed subscription (real-time, outbox-routed) — Phase 8E.2 (8C complete; persistent connections still deferred)
+- NIP-51 Favorites extended UX (beyond current kind 30000 Favorites list) — Phase 8E.2+
 - Handicaps
 - Competition formats
 - Attestation (score verification by playing partners)
@@ -271,7 +275,7 @@ This roadmap defines how those layers are added **without breaking Phase 0**.
 | 8C | NIP-65 Relay List Metadata (user-configurable relays) | ✅ COMPLETE (2026-02-18) |
 | 8D.A | Guest Mode & Delayed Activation + Profile Cache | ✅ COMPLETE (2026-02-17) |
 | 8D.B | Social Interactions + Thread UX + Clubhouse | ✅ COMPLETE (2026-02-18) |
-| 8E | Follow List Publishing & Social Feed (outbox routing) | Not started (depends on 8C) |
+| 8E | Follow List Publishing & Social Feed (outbox routing) | 🔄 PARTIAL — 8E.1 COMPLETE (2026-02-21); 8E.2 not started |
 | 8F | Practice Data Portability (optional) | Not started |
 
 ### Kernel Impact
