@@ -15,7 +15,9 @@ struct ProfileView: View {
     @State private var npub: String?
     @State private var rounds: [RoundListItem] = []
     @State private var partnerCount: Int = 0
+    @State private var followingCount: Int = 0
     @State private var showEditProfile = false
+    @State private var showPeople = false
     @State private var copiedNpub = false
 
     private var profile: NostrProfile? { drawerState.ownProfile }
@@ -49,6 +51,9 @@ struct ProfileView: View {
             .sheet(isPresented: $showEditProfile) {
                 EditProfileView()
             }
+            .sheet(isPresented: $showPeople) {
+                PeopleView(dbQueue: dbQueue)
+            }
             .navigationDestination(for: Int64.self) { roundId in
                 RoundDetailView(roundId: roundId, dbQueue: dbQueue)
             }
@@ -56,6 +61,7 @@ struct ProfileView: View {
                 loadIdentity()
                 loadRounds()
                 loadPartnerCount()
+                loadFollowingCount()
             }
         }
     }
@@ -167,6 +173,13 @@ struct ProfileView: View {
 
     private var statsSection: some View {
         HStack(spacing: 16) {
+            Button {
+                showPeople = true
+            } label: {
+                statItem(count: followingCount, label: "Following")
+            }
+            .buttonStyle(.plain)
+
             statItem(count: rounds.count, label: "Rounds")
             statItem(count: partnerCount, label: "Partners")
         }
@@ -273,6 +286,15 @@ struct ProfileView: View {
             }
         } catch {
             print("[RAID] ProfileView: failed to load partner count: \(error)")
+        }
+    }
+
+    private func loadFollowingCount() {
+        guard let km = try? KeyManager.loadOrCreate() else { return }
+        let myHex = km.signingKeys().publicKey().toHex()
+        let repo = FollowListCacheRepository(dbQueue: dbQueue)
+        if let cached = try? repo.fetch(pubkeyHex: myHex) {
+            followingCount = cached.follows.count
         }
     }
 

@@ -299,7 +299,7 @@ struct ClubhouseView: View {
 
 // MARK: - Follow Picker for Clubhouse
 
-private struct ClubhouseFollowPicker: View {
+struct ClubhouseFollowPicker: View {
     let dbQueue: DatabaseQueue
     let creatorPubkeyHex: String?
     let existingMembers: Set<String>

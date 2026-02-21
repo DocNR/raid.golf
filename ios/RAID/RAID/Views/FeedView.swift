@@ -14,6 +14,7 @@ struct FeedView: View {
     @AppStorage("nostrActivated") private var nostrActivated = false
     @State private var showActivation = false
     @State private var selectedItem: FeedItem?
+    @State private var profileSheetPubkey: String?
 
     // Scroll-to-hide chrome
     @State private var barsVisible = true
@@ -70,6 +71,14 @@ struct FeedView: View {
             .onChange(of: nostrActivated) { _, newValue in
                 if newValue {
                     Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { profileSheetPubkey != nil },
+                set: { if !$0 { profileSheetPubkey = nil } }
+            )) {
+                if let hex = profileSheetPubkey {
+                    UserProfileSheet(pubkeyHex: hex, dbQueue: dbQueue)
                 }
             }
             .fullScreenCover(isPresented: $showActivation) {
@@ -301,6 +310,9 @@ struct FeedView: View {
                             commentCount: viewModel.commentCounts[item.id] ?? 0,
                             onReact: {
                                 viewModel.react(itemId: item.id, nostrService: nostrService)
+                            },
+                            onProfileTap: {
+                                profileSheetPubkey = item.pubkeyHex
                             }
                         )
                         .padding(.horizontal)

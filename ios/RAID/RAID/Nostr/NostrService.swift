@@ -844,6 +844,25 @@ class NostrService {
         _ = try await publishEvent(keys: keys, builder: builder)
     }
 
+    /// Publish the user's follow list (kind 3 / NIP-02).
+    /// Replaceable — relays keep only the newest kind 3 per author.
+    /// Caller is responsible for updating FollowListCacheRepository after a successful publish.
+    func publishFollowList(keys: Keys, followedPubkeyHexes: [String]) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishFollowList blocked — Nostr not activated")
+            return
+        }
+        var tags: [Tag] = []
+        for hex in followedPubkeyHexes {
+            tags.append(try Tag.parse(data: ["p", hex]))
+        }
+
+        let builder = EventBuilder(kind: Kind(kind: 3), content: "")
+            .tags(tags: tags)
+
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
     // MARK: - NIP-17 Gift Wrap DMs
 
     /// Fetch a user's kind 10050 DM inbox relay list (NIP-17).
