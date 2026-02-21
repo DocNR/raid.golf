@@ -20,11 +20,17 @@ struct FeedView: View {
     @State private var barsVisible = true
     @State private var scrollCheckpoint: CGFloat = 0
 
+    // Custom pull-to-refresh
+    @State private var pullTriggered = false
+
     var body: some View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.items.isEmpty {
-                    ProgressView("Loading feed...")
+                    FeedLoadingView(
+                        stage: viewModel.refreshStage,
+                        progress: viewModel.refreshProgress
+                    )
                 } else if let error = viewModel.errorMessage {
                     ContentUnavailableView {
                         Label("Couldn't Load Feed", systemImage: "wifi.exclamationmark")
@@ -302,6 +308,13 @@ struct FeedView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 Color.clear.frame(height: nostrService.isReadOnly ? 28 : 0).id("feedTop")
+
+                // Pull-to-refresh indicator — inline, pushes content down
+                if viewModel.isBackgroundRefreshing {
+                    MiniCartProgressBar(progress: viewModel.refreshProgress)
+                        .padding(.bottom, 8)
+                }
+
                 ForEach(viewModel.items) { item in
                     NavigationLink {
                         ThreadDetailView(
@@ -344,8 +357,8 @@ struct FeedView: View {
                 if viewModel.hasMoreEvents && !viewModel.items.isEmpty {
                     if viewModel.isLoadingMore {
                         ProgressView()
-                            .padding()
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
                     } else {
                         Color.clear
                             .frame(height: 1)
@@ -361,33 +374,34 @@ struct FeedView: View {
                 }
             }
         }
-        .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
         .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                if viewModel.isBackgroundRefreshing {
-                    ProgressView(value: viewModel.refreshProgress)
-                        .progressViewStyle(.linear)
-                        .tint(.accentColor)
-                        .frame(maxWidth: .infinity)
-                        .animation(.easeInOut(duration: 0.4), value: viewModel.refreshProgress)
+            if nostrService.isReadOnly {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye")
+                    Text("Read-only mode")
                 }
-                if nostrService.isReadOnly {
-                    HStack(spacing: 6) {
-                        Image(systemName: "eye")
-                        Text("Read-only mode")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-                    .background(.ultraThinMaterial)
-                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .feedScrollToTop)) { _ in
             withAnimation { proxy.scrollTo("feedTop", anchor: .top) }
         }
         .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, new in
+            // Pull-to-refresh: trigger immediately when pulled past threshold
+            if new < 0 {
+                if -new > 80 && !pullTriggered && !viewModel.isBackgroundRefreshing {
+                    pullTriggered = true
+                    Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
+                }
+            } else {
+                pullTriggered = false
+            }
+
+            // Scroll-to-hide chrome
             if new < 50 {
                 // Near top — always show bars
                 if !barsVisible { barsVisible = true }
@@ -406,6 +420,121 @@ struct FeedView: View {
             }
         }
         } // ScrollViewReader
+    }
+}
+
+// MARK: - Mini Cart Progress Bar (pull-to-refresh + background refresh)
+
+private struct MiniCartProgressBar: View {
+    let progress: Double
+
+    var body: some View {
+        let cartHeight: CGFloat = 24
+        let cartWidth: CGFloat = cartHeight * (800 / 600.7)
+
+        GeometryReader { geo in
+            if geo.size.width > 0 {
+                let trackWidth = geo.size.width
+                let fillWidth = trackWidth * progress
+                let cartX = fillWidth - cartWidth
+
+                ZStack(alignment: .leading) {
+                    // Track
+                    Capsule()
+                        .fill(.quaternary)
+                        .frame(height: 3)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+
+                    // Fill
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: max(3, fillWidth), height: 3)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+
+                    // Golf cart — starts off-screen left, drives in
+                    Image("GolfCart")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: cartHeight)
+                        .foregroundStyle(Color.accentColor)
+                        .offset(x: cartX)
+                }
+                .animation(.easeInOut(duration: 0.5), value: progress)
+            }
+        }
+        .clipped()
+        .frame(height: cartHeight + 3)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Feed Loading View
+
+private struct FeedLoadingView: View {
+    let stage: String
+    let progress: Double
+
+    // Golf cart position tracks progress
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            // Golf cart driving along progress bar
+            VStack(spacing: 0) {
+                let cartHeight: CGFloat = 54
+                let cartWidth: CGFloat = cartHeight * (800 / 600.7) // match SVG aspect ratio
+
+                GeometryReader { geo in
+                    if geo.size.width > 0 {
+                        let trackWidth = geo.size.width
+                        let fillWidth = trackWidth * progress
+                        let cartX = fillWidth - cartWidth
+
+                        Image("GolfCart")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: cartHeight)
+                            .foregroundStyle(Color.accentColor)
+                            .offset(x: cartX)
+                            .animation(.easeInOut(duration: 0.6), value: progress)
+                    }
+                }
+                .clipped()
+                .frame(height: cartHeight)
+
+                // Track bar below
+                GeometryReader { geo in
+                    if geo.size.width > 0 {
+                        let trackWidth = geo.size.width
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(.quaternary)
+                                .frame(height: 4)
+
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(width: max(4, trackWidth * progress), height: 4)
+                        }
+                    }
+                }
+                .frame(height: 4)
+                .padding(.top, 4)
+            }
+            .padding(.horizontal, 32)
+
+            // Stage message
+            Text(stage.isEmpty ? "Loading feed..." : stage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.3), value: stage)
+
+            Spacer()
+            Spacer()
+        }
     }
 }
 

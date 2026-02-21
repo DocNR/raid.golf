@@ -38,7 +38,6 @@ struct RoundSetupSheet: View {
         VStack(spacing: 16) {
             Spacer()
             ProgressView()
-                .controlSize(.large)
             Text("Setting up your round...")
                 .font(.headline)
             Text("This will just take a moment")

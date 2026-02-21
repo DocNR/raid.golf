@@ -1086,11 +1086,14 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        await client.disconnect()
+        // Process events BEFORE disconnecting — SDK Event objects may be
+        // invalidated after client.disconnect() releases internal state.
+        let eventVec = try events.toVec()
+        let verified = verifiedEvents(eventVec)
 
         // Kind 10002 is replaceable — keep newest per author
         var newest: [String: Event] = [:]
-        for event in verifiedEvents(try events.toVec()) {
+        for event in verified {
             let authorHex = event.author().toHex()
             if let existing = newest[authorHex] {
                 if event.createdAt().asSecs() > existing.createdAt().asSecs() {
@@ -1101,7 +1104,7 @@ class NostrService {
             }
         }
 
-        // Parse r-tags into CachedRelayEntry
+        // Parse r-tags into CachedRelayEntry (extract all data before disconnect)
         var result: [String: [CachedRelayEntry]] = [:]
         for (authorHex, event) in newest {
             var entries: [CachedRelayEntry] = []
@@ -1116,6 +1119,8 @@ class NostrService {
             }
             result[authorHex] = entries
         }
+
+        await client.disconnect()
 
         // Warm in-memory cache
         for (key, entries) in result {
