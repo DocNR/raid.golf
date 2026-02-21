@@ -282,9 +282,10 @@ struct SideDrawerView: View {
         drawerState.ownProfile = nil
         drawerState.close()
 
-        // Clear all Nostr caches (GRDB + in-memory + URL)
+        // Clear all Nostr caches (GRDB + in-memory + URL + avatars)
         nostrService.clearCaches()
         URLCache.shared.removeAllCachedResponses()
+        AvatarImageCache.shared.clear()
         try? FeedEventCacheRepository(dbQueue: dbQueue).deleteAll()
         try? FollowListCacheRepository(dbQueue: dbQueue).deleteAll()
         try? ProfileCacheRepository(dbQueue: dbQueue).deleteAll()
