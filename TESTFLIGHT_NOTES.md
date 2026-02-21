@@ -2,46 +2,97 @@
 
 Thank you for testing RAID Golf.
 
+---
+
+## What's New in This Build
+
+### Onboarding
+- First-run welcome sheet with three paths: Create Account, Sign In, or Skip (guest mode)
+- New account creation publishes a Nostr profile (kind 0) on completion
+- Sign In supports nsec (full access) or npub (read-only browsing)
+- Contextual activation prompts appear at natural moments for guest-mode users: after your 3rd round, after completing a round, and after 5+ practice sessions. Each prompt is dismissable and stops appearing after 3 dismissals.
+- Settings consolidated into a single sheet (gear icon in the side drawer): Keys & Relays, About, and Sign Out in one place.
+
+### Social Feed
+- Rich content rendering: inline images, animated GIFs, inline video, tappable URLs, and @mentions that resolve to display names and link to user profiles
+- Tapping an @mention opens that user's profile sheet directly in-app
+
+### Identity
+- npub read-only sign-in: sign in with just your public key to browse feeds and profiles without exposing your secret key. Publishing is disabled in read-only mode (react, comment, post buttons are hidden).
+- Sign-out now fully resets the feed and clears cached profile images, so re-sign-in or switching accounts always shows fresh content.
+
+---
+
 ## What to Test
 
-1. **CSV Import**: Import a Rapsodo MLM2Pro CSV file. Verify shot counts match your CSV. Check that clubs and metrics appear correctly.
+### Onboarding (new users)
+1. Delete the app and reinstall. Verify the welcome sheet appears on first launch.
+2. Test all three paths: Create Account (fill in a display name, tap Create), Sign In with nsec (paste a valid nsec1 key), and Skip (guest mode).
+3. In guest mode, create 3 rounds and verify the "Play with Friends" activation prompt appears.
+4. Complete a round in guest mode and verify the "Share this Round" prompt appears.
 
-2. **Trends**: View trends for different clubs and metrics. Verify A-only trends filter by active template.
+### npub Read-Only Mode
+5. Sign out (Settings → Sign Out).
+6. Sign in with a public key only (npub1... or 64-char hex). Verify the "Read-only mode" banner appears on the profile screen.
+7. Verify react and comment buttons are absent from feed cards in read-only mode.
+8. Verify feed, profile, follow list, and round browsing all work normally.
 
-3. **Templates**: Create, rename, hide, and duplicate templates. Set active templates per club. Verify templates affect shot grading.
+### Rich Content
+9. Open the feed. Find a post with a URL and verify it's tappable (opens in-app browser).
+10. Find a post with an image URL in the content and verify the image renders inline.
+11. Find a post with an @mention and verify it shows a display name (not raw npub), and tapping it opens a profile sheet.
 
-4. **Scorecard**: Create a round (solo or multiplayer), enter scores hole-by-hole, and complete the round. In multiplayer, verify the round-robin flow (P1 then P2 per hole) and the review screen showing all players' scores. Verify scores save correctly and appear in round history.
+### Practice Analytics
+12. Import a Rapsodo MLM2Pro CSV file. Verify shot counts match your CSV. Check that clubs and metrics appear correctly.
+13. View trends for a club. Verify A-only trends filter by active template.
+14. Create, rename, and hide a template. Verify templates affect shot grading.
 
-5. **Nostr Posting**: Complete a round and tap "Post to Nostr". Verify the note appears on a Nostr client (e.g., Damus, Primal). Check your profile view for npub/nsec.
+### Rounds (Solo)
+15. Create a solo round, enter scores hole-by-hole, and complete it. Verify scores appear in round history.
+16. Open a completed round and verify the scorecard grid shows correct scores with circle/square notation.
 
-6. **Multiplayer Rounds (Same-Device)**: Create a round and add players from your Nostr follow list or by entering their npub. Score for all players using the round-robin flow. Verify per-player progress tracking and the review scorecard before finishing.
+### Rounds (Multiplayer — Same Device)
+17. Create a round with 2+ players. Enter scores using the round-robin flow (P1 then P2 per hole). Verify the review screen shows all players' scores before finishing.
 
-7. **Multi-Device Rounds**: Create a multi-device round (toggle on Create Round screen). After creating, a setup screen with QR code appears. Have a second player scan or paste the nevent invite on another device to join. Score on both devices independently. Verify live scorecard updates appear in the "View Scores" sheet (QR icon in toolbar). Verify final scores from both players appear in round detail after both finish.
+### Rounds (Multiplayer — Multi-Device)
+18. Create a multi-device round on Device A. Share the nevent invite to Device B (paste or copy link).
+19. Join on Device B. Score independently on both devices. Verify live scorecard updates appear via the refresh button.
+20. Finish on both devices. Verify combined final scorecard in round detail.
+
+### Sign Out
+21. Sign out via Settings. Verify the feed clears and the welcome screen re-appears. Sign back in and verify the feed reloads fresh.
+
+---
 
 ## Known Issues
 
-- **B-001: Club name normalization**: If your CSV uses "7 Iron" and your template uses "7i", they won't match. This will be addressed in a future update. For now, use the club picker when creating templates to ensure exact matches.
+- **B-001: Club name matching is exact.** If your CSV uses "7 Iron" and your template uses "7i", they won't match. Use the club picker when creating templates to ensure exact names match your CSV.
+- **B-002: Multi-device completion UX.** If you finish before the other player, the review screen may show stale scores. Full final scores appear correctly in round detail after both players finish.
+- **B-003: No camera QR scanning.** To join a multi-device round, paste the nevent invite text. Camera-based QR scanning is not yet implemented.
+- **B-005: Profile cache concurrency.** `NostrService.profileCache` has no write synchronization. Concurrent profile fetches from multiple async contexts may rarely cause a crash. Low-frequency issue in practice; tracked for a future fix.
+- **B-006: No outbox queue for publish failures.** If the app is force-quit during the ~1s relay publish window, reactions, comments, and replies may not be delivered. No retry mechanism exists yet.
+- **B-007: Comment thread caching.** Comment threads re-fetch from relays on each visit. This is noticeable on slow connections. Caching is planned for a future update.
+- **No cloud sync.** All data is local. Deleting the app deletes your data.
 
-- **B-005: Multi-device round completion UX**: If you finish a multi-device round before the other player, the review screen may show stale scores. The full final scores will appear correctly in the round detail view after both players finish.
-
-- **B-006: Camera QR scanning not yet implemented**: To join a multi-device round, you must paste the nevent invite text. Camera-based QR scanning will be added in a future update.
-
-- **B-007: No signature verification on remote scores**: Remote scores from kind 1502/30501 events are not yet verified against the round's player roster. This will be hardened in a future security update.
-
-- **No cloud sync**: All data is local. Deleting the app deletes your data.
+---
 
 ## How to Report Bugs
 
 1. Use the TestFlight feedback form (shake your device while in the app).
 2. Include steps to reproduce, expected behavior, and actual behavior.
-3. Screenshots are helpful.
+3. Screenshots or screen recordings are helpful.
+
+---
 
 ## Privacy
 
 - All practice and round data is stored locally in SQLite on your device.
-- Nostr posting is opt-in. You control what gets posted.
+- Nostr features are opt-in. Guest mode provides full practice and round functionality with no network activity.
+- Your secret key (nsec) is stored only in the iOS Keychain and never leaves your device.
 - The app does not include analytics, tracking, or telemetry.
+
+---
 
 ## Build Info
 
-This is an early beta. Expect rough edges. Your feedback helps shape the product.
+314+ unit and integration tests passing. Early beta — expect rough edges. Your feedback shapes the product.

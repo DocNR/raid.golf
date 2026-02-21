@@ -12,6 +12,7 @@ import NostrSDK
 struct UserProfileSheet: View {
     let pubkeyHex: String
     let dbQueue: DatabaseQueue
+    var initialProfile: NostrProfile? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.nostrService) private var nostrService
@@ -35,8 +36,8 @@ struct UserProfileSheet: View {
     }
 
     private var myPubkeyHex: String? {
-        guard isActivated, let km = try? KeyManager.loadOrCreate() else { return nil }
-        return km.signingKeys().publicKey().toHex()
+        guard isActivated else { return nil }
+        return KeyManager.publicKeyHex()
     }
 
     var body: some View {
@@ -78,7 +79,7 @@ struct UserProfileSheet: View {
 
     private var bannerSection: some View {
         ZStack(alignment: .bottomLeading) {
-            if let bannerURL = profile?.banner, let url = URL(string: bannerURL) {
+            if let bannerURL = displayProfile?.banner, let url = URL(string: bannerURL) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
@@ -93,7 +94,7 @@ struct UserProfileSheet: View {
                 bannerPlaceholder
             }
 
-            ProfileAvatarView(pictureURL: profile?.picture, size: 72)
+            ProfileAvatarView(pictureURL: displayProfile?.picture, size: 72)
                 .overlay(
                     Circle().stroke(Color(.systemBackground), lineWidth: 3)
                 )
@@ -114,25 +115,30 @@ struct UserProfileSheet: View {
 
     // MARK: - Identity
 
+    /// The profile to display — initialProfile (immediate) upgraded by cache/relay.
+    private var displayProfile: NostrProfile? {
+        profile ?? initialProfile
+    }
+
     private var identitySection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if isLoading {
+            if isLoading && displayProfile == nil {
                 ProgressView()
                     .padding(.top, 8)
             } else {
-                if let displayName = profile?.displayName, !displayName.isEmpty {
+                if let displayName = displayProfile?.displayName, !displayName.isEmpty {
                     Text(displayName)
                         .font(.title2)
                         .fontWeight(.bold)
                 }
 
-                if let name = profile?.name, !name.isEmpty {
+                if let name = displayProfile?.name, !name.isEmpty {
                     Text("@\(name)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
-                if let nip05 = profile?.nip05 {
+                if let nip05 = displayProfile?.nip05 {
                     Text(nip05)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -159,7 +165,7 @@ struct UserProfileSheet: View {
                     .padding(.top, 2)
                 }
 
-                if let about = profile?.about, !about.isEmpty {
+                if let about = displayProfile?.about, !about.isEmpty {
                     Text(about)
                         .font(.subheadline)
                         .padding(.top, 8)
@@ -232,12 +238,16 @@ struct UserProfileSheet: View {
             npub = try? pk.toBech32()
         }
 
-        // Phase A: instant paint from GRDB cache (synchronous)
+        // Seed from caller-provided profile (always available immediately)
+        if let initial = initialProfile {
+            profile = initial
+        }
+
+        // Phase A: upgrade from GRDB / in-memory cache (may have richer data)
         let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
         if let cached = try? cacheRepo.fetchProfile(pubkeyHex: pubkeyHex) {
             profile = cached
         }
-        // Also check in-memory cache (may have fresher data from current session)
         if let inMemory = nostrService.profileCache[pubkeyHex] {
             profile = inMemory
         }

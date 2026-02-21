@@ -27,9 +27,8 @@ struct ClubhouseView: View {
     @State private var npubError: String?
 
     private var creatorPubkeyHex: String? {
-        guard UserDefaults.standard.bool(forKey: "nostrActivated"),
-              let km = try? KeyManager.loadOrCreate() else { return nil }
-        return km.signingKeys().publicKey().toHex()
+        guard UserDefaults.standard.bool(forKey: "nostrActivated") else { return nil }
+        return KeyManager.publicKeyHex()
     }
 
     var body: some View {

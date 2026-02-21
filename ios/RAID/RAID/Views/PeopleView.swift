@@ -29,21 +29,22 @@ struct PeopleView: View {
     @State private var isLoadingClubhouse = false
 
     // Sheet state
-    @State private var showClubhouseFollowPicker = false
     @State private var selectedPubkeyHex: String = ""
     @State private var showUserProfile = false
 
     @State private var searchText = ""
     @State private var errorMessage: String?
 
+    // Swipe hint
+    @State private var showSwipeHint = false
+
     // Resolved profile for npub pasted into search bar
     @State private var searchKeyProfile: NostrProfile?
     @State private var isResolvingSearchKey = false
 
     private var creatorPubkeyHex: String? {
-        guard UserDefaults.standard.bool(forKey: "nostrActivated"),
-              let km = try? KeyManager.loadOrCreate() else { return nil }
-        return km.signingKeys().publicKey().toHex()
+        guard UserDefaults.standard.bool(forKey: "nostrActivated") else { return nil }
+        return KeyManager.publicKeyHex()
     }
 
     private enum PeopleTab: String, CaseIterable {
@@ -92,6 +93,26 @@ struct PeopleView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search or paste npub", text: $searchText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(8)
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
                 Picker("Tab", selection: $selectedTab) {
                     ForEach(PeopleTab.allCases, id: \.self) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -110,7 +131,6 @@ struct PeopleView: View {
             }
             .navigationTitle("People")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search or paste npub")
             .onChange(of: selectedTab) { _, _ in
                 searchText = ""
                 searchKeyProfile = nil
@@ -139,20 +159,13 @@ struct PeopleView: View {
                 async let c: () = loadClubhouse()
                 _ = await (f, c)
             }
-            .sheet(isPresented: $showClubhouseFollowPicker) {
-                ClubhouseFollowPicker(
-                    dbQueue: dbQueue,
-                    creatorPubkeyHex: creatorPubkeyHex,
-                    existingMembers: Set(clubhousePubkeys),
-                    onAddBatch: { selected in
-                        for (hex, profile) in selected {
-                            addToClubhouse(pubkeyHex: hex, profile: profile)
-                        }
-                    }
-                )
-            }
             .sheet(isPresented: $showUserProfile) {
-                UserProfileSheet(pubkeyHex: selectedPubkeyHex, dbQueue: dbQueue)
+                UserProfileSheet(
+                    pubkeyHex: selectedPubkeyHex,
+                    dbQueue: dbQueue,
+                    initialProfile: followProfiles[selectedPubkeyHex]
+                        ?? clubhouseMembers.first(where: { $0.pubkeyHex == selectedPubkeyHex })
+                )
             }
         }
     }
@@ -246,30 +259,7 @@ struct PeopleView: View {
                 if !filteredFollowOrder.isEmpty {
                     Section {
                         ForEach(filteredFollowOrder, id: \.self) { hex in
-                            Button {
-                                selectedPubkeyHex = hex
-                                showUserProfile = true
-                            } label: {
-                                followingRow(hex: hex)
-                            }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    unfollowHex(hex)
-                                } label: {
-                                    Label("Unfollow", systemImage: "person.badge.minus")
-                                }
-                            }
-                            .swipeActions(edge: .leading) {
-                                if !clubhousePubkeys.contains(hex) {
-                                    Button {
-                                        addToClubhouse(pubkeyHex: hex, profile: followProfiles[hex])
-                                    } label: {
-                                        Label("Favorite", systemImage: "star")
-                                    }
-                                    .tint(.orange)
-                                }
-                            }
+                            followingCell(hex: hex)
                         }
                     } header: {
                         Text("\(followOrder.count) Following")
@@ -277,6 +267,48 @@ struct PeopleView: View {
                         Text("Swipe left to unfollow. Swipe right to favorite.")
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func followingCell(hex: String) -> some View {
+        let isHintTarget = showSwipeHint
+            && !clubhousePubkeys.contains(hex)
+            && hex == filteredFollowOrder.first
+
+        Button {
+            selectedPubkeyHex = hex
+            showUserProfile = true
+        } label: {
+            followingRow(hex: hex)
+        }
+        .buttonStyle(.plain)
+        .offset(x: isHintTarget ? 60 : 0)
+        .overlay(alignment: .leading) {
+            if isHintTarget {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.orange)
+                    .padding(.leading, 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.5), value: showSwipeHint)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                unfollowHex(hex)
+            } label: {
+                Label("Unfollow", systemImage: "person.badge.minus")
+            }
+        }
+        .swipeActions(edge: .leading) {
+            if !clubhousePubkeys.contains(hex) {
+                Button {
+                    addToClubhouse(pubkeyHex: hex, profile: followProfiles[hex])
+                } label: {
+                    Label("Favorite", systemImage: "star")
+                }
+                .tint(.orange)
             }
         }
     }
@@ -314,7 +346,7 @@ struct PeopleView: View {
             emptyState(
                 icon: "star",
                 title: "No Favorites",
-                message: "Favorite people from your follows or paste an npub into the search bar."
+                message: "Swipe right on a follow to add them to your favorites."
             )
         } else {
             List {
@@ -345,15 +377,6 @@ struct PeopleView: View {
                     }
                 }
 
-                if parsedSearchKeyHex == nil {
-                    Section {
-                        Button {
-                            showClubhouseFollowPicker = true
-                        } label: {
-                            Label("Add from Follows", systemImage: "star.circle")
-                        }
-                    }
-                }
             }
         }
     }
@@ -423,6 +446,19 @@ struct PeopleView: View {
         }
     }
 
+    // MARK: - Swipe Hint
+
+    private func playSwipeHint() {
+        guard !followOrder.isEmpty,
+              followOrder.contains(where: { !clubhousePubkeys.contains($0) }) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            showSwipeHint = true
+            try? await Task.sleep(for: .milliseconds(800))
+            showSwipeHint = false
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadFollows() async {
@@ -433,9 +469,10 @@ struct PeopleView: View {
             return
         }
 
-        // Phase A: cache-first instant paint from GRDB
         let followRepo = FollowListCacheRepository(dbQueue: dbQueue)
         let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+
+        // Phase A: cache-first instant paint from GRDB
         if let cached = try? followRepo.fetch(pubkeyHex: myHex) {
             followOrder = cached.follows
             if let cachedProfiles = try? profileRepo.fetchProfiles(pubkeyHexes: cached.follows) {
@@ -446,28 +483,39 @@ struct PeopleView: View {
             }
         }
 
-        // Phase B: relay refresh
+        // Phase B: fetch just the follow list (kind 3) — fast, single event
         do {
             let pubkey = try PublicKey.parse(publicKey: myHex)
-            let result = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
-            followOrder = result.follows
-            for (hex, profile) in result.profiles {
-                followProfiles[hex] = profile
-            }
-            for hex in result.follows where followProfiles[hex] == nil {
-                followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
-            }
-            let worthCaching = result.profiles.values.filter {
-                $0.name != nil || $0.displayName != nil || $0.picture != nil
-            }
-            if !worthCaching.isEmpty {
-                try? profileRepo.upsertProfiles(Array(worthCaching))
+            let remoteFollows = try await nostrService.fetchFollowList(pubkey: pubkey)
+            if !remoteFollows.isEmpty {
+                followOrder = remoteFollows
+                for hex in remoteFollows where followProfiles[hex] == nil {
+                    followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                }
+                try? followRepo.updateLocalFollowList(pubkeyHex: myHex, follows: remoteFollows)
             }
         } catch {
             print("[RAID][People] Follow list relay fetch failed: \(error)")
         }
 
+        // Show list immediately, stop spinner, fire swipe hint
         isLoadingFollows = false
+        playSwipeHint()
+
+        // Phase C: resolve profiles via 3-layer cache (in-memory → GRDB → relay)
+        let unresolved = followOrder.filter { hex in
+            guard let p = followProfiles[hex] else { return true }
+            return p.name == nil && p.displayName == nil && p.picture == nil
+        }
+        if !unresolved.isEmpty {
+            if let resolved = try? await nostrService.resolveProfiles(
+                pubkeyHexes: unresolved, cacheRepo: profileRepo
+            ) {
+                for (hex, profile) in resolved {
+                    followProfiles[hex] = profile
+                }
+            }
+        }
     }
 
     private func loadClubhouse() async {

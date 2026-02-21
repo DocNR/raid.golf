@@ -88,7 +88,11 @@ struct FeedView: View {
                 set: { if !$0 { profileSheetPubkey = nil } }
             )) {
                 if let hex = profileSheetPubkey {
-                    UserProfileSheet(pubkeyHex: hex, dbQueue: dbQueue)
+                    UserProfileSheet(
+                        pubkeyHex: hex,
+                        dbQueue: dbQueue,
+                        initialProfile: viewModel.resolvedProfiles[hex]
+                    )
                 }
             }
             .fullScreenCover(isPresented: $showActivation) {
@@ -297,7 +301,7 @@ struct FeedView: View {
         ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: 0) {
-                Color.clear.frame(height: 0).id("feedTop")
+                Color.clear.frame(height: nostrService.isReadOnly ? 28 : 0).id("feedTop")
                 ForEach(viewModel.items) { item in
                     NavigationLink {
                         ThreadDetailView(

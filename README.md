@@ -1,273 +1,145 @@
-# RAID Golf — Rapsodo A-shot Integrity & Discipline
+# RAID Golf
 
-A structured, versioned golf practice framework focused on **strike quality**, **repeatability**, and **data integrity**.
+A golf performance tracker for iOS. Practice analytics, on-course scoring, and optional Nostr-based social features — all stored locally on your device.
 
-This project defines *how* practice is conducted, *what* data counts, and *how* performance metrics evolve over time without drifting.
-
----
-
-## Project Goals
-
-- Increase **A-shot percentage** (clean, repeatable strikes)
-- Separate **speed**, **technique**, and **performance** work
-- Produce **stable gapping and KPI data**
-- Avoid reinterpretation of past results as technique or speed changes
+RAID stands for **Rapsodo A-shot Integrity & Discipline**.
 
 ---
 
-## Phase 0 Architecture
+## What It Does
 
-RAID Phase 0 establishes a **local-first, immutable data architecture** that prioritizes integrity over convenience.
+**Practice (Practice tab)**
+- Import Rapsodo MLM2Pro CSV exports
+- Classify shots as A, B, or C per club using configurable KPI templates
+- Track A-shot percentage trends over time with pinned-template analysis
+- Manage KPI templates (create, rename, hide, duplicate, set active per club)
 
-### Key Design Principles
+**Rounds (Play tab)**
+- Score rounds hole-by-hole, solo or with other players
+- Same-device multiplayer: round-robin scoring, pass the device per player
+- Multi-device multiplayer: invite via QR code or nevent link, score independently, sync via Nostr relays
+- Scorecard grid with standard golf notation (circles for under-par, squares for over-par)
+- Publish completed rounds as structured NIP-101g events (kind 1501/1502)
 
-- **SQLite is authoritative** — All persisted data lives in SQLite; JSON is export-only
-- **Content-addressed templates** — KPI templates identified by SHA-256 hash of RFC 8785 canonical JSON
-- **Immutable after creation** — Sessions, sub-sessions, and templates cannot be modified
-- **No raw shot storage** — Phase 0 stores only analysis results (sessions and sub-sessions)
-- **RFC 8785 JCS canonicalization** — Cross-platform determinism via industry-standard JSON canonicalization
+**Feed (Feed tab)**
+- Social feed of golf rounds from players you follow
+- Inline rich content: images, GIFs, video, tappable @mentions, tappable URLs
+- React (NIP-25), comment (NIP-22/NIP-10), and thread view for any event
+- Outbox-routed feed: reads from each author's write relays, not just your own
 
-### Data Model
+**Profile & Social**
+- Nostr identity: create a new keypair, import an existing nsec, or sign in read-only with npub
+- Follow list management (PeopleView): Following and Favorites tabs, swipe gestures, npub search
+- NIP-65 relay management: add/remove/configure read and write relays per user
+- NIP-17 DM round invites to players' inbox relays
+- User profile sheets: view and follow/unfollow/favorite any player from feed or PeopleView
+
+---
+
+## Architecture
+
+### Local-First
+
+All authoritative data lives in SQLite on-device (GRDB). Nostr events are projections derived from local facts — not the source of truth. Deleting the app deletes your data. There is no cloud sync.
+
+### Integrity Kernel (Frozen)
+
+The kernel layer enforces immutability at the database level:
+- Sessions, shots, templates, and scorecards are immutable after creation
+- Content-addressed templates: SHA-256 of RFC 8785 JCS canonical JSON
+- Immutability triggers on all authoritative tables
+- Repository owns canonicalization and hashing on insert; read path never recomputes
+
+**Kernel Contract:** `docs/private/kernel/KERNEL_CONTRACT_v2.md` (v2.0, frozen 2026-02-02)
+
+**Governance:** `.clinerules/kernel.md` defines hard STOP conditions for AI-assisted development. See `docs/private/kernel/KERNEL_GOVERNANCE.md` for the full domain registry and promotion checklist.
+
+### Schema (v14)
+
+| Table | Domain | Mutable |
+|-------|--------|---------|
+| `sessions`, `shots`, `kpi_templates`, `club_subsessions` | Kernel (frozen) | No |
+| `course_snapshots`, `course_holes`, `rounds`, `round_events`, `hole_scores` | Kernel-adjacent | No |
+| `round_players`, `round_nostr` | Kernel-adjacent | No |
+| `template_preferences` | Product layer | Yes |
+| `nostr_profiles` (v9) | Social cache | Yes |
+| `clubhouse_members` (v10) | Favorites list | Yes |
+| `nostr_relay_lists` (v11) | Relay cache | Yes |
+| `follow_list_cache` (v12) | Follow list cache | Yes |
+| `feed_event_cache` (v13) | Feed event cache | Yes |
+| `referenced_event_cache` (v14) | Referenced event cache | Yes |
+
+### Nostr Integration
+
+RAID uses Nostr for identity and optional social features. The app is fully usable without Nostr (guest mode). Nostr is a projection layer — not a dependency.
+
+- **SDK:** rust-nostr-swift v0.44.2
+- **NIPs implemented:** 01 (events), 02 (follow lists), 10 (reply threading), 17 (DMs), 22 (comments), 25 (reactions), 51 (lists/Favorites), 59 (gift wrap), 65 (relay lists), 101g (golf events)
+- **Publishing:** fire-and-forget to configured write relays
+- **Read:** one-shot reads with EOSE exit; outbox routing via NIP-65 relay lists
+
+---
+
+## Project Layout
 
 ```
-Session (immutable)
-  ├─ session_id, session_date, source_file
-  └─ Club Sub-Sessions (immutable)
-      ├─ club, shot_count, a_count, b_count, c_count
-      ├─ kpi_template_hash (reference to template used)
-      └─ validity_status (data quality indicator)
+ios/RAID/                  iOS app (SwiftUI + GRDB)
+  RAID/
+    Kernel/                Frozen kernel layer (canonical, hashing, schema, repositories)
+    Models/                Domain models
+    Ingest/                CSV import pipeline
+    Nostr/                 NostrService, KeyManager, NIP builders
+    Views/                 SwiftUI views
+    Scorecard/             Round scoring state (ActiveRoundStore)
+  RAIDTests/               XCTest target (314+ tests)
 
-KPI Template (immutable forever)
-  ├─ template_hash (SHA-256, primary key)
-  ├─ canonical_json (content)
-  └─ schema_version, club, created_at
+docs/
+  private/                 Planning docs (gitignored): roadmap, Nostr plan, onboarding plan
+  specs/                   JCS hashing spec, NIP-101g draft
+  schema_brief/            Schema documentation
+
+.clinerules/               AI agent governance rules
+CHANGELOG.md               Project changelog
+TESTFLIGHT_NOTES.md        Beta tester instructions
 ```
 
-### Data Sources
-
-- **Primary:** Rapsodo MLM2Pro CSV exports (mixed-club sessions supported)
-- **Planned:** TrackMan CSV support
-- **Not Supported:** Target Range exports (different intent/success criteria)
-
-### What Phase 0 Does NOT Store
-
-- Individual shot data (raw shots are analyzed then discarded)
-- Swing mechanics or launch monitor metadata beyond classification metrics
-- Projections or derived summaries (regenerable from authoritative data)
-
 ---
 
-## Kernel & Governance
+## Development Setup
 
-RAID is built on a protected **integrity kernel** that guarantees:
-- Immutable facts (sessions, sub-sessions, templates)
-- Content-addressed templates (RFC 8785 JCS + SHA-256 identity)
-- Deterministic re-analysis semantics
-- Strict derived-data boundaries
-
-The kernel is domain-agnostic and designed to scale beyond practice analytics into on-course scoring, competitions, and economic incentives without breaking trust guarantees.
-
-**Current Kernel Contract:** `docs/private/kernel/KERNEL_CONTRACT_v2.md` (v2.0, frozen 2026-02-02)  
-**Template Hashing Spec:** `docs/specs/jcs_hashing.md` (RFC 8785 JCS + SHA-256)
-
-**Agent/Contributor Constraints:** See `.clinerules/kernel.md` for hard STOP conditions that protect kernel invariants from accidental mutation.
-
-**Governance & Roadmap:** Long-term product roadmap and detailed kernel governance documentation live in `docs/private/` and are intentionally not tracked in version control.
-
----
-
-## Forking & Local Setup
-
-1. Fork this repo on GitHub.
-2. Clone your fork locally.
-3. Keep your personal exports and summaries private (see **Data Privacy** below).
-
----
-
-## CLI Usage (Phase 0.1+)
-
-RAID now includes a command-line interface for managing sessions and analyzing trends.
-
-### Quick Start
+Requirements:
+- Xcode 16+
+- iOS 18.4 simulator or physical device (iOS 17.0+ minimum deployment target)
+- Swift Package Manager (GRDB, rust-nostr-swift resolved automatically)
 
 ```bash
-# Load KPI templates into the database (first time only)
-python3 -m raid.cli templates load
-
-# Ingest a Rapsodo session
-python3 -m raid.cli ingest data/session_logs/your_export.csv
-
-# List all sessions
-python3 -m raid.cli sessions
-
-# Show details for a specific session
-python3 -m raid.cli show 1
-
-# View A% trend for a club
-python3 -m raid.cli trend 7i
-
-# Export session data as JSON
-python3 -m raid.cli export 1 --format json
+open ios/RAID/RAID.xcodeproj
 ```
 
-### Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `templates load` | Load KPI templates from `tools/kpis.json` |
-| `templates list` | List all stored templates |
-| `ingest <csv>` | Ingest a Rapsodo CSV file |
-| `sessions` | List all sessions |
-| `show <id>` | Show session details (clubs, A/B/C counts, averages) |
-| `trend <club>` | Show A% trend over time for a club |
-| `export <id>` | Export session projections as JSON |
-
-### Trend Options
-
+Run tests:
 ```bash
-# Show trend with only fully valid sessions
-python3 -m raid.cli trend 7i --min-validity valid
-
-# Show last 10 sessions only (rolling window)
-python3 -m raid.cli trend 7i --window 10
-
-# Combine filters
-python3 -m raid.cli trend 7i --min-validity valid --window 5
+xcodebuild test \
+  -project ios/RAID/RAID.xcodeproj \
+  -scheme RAID \
+  -destination "platform=iOS Simulator,name=iPhone 16,OS=18.4"
 ```
 
-### Database Location
-
-By default, the CLI uses `./raid.db` in the current directory. You can specify a different location:
-
-```bash
-python3 -m raid.cli --db /path/to/custom.db sessions
-```
+Live relay tests require `RAID_LIVE_TESTS=1` environment variable and are skipped by default.
 
 ---
 
-## Canonical Artifacts
+## Governance & Agent Constraints
 
-This project intentionally contains only a small number of authoritative files.
-
-### 1. Strike Quality Practice System (Canonical)
-- **File:** `docs/Strike_Quality_Practice_Session_Plan.md`
-- Defines:
-  - The 3-lane training model (Speed / Technique / Strike Quality)
-  - Session structure
-  - What constitutes an A / B / C shot
-  - How practice sessions are run and evaluated
-
-> If a practice idea does not fit within this document, it is not used.
-
-Versioning contract:
-- Practice system docs are versioned in both filename and content (e.g., `Strike_Quality_Practice_System_v2.md`).
-- Major version bumps change rules, KPIs, or classification logic.
-- Minor version bumps are clarifications only.
+AI agents working on this codebase must follow `.clinerules/`. Key rules:
+- Do not modify kernel layer files without explicit authorization
+- Do not add mutability to immutable tables
+- Read path must not recompute hashes (RTM-04)
+- `docs/private/` is gitignored — update `MEMORY.md` instead of committing planning docs
 
 ---
 
-### 2. Gapping & KPI Log (Source of Truth)
-- **File:** `data/templates/Strike_Quality_Gapping_KPI_Log.xlsx`
-- Two tabs:
-  - `Session_Log` → one row per club, per strike-quality session
-  - `Club_KPIs` → authoritative KPI thresholds and validation status
+## License
 
-All gapping and stock yardages are derived **only from A-shots**.
+RAID Golf kernel and analysis framework: see repository root for license details.
 
-Spreadsheet versioning contract:
-- Rows reference the KPI version used for classification, not the logic itself.
-- Templates are implicitly versioned by KPI version.
-- Historical rows are never retroactively edited.
-
----
-
-### 3. CHANGELOG
-- **File:** `CHANGELOG.md`
-- Records:
-  - Practice system version changes
-  - KPI version changes
-  - Rationale for any structural updates
-
----
-
-## Practice Philosophy (High Level)
-
-- **Quality > Volume**
-- **Count reps, not balls**
-- **Do not fix C-shots — exclude them**
-- **Never mix training lanes**
-- **Never change KPIs retroactively**
-
----
-
-## Versioning Rules (Summary)
-
-### Practice System
-- Minor versions (`v2.1`) → clarifications only
-- Major versions (`v3.0`) → rule or KPI logic changes
-
-### KPIs
-- Each session logs the KPI version used
-- KPIs are only changed after sufficient data accumulation
-- Past data is never reclassified under new thresholds
-
-KPIs live in `tools/kpis.json` and are immutable once used. New KPI logic means a new version key (e.g. `v2.1`, `v3.0`).
-
----
-
-## Typical Workflow
-
-1. Run a session using `docs/Strike_Quality_Practice_Session_Plan.md`
-2. Export session data (Rapsodo / TrackMan)
-3. Analyze session
-4. Log **one row** in `Session_Log`
-5. Periodically review club validation status
-
----
-
-## Current Status
-
-- **Validated club:** 7-iron
-- All other clubs: provisional
-- System version: v2.0
-
----
-
-## Non-Goals
-
-This project does **not** attempt to:
-- Store raw shot-by-shot data
-- Track swing mechanics
-- Serve as a swing journal
-- Optimize launch conditions independently of strike quality
-
----
-
-## Data Privacy
-
-This repo is designed to be shareable without exposing personal session data.
-
-- Raw exports in `data/session_logs/*.csv` are ignored by default.
-- Derived summaries in `data/summaries/*.csv` are ignored by default.
-- Anonymized examples are included for onboarding:
-  - `data/session_logs/sample_session_log.csv`
-  - `data/summaries/sample_session_summary.csv`
-
-If you publish this repo, keep your personal exports and summaries local.
-
----
-
-## App Direction
-
-This project can evolve into a lightweight iOS app that:
-- imports session CSVs,
-- runs KPI classification locally,
-- surfaces A-shot trends and summaries.
-
-Nothing in the current structure blocks that path.
-
----
-
-## Guiding Principle
-
-> *Consistency is trained. Speed is unlocked. Data is filtered.*
+iOS app: proprietary, not open source.

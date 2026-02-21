@@ -42,6 +42,42 @@ This project versions **behavior and rules**, not files.
 
 ### Added
 
+- **Onboarding Polish: O-5 (Contextual Activation Prompts) + O-6 (Settings Consolidation)**
+  - **O-5: `ActivationPromptCard` — reusable contextual activation component**
+    - Three distinct prompts shown at natural moments for guest-mode users:
+      - "Play with Friends" — triggered after the user's 3rd round
+      - "Share this Round" — triggered after completing a round in guest mode
+      - "Back up Your Data" — triggered when user has 5+ practice sessions and is still in guest mode
+    - Each prompt capped at 3 dismissals via per-prompt `@AppStorage` counter; stops appearing permanently after 3rd dismissal
+    - Each card presents "Create Account" and "Sign In" CTAs (leading to `OnboardingProfileSetupView` / `OnboardingKeyImportView`) plus a "Not Now" dismiss button
+  - **O-6: `SettingsView` — consolidated settings sheet**
+    - Single entry point (gear icon in side drawer) for Keys & Relays, About, and Sign Out
+    - `SideDrawerView` simplified — previously separate "Keys & Relays" and "About" menu items replaced by single "Settings" item
+    - No functional changes to relay management or key display; only the entry point is consolidated
+
+- **npub Read-Only Sign-In**
+  - Users can now sign in with a public key only (npub or hex), enabling read-only browsing without exposing a secret key
+  - `KeyManager.importPublicKey(npub:)` stores the derived hex pubkey in UserDefaults (not Keychain — no secret available)
+  - `NostrService.isReadOnly: Bool` computed from presence of public-key-only state vs. full nsec in Keychain
+  - All 8 publish methods gated by `isReadOnly`: posting, reacting, commenting, publishing follow lists, kind 0, kind 10002, kind 30000, and round events all no-op silently with a logged warning
+  - UI hides react/comment/reply buttons when in read-only mode; a "Read-only mode" banner shown on the profile screen
+  - Full feed browsing, profile resolution, follow list reading, and round viewing work in read-only mode
+
+- **Sign-Out Cache Fix (`FeedViewModel.reset()`)**
+  - `FeedViewModel.reset()` method clears all in-memory feed state on sign-out: feed items, raw event store, reaction counts, comment counts, resolved profiles, and load state resets to `.guest`
+  - `SideDrawerView.performSignOut()` posts `.nostrSignedOut` notification after clearing Keychain
+  - `FeedViewModel` observes `.nostrSignedOut` and calls `reset()` — ensures re-sign-in (or sign-in as a different user) always shows a clean feed
+  - `AvatarImageCache.shared.clear()` called on sign-out to purge cached profile images
+
+- **Rich Content Rendering (`RichContentView`)**
+  - New `RichContentView.swift` replaces plain `Text()` in feed cards and thread views
+  - Parses Nostr event content into typed segments: plain text, tappable URLs, inline images, animated GIFs, inline video, and @mention spans
+  - Inline images and GIFs render in-line within the content flow (no separate media section); videos play inline
+  - @mentions rendered as tappable display names: resolves npub references to profile display names from `ProfileCacheRepository`; unresolved npubs show truncated bech32
+  - Tapping a @mention navigates to `UserProfileSheet` via `raid://profile/<npub>` custom URL scheme
+  - Tapping a URL opens in `SFSafariViewController` (in-app, no context switch to Safari)
+  - No schema changes
+
 - **iOS Phase 8E.1: Follow/Unfollow + Favorites + Profile Caching**
   - **Follow list write path (`publishFollowList`)**
     - `NostrService.publishFollowList(keys:followedPubkeys:)` publishes kind 3 contact list

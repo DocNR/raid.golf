@@ -192,14 +192,8 @@ struct CreateRoundView: View {
             hasNostrKeys = false
             return
         }
-        do {
-            let keyManager = try KeyManager.loadOrCreate()
-            let keys = keyManager.signingKeys()
-            creatorPubkeyHex = keys.publicKey().toHex()
-            hasNostrKeys = true
-        } catch {
-            hasNostrKeys = false
-        }
+        creatorPubkeyHex = KeyManager.publicKeyHex()
+        hasNostrKeys = creatorPubkeyHex != nil
     }
 
     // MARK: - Round Creation
@@ -273,26 +267,40 @@ private struct PlayerPickerSheet: View {
     @State private var followOrder: [String] = []
     @State private var isLoadingFollows = false
     @State private var followLoadError: String?
-    @State private var showNpubEntry = false
-    @State private var npubInput = ""
-    @State private var npubError: String?
-
     // Clubhouse members (loaded from GRDB)
     @State private var clubhouseProfiles: [NostrProfile] = []
 
     var body: some View {
         NavigationStack {
-            List {
-                selectedSection
-                clubhouseSection
-                followsSection
-                addByKeySection
+            VStack(spacing: 0) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search by name or npub", text: $searchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !searchQuery.isEmpty {
+                        Button { searchQuery = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(8)
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+                List {
+                    selectedSection
+                    clubhouseSection
+                    followsSection
+                    addByKeySection
+                }
             }
-            .searchable(
-                text: $searchQuery,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search by name or nip05"
-            )
             .onChange(of: searchQuery) { _, _ in performSearch() }
             .navigationTitle("Add Players")
             .navigationBarTitleDisplayMode(.inline)
@@ -306,9 +314,6 @@ private struct PlayerPickerSheet: View {
             .task {
                 await loadClubhouseMembers()
                 await loadFollowList()
-            }
-            .sheet(isPresented: $showNpubEntry) {
-                npubEntrySheet
             }
         }
     }
@@ -410,49 +415,57 @@ private struct PlayerPickerSheet: View {
         }
     }
 
-    private var addByKeySection: some View {
-        Section {
-            Button {
-                showNpubEntry = true
-            } label: {
-                Label("Add by npub or hex key", systemImage: "key")
-                    .foregroundStyle(.secondary)
-            }
-        }
+    /// If the search text is a valid npub or hex pubkey, returns the hex.
+    private var parsedSearchKeyHex: String? {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let pk = try? PublicKey.parse(publicKey: trimmed) else { return nil }
+        let hex = pk.toHex()
+        if hex == creatorPubkeyHex { return nil }
+        return hex
     }
 
-    // MARK: - Npub Entry Sheet
+    @ViewBuilder
+    private var addByKeySection: some View {
+        if let hex = parsedSearchKeyHex {
+            let profile = followProfiles[hex]
+            let alreadySelected = selectedPlayers[hex] != nil
 
-    private var npubEntrySheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("npub1... or hex key", text: $npubInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    if let error = npubError {
-                        Text(error)
-                            .foregroundStyle(.red)
-                            .font(.caption)
+            Section("Key Match") {
+                Button {
+                    if !alreadySelected {
+                        let p = profile ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                        selectedPlayers[hex] = p
+                        searchQuery = ""
+                        // Resolve in background if needed
+                        if profile == nil {
+                            Task {
+                                let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
+                                if let profiles = try? await nostrService.resolveProfiles(
+                                    pubkeyHexes: [hex], cacheRepo: cacheRepo
+                                ), let fetched = profiles[hex] {
+                                    selectedPlayers[hex] = fetched
+                                }
+                            }
+                        }
                     }
-                } footer: {
-                    Text("Paste a Nostr public key to add someone not in your follows.")
-                }
-            }
-            .navigationTitle("Add by Key")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        npubInput = ""
-                        npubError = nil
-                        showNpubEntry = false
+                } label: {
+                    HStack(spacing: 10) {
+                        ProfileAvatarView(pictureURL: profile?.picture, size: 36)
+                        Text(profile?.displayLabel ?? String(hex.prefix(12)) + "...")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if alreadySelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.accentColor)
+                        } else {
+                            Text("Add")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { addPlayerByNpub() }
-                        .disabled(npubInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -478,52 +491,39 @@ private struct PlayerPickerSheet: View {
         }
     }
 
-    private func addPlayerByNpub() {
-        npubError = nil
-        let input = npubInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { return }
-
-        do {
-            let pubkey = try PublicKey.parse(publicKey: input)
-            let hex = pubkey.toHex()
-
-            if hex == creatorPubkeyHex {
-                npubError = "That's your own key."
-                return
-            }
-            if selectedPlayers[hex] != nil {
-                npubError = "Player already added."
-                return
-            }
-
-            let profile = followProfiles[hex] ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
-            selectedPlayers[hex] = profile
-            npubInput = ""
-            showNpubEntry = false
-
-            // Fetch full profile in background if unknown
-            if followProfiles[hex] == nil {
-                Task {
-                    if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [hex]),
-                       let fetched = profiles[hex] {
-                        selectedPlayers[hex] = fetched
-                    }
-                }
-            }
-        } catch {
-            npubError = "Invalid npub or hex key."
-        }
-    }
 
     private func loadClubhouseMembers() async {
         let repo = ClubhouseRepository(dbQueue: dbQueue)
         guard let pubkeys = try? repo.allPubkeyHexes(), !pubkeys.isEmpty else { return }
-        let cacheRepo = ProfileCacheRepository(dbQueue: dbQueue)
-        if let profiles = try? await nostrService.resolveProfiles(
-            pubkeyHexes: pubkeys, cacheRepo: cacheRepo
-        ) {
-            clubhouseProfiles = pubkeys.compactMap { profiles[$0] }
-                .filter { $0.pubkeyHex != creatorPubkeyHex }
+        let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+
+        // Phase A: instant paint from GRDB cache
+        let filtered = pubkeys.filter { $0 != creatorPubkeyHex }
+        if let cached = try? profileRepo.fetchProfiles(pubkeyHexes: filtered) {
+            clubhouseProfiles = filtered.map { hex in
+                cached[hex] ?? NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+            }
+        } else {
+            clubhouseProfiles = filtered.map {
+                NostrProfile(pubkeyHex: $0, name: nil, displayName: nil, picture: nil)
+            }
+        }
+
+        // Phase B: resolve uncached profiles from relay
+        let unresolved = filtered.filter { hex in
+            guard let p = clubhouseProfiles.first(where: { $0.pubkeyHex == hex }) else { return true }
+            return p.name == nil && p.displayName == nil && p.picture == nil
+        }
+        if !unresolved.isEmpty {
+            if let resolved = try? await nostrService.resolveProfiles(
+                pubkeyHexes: unresolved, cacheRepo: profileRepo
+            ) {
+                for (hex, profile) in resolved {
+                    if let idx = clubhouseProfiles.firstIndex(where: { $0.pubkeyHex == hex }) {
+                        clubhouseProfiles[idx] = profile
+                    }
+                }
+            }
         }
     }
 
@@ -532,20 +532,55 @@ private struct PlayerPickerSheet: View {
         isLoadingFollows = true
         followLoadError = nil
 
+        let followRepo = FollowListCacheRepository(dbQueue: dbQueue)
+        let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
+
+        // Phase A: cache-first instant paint from GRDB
+        if let cached = try? followRepo.fetch(pubkeyHex: creatorHex) {
+            followOrder = cached.follows
+            if let cachedProfiles = try? profileRepo.fetchProfiles(pubkeyHexes: cached.follows) {
+                followProfiles = cachedProfiles
+                for hex in cached.follows where followProfiles[hex] == nil {
+                    followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                }
+            }
+        }
+
+        // Phase B: fetch just the follow list (kind 3) — fast, single event
         do {
             let pubkey = try PublicKey.parse(publicKey: creatorHex)
-            let result = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
-            followOrder = result.follows
-            followProfiles = result.profiles
-            for hex in result.follows where followProfiles[hex] == nil {
-                followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+            let remoteFollows = try await nostrService.fetchFollowList(pubkey: pubkey)
+            if !remoteFollows.isEmpty {
+                followOrder = remoteFollows
+                for hex in remoteFollows where followProfiles[hex] == nil {
+                    followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
+                }
+                try? followRepo.updateLocalFollowList(pubkeyHex: creatorHex, follows: remoteFollows)
             }
         } catch {
-            followLoadError = "Could not load follow list."
+            if followOrder.isEmpty {
+                followLoadError = "Could not load follow list."
+            }
             print("[RAID] Follow list load failed: \(error)")
         }
 
+        // Show list immediately
         isLoadingFollows = false
+
+        // Phase C: resolve profiles via 3-layer cache
+        let unresolved = followOrder.filter { hex in
+            guard let p = followProfiles[hex] else { return true }
+            return p.name == nil && p.displayName == nil && p.picture == nil
+        }
+        if !unresolved.isEmpty {
+            if let resolved = try? await nostrService.resolveProfiles(
+                pubkeyHexes: unresolved, cacheRepo: profileRepo
+            ) {
+                for (hex, profile) in resolved {
+                    followProfiles[hex] = profile
+                }
+            }
+        }
     }
 }
 
