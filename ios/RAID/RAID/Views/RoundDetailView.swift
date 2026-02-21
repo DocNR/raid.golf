@@ -30,6 +30,8 @@ struct RoundDetailView: View {
     // Guest activation state
     @State private var showActivationAlert = false
     @State private var showActivation = false
+    @AppStorage("nostrActivated") private var nostrActivated = false
+    @AppStorage("shareRoundPromptDismissals") private var shareRoundDismissCount = 0
 
     // Multi-device state
     @State private var nostrRecord: RoundNostrRecord?
@@ -159,6 +161,19 @@ struct RoundDetailView: View {
                     remotePlayerIndices: remotePlayerIndices
                 )
                 .padding(.horizontal, 8)
+
+                // Guest activation prompt
+                if !nostrActivated && shareRoundDismissCount < 3 {
+                    ActivationPromptCard(
+                        icon: "square.and.arrow.up",
+                        headline: "Share this Round",
+                        subtitle: "Create an account to share your scores on Nostr."
+                    ) {
+                        showActivation = true
+                    } onDismiss: {
+                        shareRoundDismissCount += 1
+                    }
+                }
 
             }
             .padding(.vertical, 8)

@@ -22,6 +22,8 @@ struct RoundsView: View {
     // Guest activation state
     @State private var showActivationAlert = false
     @State private var showActivation = false
+    @AppStorage("nostrActivated") private var nostrActivated = false
+    @AppStorage("playWithFriendsPromptDismissals") private var playWithFriendsDismissCount = 0
 
     // DM invite state
     @State private var pendingInviteCount: Int = 0
@@ -137,6 +139,26 @@ struct RoundsView: View {
         }
     }
 
+    private var completedRoundCount: Int {
+        rounds.filter { $0.isCompleted }.count
+    }
+
+    @ViewBuilder
+    private var playWithFriendsPrompt: some View {
+        if !nostrActivated && completedRoundCount >= 3 && playWithFriendsDismissCount < 3 {
+            ActivationPromptCard(
+                icon: "person.2.fill",
+                headline: "Play with Friends",
+                subtitle: "Create an account to share rounds and play with others on Nostr."
+            ) {
+                showActivation = true
+            } onDismiss: {
+                playWithFriendsDismissCount += 1
+            }
+            .padding(.top, 8)
+        }
+    }
+
     @ViewBuilder
     private var inviteBanner: some View {
         if pendingInviteCount > 0 {
@@ -185,6 +207,7 @@ struct RoundsView: View {
     private var roundsList: some View {
         VStack(spacing: 0) {
             inviteBanner
+            playWithFriendsPrompt
             List(rounds, id: \.roundId) { round in
             Button {
                 if round.isCompleted {

@@ -28,6 +28,9 @@ struct SideDrawerView: View {
     @State private var showDeleteKeyBackupAlert = false
     @State private var showDeleteConfirm = false
 
+    // Settings sheet
+    @State private var showSettings = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             profileHeader
@@ -55,30 +58,14 @@ struct SideDrawerView: View {
                     presentSheet { drawerState.showPractice = true }
                 }
 
-                drawerMenuItem(icon: "person.2", label: "People") {
-                    if nostrActivated {
+                if nostrActivated {
+                    drawerMenuItem(icon: "person.2", label: "People") {
                         presentSheet { drawerState.showPeople = true }
-                    } else {
-                        showActivationAlert = true
                     }
                 }
 
-                drawerMenuItem(icon: "key.horizontal", label: "Keys & Relays") {
-                    if nostrActivated {
-                        presentSheet { drawerState.showKeysRelays = true }
-                    } else {
-                        showActivationAlert = true
-                    }
-                }
-
-                drawerMenuItem(icon: "info.circle", label: "About") {
-                    presentSheet { drawerState.showAbout = true }
-                }
-
-                if !nostrActivated {
-                    drawerMenuItem(icon: "person.badge.plus", label: "Create Account") {
-                        presentSheet { showActivation = true }
-                    }
+                drawerMenuItem(icon: "gearshape", label: "Settings") {
+                    presentSheet { showSettings = true }
                 }
             }
             .padding(.top, 8)
@@ -88,17 +75,6 @@ struct SideDrawerView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 0) {
-                if nostrActivated {
-                    drawerMenuItem(icon: "rectangle.portrait.and.arrow.right", label: "Sign Out") {
-                        if nostrReadOnly {
-                            // No secret key to back up — go straight to confirmation
-                            showSignOutConfirm = true
-                        } else {
-                            showKeyBackupAlert = true
-                        }
-                    }
-                }
-
                 drawerMenuItem(icon: "exclamationmark.triangle", label: "Danger Zone", tint: .red) {
                     presentSheet { showDangerZone = true }
                 }
@@ -117,6 +93,16 @@ struct SideDrawerView: View {
                 UserDefaults.standard.set(activated, forKey: "nostrActivated")
                 UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
                 showActivation = false
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(dbQueue: dbQueue) {
+                // Sign-out requested from SettingsView — trigger the two-step alert
+                if nostrReadOnly {
+                    showSignOutConfirm = true
+                } else {
+                    showKeyBackupAlert = true
+                }
             }
         }
         // Sign Out — Step 1: key backup warning
