@@ -17,6 +17,7 @@ struct SettingsView: View {
 
     // WelcomeView activation sheet
     @State private var showActivation = false
+    @State private var showEditProfile = false
 
     var body: some View {
         NavigationStack {
@@ -24,8 +25,8 @@ struct SettingsView: View {
                 // Account section
                 Section("Account") {
                     if nostrActivated {
-                        NavigationLink("Edit Profile") {
-                            EditProfileView()
+                        Button("Edit Profile") {
+                            showEditProfile = true
                         }
                         NavigationLink("Keys & Relays") {
                             NostrProfileView(dbQueue: dbQueue)
@@ -79,6 +80,9 @@ struct SettingsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileView()
             }
             .fullScreenCover(isPresented: $showActivation) {
                 WelcomeView { activated in
