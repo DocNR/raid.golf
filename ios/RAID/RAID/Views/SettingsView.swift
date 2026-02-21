@@ -10,6 +10,7 @@ import GRDB
 struct SettingsView: View {
     let dbQueue: DatabaseQueue
     var onSignOut: (() -> Void)?
+    var onDeleteAllData: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("nostrActivated") private var nostrActivated = false
@@ -54,6 +55,22 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                // Danger zone
+                Section {
+                    Button(role: .destructive) {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            onDeleteAllData?()
+                        }
+                    } label: {
+                        Label("Delete All Data & Sign Out", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Danger Zone")
+                } footer: {
+                    Text("Permanently deletes all practice sessions, rounds, templates, and your account. The app will close.")
                 }
             }
             .navigationTitle("Settings")

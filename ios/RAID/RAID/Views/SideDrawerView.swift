@@ -23,8 +23,7 @@ struct SideDrawerView: View {
     @State private var showKeyBackupAlert = false
     @State private var showSignOutConfirm = false
 
-    // Danger zone
-    @State private var showDangerZone = false
+    // Danger zone (alerts triggered from SettingsView)
     @State private var showDeleteKeyBackupAlert = false
     @State private var showDeleteConfirm = false
 
@@ -71,15 +70,6 @@ struct SideDrawerView: View {
             .padding(.top, 8)
 
             Spacer()
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 0) {
-                drawerMenuItem(icon: "exclamationmark.triangle", label: "Danger Zone", tint: .red) {
-                    presentSheet { showDangerZone = true }
-                }
-            }
-            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
@@ -96,14 +86,21 @@ struct SideDrawerView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(dbQueue: dbQueue) {
+            SettingsView(dbQueue: dbQueue, onSignOut: {
                 // Sign-out requested from SettingsView — trigger the two-step alert
                 if nostrReadOnly {
                     showSignOutConfirm = true
                 } else {
                     showKeyBackupAlert = true
                 }
-            }
+            }, onDeleteAllData: {
+                // Delete all data — trigger key backup alert first
+                if nostrReadOnly {
+                    showDeleteConfirm = true
+                } else {
+                    showDeleteKeyBackupAlert = true
+                }
+            })
         }
         // Sign Out — Step 1: key backup warning
         .alert("Have You Saved Your Secret Key?", isPresented: $showKeyBackupAlert) {
@@ -130,69 +127,29 @@ struct SideDrawerView: View {
         } message: {
             Text("You'll need to create a new account or sign in again to use social features.")
         }
-        // Danger Zone sheet
-        .sheet(isPresented: $showDangerZone) {
-            dangerZoneSheet
+        // Delete All Data — Step 1: key backup warning
+        .alert("Have You Saved Your Secret Key?", isPresented: $showDeleteKeyBackupAlert) {
+            Button("Copy Secret Key") {
+                copySecretKey()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showDeleteKeyBackupAlert = true
+                }
+            }
+            Button("I've Saved It") {
+                showDeleteConfirm = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Without your secret key, you cannot recover this account. There is no reset or recovery option.")
         }
-    }
-
-    // MARK: - Danger Zone Sheet
-
-    private var dangerZoneSheet: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Label {
-                        Text("These actions are permanent and cannot be undone.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Section {
-                    Button(role: .destructive) {
-                        showDeleteKeyBackupAlert = true
-                    } label: {
-                        Label("Delete All Data & Sign Out", systemImage: "trash")
-                    }
-                } footer: {
-                    Text("Permanently deletes all practice sessions, rounds, templates, and your account. The app will close.")
-                }
+        // Delete All Data — Step 2: final confirmation
+        .alert("Delete Everything?", isPresented: $showDeleteConfirm) {
+            Button("Delete All Data", role: .destructive) {
+                performDeleteAllData()
             }
-            .navigationTitle("Danger Zone")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showDangerZone = false }
-                }
-            }
-            // Delete All Data — Step 1: key backup warning
-            .alert("Have You Saved Your Secret Key?", isPresented: $showDeleteKeyBackupAlert) {
-                Button("Copy Secret Key") {
-                    copySecretKey()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        showDeleteKeyBackupAlert = true
-                    }
-                }
-                Button("I've Saved It") {
-                    showDeleteConfirm = true
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Without your secret key, you cannot recover this account. There is no reset or recovery option.")
-            }
-            // Delete All Data — Step 2: final confirmation
-            .alert("Delete Everything?", isPresented: $showDeleteConfirm) {
-                Button("Delete All Data", role: .destructive) {
-                    performDeleteAllData()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will permanently delete all practice sessions, rounds, and templates. The app will close and you'll start fresh.")
-            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete all practice sessions, rounds, and templates. The app will close and you'll start fresh.")
         }
     }
 
