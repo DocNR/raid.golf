@@ -75,6 +75,9 @@ struct FeedView: View {
                 return .systemAction
             })
             .task { await viewModel.loadIfNeeded(nostrService: nostrService, dbQueue: dbQueue) }
+            .onReceive(NotificationCenter.default.publisher(for: .nostrSignedOut)) { _ in
+                viewModel.reset()
+            }
             .onChange(of: nostrActivated) { _, newValue in
                 if newValue {
                     Task { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
@@ -389,4 +392,5 @@ struct FeedView: View {
 
 extension Notification.Name {
     static let feedScrollToTop = Notification.Name("feedScrollToTop")
+    static let nostrSignedOut = Notification.Name("nostrSignedOut")
 }

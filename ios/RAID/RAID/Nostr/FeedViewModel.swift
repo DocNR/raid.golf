@@ -51,6 +51,30 @@ class FeedViewModel {
 
     private var hasLoaded = false
 
+    // MARK: - Reset (sign-out)
+
+    /// Clear all in-memory state so the next loadIfNeeded starts fresh.
+    func reset() {
+        items = []
+        resolvedProfiles = [:]
+        reactionCounts = [:]
+        ownReactions = []
+        commentCounts = [:]
+        rawEvents = [:]
+        isLoading = false
+        isBackgroundRefreshing = false
+        refreshProgress = 0
+        errorMessage = nil
+        hasLoaded = false
+        hasMoreEvents = true
+        paginationCursor = nil
+        cachedRelayPlan = nil
+        cachedFollowSet = nil
+        cachedKeys = nil
+        loadState = .idle
+        isLoadingMore = false
+    }
+
     // MARK: - Load
 
     func loadIfNeeded(nostrService: NostrService, dbQueue: DatabaseQueue) async {

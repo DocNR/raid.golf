@@ -291,6 +291,9 @@ struct SideDrawerView: View {
         try? ProfileCacheRepository(dbQueue: dbQueue).deleteAll()
         try? RelayCacheRepository(dbQueue: dbQueue).deleteAll()
         try? SocialCountCacheRepository(dbQueue: dbQueue).deleteAll()
+
+        // Reset in-memory view models (FeedViewModel listens for this)
+        NotificationCenter.default.post(name: .nostrSignedOut, object: nil)
     }
 
     private func performDeleteAllData() {
