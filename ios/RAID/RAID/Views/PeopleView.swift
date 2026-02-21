@@ -299,7 +299,12 @@ struct PeopleView: View {
             let pubkey = try PublicKey.parse(publicKey: myHex)
             let result = try await nostrService.fetchFollowListWithProfiles(pubkey: pubkey)
             followOrder = result.follows
-            followProfiles = result.profiles
+            // Merge relay results into existing cache — don't replace, or
+            // profiles loaded from GRDB in Phase A get wiped if relay
+            // returns fewer results (timeout, etc.)
+            for (hex, profile) in result.profiles {
+                followProfiles[hex] = profile
+            }
             for hex in result.follows where followProfiles[hex] == nil {
                 followProfiles[hex] = NostrProfile(pubkeyHex: hex, name: nil, displayName: nil, picture: nil)
             }
