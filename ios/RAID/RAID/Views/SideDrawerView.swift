@@ -6,6 +6,7 @@
 
 import SwiftUI
 import GRDB
+import NostrSDK
 
 struct SideDrawerView: View {
     let dbQueue: DatabaseQueue
@@ -14,6 +15,7 @@ struct SideDrawerView: View {
     @Environment(\.nostrService) private var nostrService
 
     @AppStorage("nostrActivated") private var nostrActivated = false
+    @AppStorage("nostrReadOnly") private var nostrReadOnly = false
     @State private var showActivationAlert = false
     @State private var showActivation = false
 
@@ -88,7 +90,12 @@ struct SideDrawerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if nostrActivated {
                     drawerMenuItem(icon: "rectangle.portrait.and.arrow.right", label: "Sign Out") {
-                        showKeyBackupAlert = true
+                        if nostrReadOnly {
+                            // No secret key to back up — go straight to confirmation
+                            showSignOutConfirm = true
+                        } else {
+                            showKeyBackupAlert = true
+                        }
                     }
                 }
 
@@ -215,19 +222,42 @@ struct SideDrawerView: View {
                 )
 
                 if let profile = drawerState.ownProfile {
-                    if let displayName = profile.displayName, !displayName.isEmpty {
-                        Text(displayName)
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if let displayName = profile.displayName, !displayName.isEmpty {
+                            Text(displayName)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                        }
+                        if nostrReadOnly {
+                            Text("Read-only")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(.secondary, in: Capsule())
+                        }
                     }
                     if let name = profile.name, !name.isEmpty {
                         Text("@\(name)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+                } else if nostrReadOnly {
+                    // No profile loaded yet — still show the badge
+                    Text("Read-only")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.secondary, in: Capsule())
                 }
 
-                if let npub = try? KeyManager.loadOrCreate().publicKeyBech32() {
+                // Show truncated pubkey — safe in both nsec and npub sign-in modes
+                if let pubkeyHex = KeyManager.publicKeyHex(),
+                   let pubkey = try? PublicKey.parse(publicKey: pubkeyHex),
+                   let npub = try? pubkey.toBech32() {
                     Text(String(npub.prefix(20)) + "...")
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -276,9 +306,11 @@ struct SideDrawerView: View {
     }
 
     private func performSignOut() {
-        KeyManager.deleteKey()
+        KeyManager.deleteKey()  // also clears nostrPublicKeyHex and nostrReadOnly
         UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
         UserDefaults.standard.set(false, forKey: "nostrActivated")
+        UserDefaults.standard.set(false, forKey: "nostrReadOnly")
+        UserDefaults.standard.removeObject(forKey: "nostrPublicKeyHex")
         drawerState.ownProfile = nil
         drawerState.close()
 

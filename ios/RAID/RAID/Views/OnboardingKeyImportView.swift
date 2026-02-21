@@ -24,14 +24,14 @@ struct OnboardingKeyImportView: View {
     var body: some View {
         Form {
             Section {
-                TextField("nsec1... or hex secret key", text: $nsecInput)
+                TextField("nsec1... or npub1...", text: $nsecInput)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(.body, design: .monospaced))
             } header: {
-                Text("Paste your secret key to restore your account.")
+                Text("Paste your key to restore your account.")
             } footer: {
-                Text("Enter nsec1... (bech32) or a 64-character hex secret key from another app.")
+                Text("Enter nsec1... (secret key) or npub1... (public key, read-only).")
             }
 
             Section {
@@ -73,21 +73,45 @@ struct OnboardingKeyImportView: View {
         let input = nsecInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return }
 
-        // Reject non-nsec bech32 prefixes
         let lower = input.lowercased()
-        let badPrefixes = ["npub1", "nevent1", "nprofile1", "note1", "naddr1", "nrelay1"]
+
+        // npub path — read-only sign-in
+        if lower.hasPrefix("npub1") {
+            isImporting = true
+            defer { isImporting = false }
+
+            do {
+                let pubkeyHex = try KeyManager.importPublicKey(npub: input)
+                UserDefaults.standard.set(true, forKey: "nostrReadOnly")
+                UserDefaults.standard.set(true, forKey: "nostrActivated")
+
+                // Best-effort profile fetch from relays
+                if let profiles = try? await nostrService.resolveProfiles(pubkeyHexes: [pubkeyHex]) {
+                    drawerState.ownProfile = profiles[pubkeyHex]
+                }
+
+                onComplete(true)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
+
+        // Reject other non-nsec bech32 prefixes
+        let badPrefixes = ["nevent1", "nprofile1", "note1", "naddr1", "nrelay1"]
         for prefix in badPrefixes {
             if lower.hasPrefix(prefix) {
-                errorMessage = "Expected nsec1... or hex secret key, not \(prefix)..."
+                errorMessage = "Expected nsec1... or npub1..., not \(prefix)..."
                 return
             }
         }
 
+        // nsec / hex secret key path
         // Validate key format
         do {
             _ = try Keys.parse(secretKey: input)
         } catch {
-            errorMessage = "Invalid key. Enter an nsec1... or 64-character hex secret key."
+            errorMessage = "Invalid key. Enter an nsec1... or npub1... key."
             return
         }
 
@@ -98,6 +122,9 @@ struct OnboardingKeyImportView: View {
             // No orphan warning — auto-generated key was never used during onboarding
             let keyManager = try KeyManager.importKey(nsec: input)
             let pubkeyHex = keyManager.signingKeys().publicKey().toHex()
+
+            // Explicitly mark as NOT read-only
+            UserDefaults.standard.set(false, forKey: "nostrReadOnly")
 
             // Open gate before relay operations so NostrService connections are active
             UserDefaults.standard.set(true, forKey: "nostrActivated")

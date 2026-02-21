@@ -308,6 +308,7 @@ struct FeedView: View {
                             resolvedProfiles: viewModel.resolvedProfiles,
                             reactionCount: viewModel.reactionCounts[item.id] ?? 0,
                             hasReacted: viewModel.ownReactions.contains(item.id),
+                            isReadOnly: nostrService.isReadOnly,
                             onReact: {
                                 viewModel.react(itemId: item.id, nostrService: nostrService)
                             }
@@ -320,6 +321,7 @@ struct FeedView: View {
                             reactionCount: viewModel.reactionCounts[item.id] ?? 0,
                             hasReacted: viewModel.ownReactions.contains(item.id),
                             commentCount: viewModel.commentCounts[item.id] ?? 0,
+                            isReadOnly: nostrService.isReadOnly,
                             onReact: {
                                 viewModel.react(itemId: item.id, nostrService: nostrService)
                             },
@@ -357,12 +359,25 @@ struct FeedView: View {
         }
         .refreshable { await viewModel.refresh(nostrService: nostrService, dbQueue: dbQueue) }
         .overlay(alignment: .top) {
-            if viewModel.isBackgroundRefreshing {
-                ProgressView(value: viewModel.refreshProgress)
-                    .progressViewStyle(.linear)
-                    .tint(.accentColor)
+            VStack(spacing: 0) {
+                if viewModel.isBackgroundRefreshing {
+                    ProgressView(value: viewModel.refreshProgress)
+                        .progressViewStyle(.linear)
+                        .tint(.accentColor)
+                        .frame(maxWidth: .infinity)
+                        .animation(.easeInOut(duration: 0.4), value: viewModel.refreshProgress)
+                }
+                if nostrService.isReadOnly {
+                    HStack(spacing: 6) {
+                        Image(systemName: "eye")
+                        Text("Read-only mode")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                    .animation(.easeInOut(duration: 0.4), value: viewModel.refreshProgress)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .feedScrollToTop)) { _ in

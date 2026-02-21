@@ -12,6 +12,7 @@ struct FeedCardView: View {
     var reactionCount: Int = 0
     var hasReacted: Bool = false
     var commentCount: Int = 0
+    var isReadOnly: Bool = false
     var onReact: (() -> Void)?
     var onProfileTap: (() -> Void)?
 
@@ -65,21 +66,23 @@ struct FeedCardView: View {
 
             // Reaction bar
             HStack(spacing: 16) {
-                Button {
-                    onReact?()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: hasReacted ? "heart.fill" : "heart")
-                            .foregroundStyle(hasReacted ? .red : .secondary)
-                        if reactionCount > 0 {
-                            Text("\(reactionCount)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                if !isReadOnly {
+                    Button {
+                        onReact?()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: hasReacted ? "heart.fill" : "heart")
+                                .foregroundStyle(hasReacted ? .red : .secondary)
+                            if reactionCount > 0 {
+                                Text("\(reactionCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(hasReacted)
                 }
-                .buttonStyle(.plain)
-                .disabled(hasReacted)
 
                 // Comment count indicator (navigation handled by parent)
                 HStack(spacing: 4) {

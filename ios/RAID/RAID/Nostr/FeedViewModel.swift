@@ -115,18 +115,26 @@ class FeedViewModel {
             let t0 = CFAbsoluteTimeGetCurrent()
 
             // 1. Get user's pubkey
-            guard KeyManager.hasExistingKey() else {
+            // In read-only mode (npub sign-in), there's no secret key in Keychain.
+            // Use publicKeyHex() which falls back to UserDefaults for npub sign-ins.
+            guard let pubkeyHex = KeyManager.publicKeyHex() else {
                 loadState = .noKey
                 isLoading = false
                 return
             }
-            let keyManager = try KeyManager.loadOrCreate()
-            let pubkey = keyManager.signingKeys().publicKey()
+            guard let pubkey = try? PublicKey.parse(publicKey: pubkeyHex) else {
+                loadState = .noKey
+                isLoading = false
+                return
+            }
+            // Only load signing keys if there's an actual secret key (not read-only).
+            let signingKeys: Keys? = KeyManager.hasExistingKey()
+                ? (try? KeyManager.loadOrCreate().signingKeys())
+                : nil
 
             // 2. Follow list — GRDB cache (1h TTL) → relay fallback
             let followListRepo = FollowListCacheRepository(dbQueue: dbQueue)
             let followCacheTTL: TimeInterval = 60 * 60  // 1 hour
-            let pubkeyHex = pubkey.toHex()
             var follows: [String]
 
             if let cached = try? followListRepo.fetch(pubkeyHex: pubkeyHex),
@@ -186,7 +194,7 @@ class FeedViewModel {
             // Cache relay plan + follow set + keys for pagination reuse
             self.cachedRelayPlan = authorRelayMap
             self.cachedFollowSet = Set(follows)
-            self.cachedKeys = keyManager.signingKeys()
+            self.cachedKeys = signingKeys
 
             // 4. Fetch feed events via outbox routing
             let events = try await nostrService.fetchFeedEventsOutbox(authorRelayMap: authorRelayMap, keys: cachedKeys)
@@ -242,7 +250,7 @@ class FeedViewModel {
             let pubkeyHexes = Array(allPubkeys)
             let profileRepo = ProfileCacheRepository(dbQueue: dbQueue)
             let uncached = pubkeyHexes.filter { nostrService.profileCache[$0] == nil }
-            let ownHex = keyManager.signingKeys().publicKey().toHex()
+            let ownHex = pubkeyHex
             let feedIds = items.map(\.id)
             let textNoteIds = items.compactMap { item -> String? in
                 if case .textNote = item { return item.id } else { return nil }
@@ -384,7 +392,7 @@ class FeedViewModel {
         let newPubkeys = Array(allPubkeys)
         let uncached = newPubkeys.filter { nostrService.profileCache[$0] == nil }
         let newIds = newItems.map(\.id)
-        let ownHex = (try? KeyManager.loadOrCreate().signingKeys().publicKey().toHex()) ?? ""
+        let ownHex = KeyManager.publicKeyHex() ?? ""
 
         let textNoteIds = newItems.compactMap { item -> String? in
             if case .textNote = item { return item.id } else { return nil }
@@ -455,7 +463,8 @@ class FeedViewModel {
     /// Called before the relay fetch so the user sees content immediately on launch.
     private func paintFromCache(nostrService: NostrService, dbQueue: DatabaseQueue) async {
         let tA0 = CFAbsoluteTimeGetCurrent()
-        guard nostrService.isActivated, KeyManager.hasExistingKey() else { return }
+        // Accept either: has a secret key (nsec sign-in) or has a public key hex (npub read-only).
+        guard nostrService.isActivated, KeyManager.publicKeyHex() != nil else { return }
         let feedEventRepo = FeedEventCacheRepository(dbQueue: dbQueue)
         guard let cachedEvents = try? feedEventRepo.fetchRecentEvents(limit: 50),
               !cachedEvents.isEmpty else { return }
@@ -466,8 +475,8 @@ class FeedViewModel {
         let tA2 = CFAbsoluteTimeGetCurrent()
 
         // Filter to known follows if the follow list is cached; otherwise show all.
-        let keyManager = try? KeyManager.loadOrCreate()
-        let pubkeyHex = keyManager?.signingKeys().publicKey().toHex() ?? ""
+        // Use publicKeyHex() to support both nsec and npub sign-in modes.
+        let pubkeyHex = KeyManager.publicKeyHex() ?? ""
         let followListRepo = FollowListCacheRepository(dbQueue: dbQueue)
         let followSet: Set<String>
         if let cached = try? followListRepo.fetch(pubkeyHex: pubkeyHex) {
@@ -617,6 +626,12 @@ class FeedViewModel {
 
         Task {
             do {
+                guard KeyManager.hasExistingKey() else {
+                    // No secret key (read-only mode) — revert optimistic update
+                    ownReactions.remove(itemId)
+                    reactionCounts[itemId, default: 1] -= 1
+                    return
+                }
                 let keys = try KeyManager.loadOrCreate().signingKeys()
                 try await nostrService.publishReaction(keys: keys, event: event)
             } catch {

@@ -60,6 +60,12 @@ class NostrService {
         UserDefaults.standard.bool(forKey: "nostrActivated")
     }
 
+    /// Whether the user is in read-only mode (signed in with npub only, no secret key).
+    /// Read-only users can browse the feed but cannot publish events.
+    var isReadOnly: Bool {
+        UserDefaults.standard.bool(forKey: "nostrReadOnly")
+    }
+
     // MARK: - Publish
 
     /// Publish a pre-built EventBuilder and return its event ID.
@@ -67,6 +73,10 @@ class NostrService {
     func publishEvent(keys: Keys, builder: EventBuilder) async throws -> String {
         guard isActivated else {
             print("[RAID][Guest] publishEvent blocked — Nostr not activated")
+            return ""
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishEvent blocked — read-only mode")
             return ""
         }
         let signer = NostrSigner.keys(keys: keys)
@@ -591,6 +601,10 @@ class NostrService {
             print("[RAID][Guest] publishReaction blocked — Nostr not activated")
             return
         }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishReaction blocked — read-only mode")
+            return
+        }
         let builder = EventBuilder.reaction(event: event, reaction: reaction)
         _ = try await publishEvent(keys: keys, builder: builder)
     }
@@ -647,6 +661,10 @@ class NostrService {
     func publishReply(keys: Keys, content: String, replyTo: Event) async throws {
         guard isActivated else {
             print("[RAID][Guest] publishReply blocked — Nostr not activated")
+            return
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishReply blocked — read-only mode")
             return
         }
         let builder = try EventBuilder.textNoteReply(content: content, replyTo: replyTo, root: nil, relayUrl: nil)
@@ -721,6 +739,10 @@ class NostrService {
     func publishComment(keys: Keys, content: String, targetEvent: Event) async throws {
         guard isActivated else {
             print("[RAID][Guest] publishComment blocked — Nostr not activated")
+            return
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishComment blocked — read-only mode")
             return
         }
         let target = CommentTarget.event(
@@ -850,6 +872,10 @@ class NostrService {
             print("[RAID][Guest] publishClubhouse blocked — Nostr not activated")
             return
         }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishClubhouse blocked — read-only mode")
+            return
+        }
         let pubkeys = try memberPubkeyHexes.map { try PublicKey.parse(publicKey: $0) }
         let builder = EventBuilder.followSet(identifier: "clubhouse", publicKeys: pubkeys)
         _ = try await publishEvent(keys: keys, builder: builder)
@@ -861,6 +887,10 @@ class NostrService {
     func publishFollowList(keys: Keys, followedPubkeyHexes: [String]) async throws {
         guard isActivated else {
             print("[RAID][Guest] publishFollowList blocked — Nostr not activated")
+            return
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishFollowList blocked — read-only mode")
             return
         }
         var tags: [Tag] = []
@@ -929,6 +959,10 @@ class NostrService {
             print("[RAID][Guest] sendGiftWrapDM blocked — Nostr not activated")
             return
         }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] sendGiftWrapDM blocked — read-only mode")
+            return
+        }
         let receiver = try PublicKey.parse(publicKey: receiverPubkeyHex)
         let signer = NostrSigner.keys(keys: senderKeys)
         let client = Client(signer: signer)
@@ -961,6 +995,10 @@ class NostrService {
     func publishInboxRelays(keys: Keys, relays: [String]) async throws {
         guard isActivated else {
             print("[RAID][Guest] publishInboxRelays blocked — Nostr not activated")
+            return
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishInboxRelays blocked — read-only mode")
             return
         }
         var tags: [Tag] = []
@@ -1092,6 +1130,10 @@ class NostrService {
     func publishRelayList(keys: Keys, relays: [CachedRelayEntry]) async throws -> String {
         guard isActivated else {
             print("[RAID][Guest] publishRelayList blocked — Nostr not activated")
+            return ""
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishRelayList blocked — read-only mode")
             return ""
         }
         var tags: [Tag] = []

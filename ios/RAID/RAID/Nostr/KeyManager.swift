@@ -18,6 +18,35 @@ final class KeyManager {
         self.keys = keys
     }
 
+    /// Import a public key only (npub bech32 or hex pubkey).
+    /// Stores hex in UserDefaults — no Keychain write. Used for read-only sign-in.
+    /// Returns the hex pubkey string.
+    @discardableResult
+    static func importPublicKey(npub: String) throws -> String {
+        let trimmed = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pubkey: PublicKey
+        do {
+            pubkey = try PublicKey.parse(publicKey: trimmed)
+        } catch {
+            throw KeyManagerError.invalidKey(error.localizedDescription)
+        }
+        let hex = pubkey.toHex()
+        UserDefaults.standard.set(hex, forKey: "nostrPublicKeyHex")
+        return hex
+    }
+
+    /// Return the stored public key hex, if any.
+    /// Priority: derive from Keychain nsec (if present), then fall back to UserDefaults.
+    static func publicKeyHex() -> String? {
+        // Try deriving from the secret key in Keychain first
+        if let nsec = loadFromKeychain(),
+           let keys = try? Keys.parse(secretKey: nsec) {
+            return keys.publicKey().toHex()
+        }
+        // Fall back to UserDefaults (read-only npub sign-in)
+        return UserDefaults.standard.string(forKey: "nostrPublicKeyHex")
+    }
+
     /// Import an existing Nostr identity from nsec (bech32) or hex secret key.
     /// Overwrites any existing key in Keychain.
     static func importKey(nsec: String) throws -> KeyManager {
@@ -80,7 +109,8 @@ final class KeyManager {
         loadFromKeychain() != nil
     }
 
-    /// Delete the secret key from Keychain. Used by sign-out flow.
+    /// Delete the secret key from Keychain and clear any read-only public key state.
+    /// Used by sign-out flow.
     /// After calling this, `hasExistingKey()` returns false and `loadOrCreate()` will generate a new key.
     static func deleteKey() {
         let query: [String: Any] = [
@@ -89,6 +119,8 @@ final class KeyManager {
             kSecAttrAccount as String: keychainAccount
         ]
         SecItemDelete(query as CFDictionary)
+        UserDefaults.standard.removeObject(forKey: "nostrPublicKeyHex")
+        UserDefaults.standard.removeObject(forKey: "nostrReadOnly")
     }
 
     // MARK: - Keychain (internal for testing)
