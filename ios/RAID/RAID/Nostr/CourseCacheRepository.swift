@@ -15,73 +15,7 @@ class CourseCacheRepository {
         self.dbQueue = dbQueue
     }
 
-    /// Batch upsert parsed courses into the cache.
-    func upsertCourses(_ courses: [ParsedCourse]) throws {
-        let now = ISO8601DateFormatter().string(from: Date())
-        let encoder = JSONEncoder()
-
-        try dbQueue.write { db in
-            for course in courses {
-                let holesJSON = (try? encoder.encode(course.holes))
-                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-                let teesJSON = (try? encoder.encode(course.tees))
-                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-                let yardagesJSON: String? = course.yardages.isEmpty ? nil :
-                    (try? encoder.encode(course.yardages))
-                        .flatMap { String(data: $0, encoding: .utf8) }
-
-                try db.execute(
-                    sql: """
-                    INSERT INTO nostr_courses
-                        (d_tag, author_hex, title, location, country, hole_count,
-                         holes_json, tees_json, yardages_json, content, website,
-                         architect, established, operator_pubkey, event_id_hex,
-                         event_created_at, raw_json, cached_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (d_tag, author_hex) DO UPDATE SET
-                        title = excluded.title,
-                        location = excluded.location,
-                        country = excluded.country,
-                        hole_count = excluded.hole_count,
-                        holes_json = excluded.holes_json,
-                        tees_json = excluded.tees_json,
-                        yardages_json = excluded.yardages_json,
-                        content = excluded.content,
-                        website = excluded.website,
-                        architect = excluded.architect,
-                        established = excluded.established,
-                        operator_pubkey = excluded.operator_pubkey,
-                        event_id_hex = excluded.event_id_hex,
-                        event_created_at = excluded.event_created_at,
-                        raw_json = excluded.raw_json,
-                        cached_at = excluded.cached_at
-                    """,
-                    arguments: [
-                        course.dTag,
-                        course.authorHex,
-                        course.title,
-                        course.location,
-                        course.country,
-                        course.holes.count,
-                        holesJSON,
-                        teesJSON,
-                        yardagesJSON,
-                        course.content,
-                        course.website,
-                        course.architect,
-                        course.established,
-                        course.operatorPubkey,
-                        course.eventId,
-                        course.eventCreatedAt,
-                        course.eventId, // raw_json placeholder — will be replaced with actual event JSON
-                        now
-                    ]
-                )
-            }
-        }
-    }
-
-    /// Upsert courses with raw event JSON for replay.
+    /// Batch upsert parsed courses with raw event JSON for replay.
     func upsertCourses(_ courses: [ParsedCourse], rawJSONs: [String: String]) throws {
         let now = ISO8601DateFormatter().string(from: Date())
         let encoder = JSONEncoder()

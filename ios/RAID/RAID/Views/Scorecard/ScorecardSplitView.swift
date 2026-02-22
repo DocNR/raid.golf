@@ -29,14 +29,14 @@ struct ScorecardSplitView: View {
     var body: some View {
         VStack(spacing: 10) {
             nineBlock(nine: frontNine, summaryLabel: is18Hole ? "OUT" : "TOT")
-                .cardStyle()
+                .scorecardCardStyle()
 
             if is18Hole {
                 nineBlock(nine: backNine, summaryLabel: "IN")
-                    .cardStyle()
+                    .scorecardCardStyle()
 
                 totalsCard
-                    .cardStyle()
+                    .scorecardCardStyle()
             }
         }
     }
@@ -337,16 +337,3 @@ struct ScorecardSplitView: View {
     }
 }
 
-// MARK: - Card Style
-
-private extension View {
-    func cardStyle() -> some View {
-        self
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: ScorecardLayout.miniCardCornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: ScorecardLayout.miniCardCornerRadius)
-                    .strokeBorder(Color(.separator), lineWidth: ScorecardLayout.gridLineWeight)
-            )
-    }
-}

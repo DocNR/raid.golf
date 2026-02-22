@@ -23,6 +23,11 @@ class NostrService {
         "wss://purplepag.es"
     ]
 
+    static let courseRelays = [
+        "wss://relay.damus.io",
+        "wss://nos.lol"
+    ]
+
     private let readTimeout: TimeInterval = 5
 
     /// Session-scoped profile cache. Populated by resolveProfiles, fetchProfiles,
@@ -603,7 +608,12 @@ class NostrService {
             .author(author: authorPubkey)
             .kind(kind: Kind(kind: 33501))
 
-        let client = try await connectReadClient()
+        let client = Client()
+        for urlString in Self.courseRelays {
+            let url = try RelayUrl.parse(url: urlString)
+            _ = try await client.addRelay(url: url)
+        }
+        await client.connect()
 
         let events: Events
         do {

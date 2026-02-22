@@ -46,25 +46,12 @@ struct CreateRoundView: View {
 
                 playersSection
 
-                Section("Par for Each Hole") {
-                    ForEach(0..<holeSelection.holeCount, id: \.self) { index in
-                        let holeNumber = holeSelection.startingHole + index
-                        HStack {
-                            Text("Hole \(holeNumber)")
-                                .frame(width: 80, alignment: .leading)
-                            Spacer()
-                            Stepper(
-                                value: Binding(
-                                    get: { pars[index] },
-                                    set: { pars[index] = $0 }
-                                ),
-                                in: 3...5
-                            ) {
-                                Text("Par \(pars[index])")
-                                    .frame(width: 60, alignment: .trailing)
-                            }
-                        }
-                    }
+                Section {
+                    parEntryGrid
+                } header: {
+                    Text("Par for Each Hole")
+                } footer: {
+                    Text("Tap a par value to cycle 3 → 4 → 5")
                 }
             }
             .navigationTitle("New Round")
@@ -145,6 +132,154 @@ struct CreateRoundView: View {
                 Text("Optional. Select playing partners or add by npub.")
             }
         }
+    }
+
+    // MARK: - Par Entry Grid
+
+    @ViewBuilder
+    private var parEntryGrid: some View {
+        let startHole = holeSelection.startingHole
+        let count = holeSelection.holeCount
+        let labelColumnWidth = ScorecardLayout.rowLabelWidth + 2 * ScorecardLayout.cellHPadding
+
+        VStack(spacing: 10) {
+            parEntryNineBlock(
+                startIndex: 0,
+                count: min(count, 9),
+                startHole: startHole,
+                summaryLabel: count > 9 ? "OUT" : "TOT",
+                labelColumnWidth: labelColumnWidth
+            )
+
+            if count > 9 {
+                parEntryNineBlock(
+                    startIndex: 9,
+                    count: count - 9,
+                    startHole: startHole + 9,
+                    summaryLabel: "IN",
+                    labelColumnWidth: labelColumnWidth
+                )
+
+                parEntryTotalsRow(count: count, labelColumnWidth: labelColumnWidth)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func parEntryNineBlock(startIndex: Int, count: Int, startHole: Int, summaryLabel: String, labelColumnWidth: CGFloat) -> some View {
+        let ninePar = (startIndex..<startIndex + count).reduce(0) { $0 + pars[$1] }
+
+        HStack(alignment: .top, spacing: 0) {
+            // Label column
+            VStack(spacing: 0) {
+                parEntryRowLabel("HOLE", font: .caption2.weight(.semibold), foreground: .primary, height: ScorecardLayout.headerRowHeight, labelColumnWidth: labelColumnWidth)
+                parEntryGridDivider
+                parEntryRowLabel("Par", font: .caption2.weight(.bold), foreground: .primary, height: ScorecardLayout.scoreRowHeight, labelColumnWidth: labelColumnWidth)
+            }
+            .frame(width: labelColumnWidth)
+
+            // Hole columns + summary
+            VStack(spacing: 0) {
+                // Hole numbers
+                HStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { i in
+                        Text("\(startHole + i)")
+                            .font(.caption2.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.primary)
+                            .frame(width: ScorecardLayout.holeColumnWidth)
+                    }
+                    parEntrySummarySeparator
+                    Text(summaryLabel)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: ScorecardLayout.summaryColumnWidth)
+                        .background(Color(.tertiarySystemBackground))
+                }
+                .frame(height: ScorecardLayout.headerRowHeight)
+
+                parEntryGridDivider
+
+                // Par cells (tappable)
+                HStack(spacing: 0) {
+                    ForEach(0..<count, id: \.self) { i in
+                        let index = startIndex + i
+                        Button {
+                            cyclePar(at: index)
+                        } label: {
+                            Text("\(pars[index])")
+                                .font(.callout.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.primary)
+                                .frame(width: ScorecardLayout.holeColumnWidth, height: ScorecardLayout.scoreRowHeight)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Hole \(startHole + i) par \(pars[index])")
+                        .accessibilityAdjustableAction { direction in
+                            switch direction {
+                            case .increment:
+                                pars[index] = pars[index] >= 5 ? 3 : pars[index] + 1
+                            case .decrement:
+                                pars[index] = pars[index] <= 3 ? 5 : pars[index] - 1
+                            @unknown default: break
+                            }
+                        }
+                    }
+                    parEntrySummarySeparator
+                    Text("\(ninePar)")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .foregroundStyle(.primary)
+                        .frame(width: ScorecardLayout.summaryColumnWidth)
+                        .background(Color(.tertiarySystemBackground))
+                }
+                .frame(height: ScorecardLayout.scoreRowHeight)
+            }
+        }
+        .scorecardCardStyle()
+    }
+
+    @ViewBuilder
+    private func parEntryTotalsRow(count: Int, labelColumnWidth: CGFloat) -> some View {
+        let totalPar = pars.prefix(count).reduce(0, +)
+
+        HStack {
+            Text("TOTAL")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("Par \(totalPar)")
+                .font(.subheadline.weight(.medium))
+        }
+        .padding(.horizontal, 16)
+        .frame(height: ScorecardLayout.headerRowHeight + 12)
+        .scorecardCardStyle()
+    }
+
+    private func cyclePar(at index: Int) {
+        pars[index] = pars[index] >= 5 ? 3 : pars[index] + 1
+    }
+
+    // Par entry grid helpers
+
+    private var parEntryGridDivider: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(height: ScorecardLayout.gridLineWeight)
+    }
+
+    private var parEntrySummarySeparator: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(width: ScorecardLayout.gridSemanticDividerWeight)
+    }
+
+    private func parEntryRowLabel(_ text: String, font: Font, foreground: Color, height: CGFloat, labelColumnWidth: CGFloat) -> some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(foreground)
+            .lineLimit(1)
+            .frame(width: ScorecardLayout.rowLabelWidth, height: height, alignment: .center)
+            .padding(.horizontal, ScorecardLayout.cellHPadding)
     }
 
     private func playerSummaryLabel() -> String {

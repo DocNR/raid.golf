@@ -169,3 +169,17 @@ extension Int {
         return self > 0 ? "+\(self)" : "\(self)"
     }
 }
+
+// MARK: - Scorecard Card Style
+
+extension View {
+    func scorecardCardStyle() -> some View {
+        self
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: ScorecardLayout.miniCardCornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: ScorecardLayout.miniCardCornerRadius)
+                    .strokeBorder(Color(.separator), lineWidth: ScorecardLayout.gridLineWeight)
+            )
+    }
+}
