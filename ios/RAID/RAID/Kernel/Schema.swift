@@ -792,6 +792,13 @@ struct Schema {
                 """)
         }
 
+        // v16_add_course_image_url: Add image_url column to nostr_courses cache table.
+        migrator.registerMigration("v16_add_course_image_url") { db in
+            try db.execute(sql: """
+                ALTER TABLE nostr_courses ADD COLUMN image_url TEXT
+                """)
+        }
+
         return migrator
     }
 

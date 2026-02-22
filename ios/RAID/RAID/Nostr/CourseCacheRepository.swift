@@ -36,9 +36,9 @@ class CourseCacheRepository {
                     INSERT INTO nostr_courses
                         (d_tag, author_hex, title, location, country, hole_count,
                          holes_json, tees_json, yardages_json, content, website,
-                         architect, established, operator_pubkey, event_id_hex,
-                         event_created_at, raw_json, cached_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         architect, established, image_url, operator_pubkey,
+                         event_id_hex, event_created_at, raw_json, cached_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (d_tag, author_hex) DO UPDATE SET
                         title = excluded.title,
                         location = excluded.location,
@@ -51,6 +51,7 @@ class CourseCacheRepository {
                         website = excluded.website,
                         architect = excluded.architect,
                         established = excluded.established,
+                        image_url = excluded.image_url,
                         operator_pubkey = excluded.operator_pubkey,
                         event_id_hex = excluded.event_id_hex,
                         event_created_at = excluded.event_created_at,
@@ -71,6 +72,7 @@ class CourseCacheRepository {
                         course.website,
                         course.architect,
                         course.established,
+                        course.imageURL,
                         course.operatorPubkey,
                         course.eventId,
                         course.eventCreatedAt,
@@ -172,6 +174,7 @@ class CourseCacheRepository {
             website: row["website"] as? String,
             architect: row["architect"] as? String,
             established: row["established"] as? String,
+            imageURL: row["image_url"] as? String,
             operatorPubkey: row["operator_pubkey"] as? String,
             eventId: eventId,
             eventCreatedAt: UInt64(eventCreatedAt)

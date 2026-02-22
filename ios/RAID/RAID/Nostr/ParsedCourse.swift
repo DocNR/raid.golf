@@ -21,6 +21,7 @@ struct ParsedCourse: Identifiable, Hashable {
     let website: String?
     let architect: String?
     let established: String?
+    let imageURL: String?
     let operatorPubkey: String?
     let eventId: String
     let eventCreatedAt: UInt64

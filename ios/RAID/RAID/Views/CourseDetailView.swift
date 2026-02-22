@@ -1,7 +1,7 @@
 // CourseDetailView.swift
 // RAID Golf
 //
-// Course detail with tee picker, scorecard preview, and Start Round.
+// Course detail with hero image, tee picker, collapsible scorecard, and Start Round.
 // Derives CourseSnapshotInput from ParsedCourse + selected tee,
 // then creates round via frozen kernel path.
 
@@ -20,6 +20,7 @@ struct CourseDetailView: View {
     @State private var selectedTee: ParsedCourse.ParsedTee?
     @State private var isCreating = false
     @State private var errorMessage: String?
+    @State private var showScorecard = false
 
     // Player selection
     @State private var hasNostrKeys = false
@@ -31,17 +32,10 @@ struct CourseDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                headerCard
+                heroImage
+                courseMetadata
                 teePickerCard
-
-                if let tee = selectedTee {
-                    CourseScorecardPreview(
-                        course: course,
-                        teeName: tee.name,
-                        playerLabels: playerLabelsForScorecard
-                    )
-                }
-
+                scorecardSection
                 playersCard
                 startRoundButton
             }
@@ -83,11 +77,49 @@ struct CourseDetailView: View {
             .map { $0.displayLabel }
     }
 
-    // MARK: - Header Card
+    // MARK: - Hero Image
 
     @ViewBuilder
-    private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var heroImage: some View {
+        if let urlString = course.imageURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 200)
+                        .clipped()
+                case .failure:
+                    imagePlaceholder
+                case .empty:
+                    imagePlaceholder
+                        .overlay(ProgressView())
+                @unknown default:
+                    imagePlaceholder
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: ScorecardLayout.miniCardCornerRadius))
+        }
+    }
+
+    @ViewBuilder
+    private var imagePlaceholder: some View {
+        LinearGradient(
+            colors: [Color.green.opacity(0.3), Color.green.opacity(0.1)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(height: 200)
+    }
+
+    // MARK: - Course Metadata (inline, no card)
+
+    @ViewBuilder
+    private var courseMetadata: some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(course.location)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -108,18 +140,15 @@ struct CourseDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            }
-
-            if let website = course.website, let url = URL(string: website) {
-                Link(destination: url) {
-                    Label("Website", systemImage: "globe")
-                        .font(.caption)
+                if let website = course.website, let url = URL(string: website) {
+                    Link(destination: url) {
+                        Label("Website", systemImage: "globe")
+                            .font(.caption)
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .scorecardCardStyle()
     }
 
     // MARK: - Tee Picker Card
@@ -156,6 +185,26 @@ struct CourseDetailView: View {
         }
         .padding()
         .scorecardCardStyle()
+    }
+
+    // MARK: - Scorecard (Collapsible)
+
+    @ViewBuilder
+    private var scorecardSection: some View {
+        if let tee = selectedTee {
+            DisclosureGroup("Scorecard", isExpanded: $showScorecard) {
+                CourseScorecardPreview(
+                    course: course,
+                    teeName: tee.name,
+                    playerLabels: playerLabelsForScorecard
+                )
+                .padding(.top, 8)
+            }
+            .font(.subheadline.weight(.medium))
+            .tint(.secondary)
+            .padding()
+            .scorecardCardStyle()
+        }
     }
 
     // MARK: - Players Card

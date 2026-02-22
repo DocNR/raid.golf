@@ -47,6 +47,9 @@ final class CourseCacheRepositoryTests: XCTestCase {
             CREATE INDEX idx_nostr_courses_title ON nostr_courses(title COLLATE NOCASE)
             """)
         }
+        migrator.registerMigration("v16_add_course_image_url") { db in
+            try db.execute(sql: "ALTER TABLE nostr_courses ADD COLUMN image_url TEXT")
+        }
         try migrator.migrate(db)
         repo = CourseCacheRepository(dbQueue: db)
     }
@@ -86,6 +89,7 @@ final class CourseCacheRepositoryTests: XCTestCase {
             website: "https://example.com",
             architect: "Test Architect",
             established: "2020",
+            imageURL: nil,
             operatorPubkey: nil,
             eventId: eventId ?? eventId1,
             eventCreatedAt: eventCreatedAt
@@ -188,6 +192,39 @@ final class CourseCacheRepositoryTests: XCTestCase {
         XCTAssertEqual(fetched[0].holes[8].number, 9)
     }
 
+    func testImageURL_RoundTrip() throws {
+        let course = ParsedCourse(
+            dTag: "img-test",
+            authorHex: authorHex,
+            title: "Image Course",
+            location: "Somewhere, USA",
+            country: nil,
+            holes: (1...18).map { .init(number: $0, par: 4, handicap: $0) },
+            tees: [.init(name: "Gold", rating: 74.7, slope: 136)],
+            yardages: [],
+            content: nil,
+            website: nil,
+            architect: nil,
+            established: nil,
+            imageURL: "https://image.nostr.build/abc123.jpg",
+            operatorPubkey: nil,
+            eventId: eventId1,
+            eventCreatedAt: 1000
+        )
+        try repo.upsertCourses([course], rawJSONs: ["img-test": "{}"])
+
+        let fetched = try repo.fetchAllCourses()
+        XCTAssertEqual(fetched[0].imageURL, "https://image.nostr.build/abc123.jpg")
+    }
+
+    func testImageURL_NilWhenMissing() throws {
+        let course = makeCourse()
+        try repo.upsertCourses([course], rawJSONs: ["test-course": "{}"])
+
+        let fetched = try repo.fetchAllCourses()
+        XCTAssertNil(fetched[0].imageURL)
+    }
+
     func testYardagesRoundTrip() throws {
         let yardages = [
             ParsedCourse.ParsedYardage(hole: 1, tee: "Gold", yards: 425),
@@ -209,6 +246,7 @@ final class CourseCacheRepositoryTests: XCTestCase {
             website: nil,
             architect: nil,
             established: nil,
+            imageURL: nil,
             operatorPubkey: nil,
             eventId: eventId1,
             eventCreatedAt: 1000

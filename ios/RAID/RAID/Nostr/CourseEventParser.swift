@@ -31,6 +31,7 @@ enum CourseEventParser {
         let website = tags.first(where: { $0[0] == "website" }).flatMap { $0.count >= 2 ? $0[1] : nil }
         let architect = tags.first(where: { $0[0] == "architect" }).flatMap { $0.count >= 2 ? $0[1] : nil }
         let established = tags.first(where: { $0[0] == "established" }).flatMap { $0.count >= 2 ? $0[1] : nil }
+        let imageURL = tags.first(where: { $0[0] == "image" }).flatMap { $0.count >= 2 ? $0[1] : nil }
         let operatorPubkey = parseOperatorPubkey(from: tags)
 
         let content = event.content()
@@ -49,6 +50,7 @@ enum CourseEventParser {
             website: website,
             architect: architect,
             established: established,
+            imageURL: imageURL,
             operatorPubkey: operatorPubkey,
             eventId: event.id().toHex(),
             eventCreatedAt: event.createdAt().asSecs()

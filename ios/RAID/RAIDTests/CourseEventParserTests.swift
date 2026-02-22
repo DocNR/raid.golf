@@ -136,6 +136,20 @@ final class CourseEventParserTests: XCTestCase {
         XCTAssertEqual(course?.established, "1995")
     }
 
+    func testParse_ImageURL() async throws {
+        let event = try await buildCourseEvent(extraTags: [
+            ["image", "https://image.nostr.build/abc123.jpg"],
+        ])
+        let course = CourseEventParser.parse(event: event)
+        XCTAssertEqual(course?.imageURL, "https://image.nostr.build/abc123.jpg")
+    }
+
+    func testParse_NoImageURL() async throws {
+        let event = try await buildCourseEvent()
+        let course = CourseEventParser.parse(event: event)
+        XCTAssertNil(course?.imageURL)
+    }
+
     func testParse_OperatorPubkey() async throws {
         let operatorHex = String(repeating: "f", count: 64)
         let event = try await buildCourseEvent(extraTags: [
