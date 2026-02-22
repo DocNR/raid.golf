@@ -261,6 +261,7 @@ struct SideDrawerView: View {
         nostrService.clearCaches()
         URLCache.shared.removeAllCachedResponses()
         AvatarImageCache.shared.clear()
+        CourseImageCache.shared.clear()
         try? FeedEventCacheRepository(dbQueue: dbQueue).deleteAll()
         try? FollowListCacheRepository(dbQueue: dbQueue).deleteAll()
         try? ProfileCacheRepository(dbQueue: dbQueue).deleteAll()

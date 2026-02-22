@@ -2,12 +2,18 @@
 // RAID Golf
 //
 // Course discovery and browsing via kind 33501 events.
+// Segmented picker: All Courses | My Courses.
 // Two-phase load: cache paint → relay sync.
 // Includes course request via NIP-17 DM to the RAID bot.
 
 import SwiftUI
 import GRDB
 import NostrSDK
+
+private enum CourseSegment: String, CaseIterable {
+    case myCourses = "My Courses"
+    case allCourses = "All Courses"
+}
 
 struct CoursesView: View {
     let dbQueue: DatabaseQueue
@@ -22,28 +28,40 @@ struct CoursesView: View {
     @State private var requestSent = false
     @State private var errorMessage: String?
 
+    // Favorites state
+    @State private var selectedSegment: CourseSegment = .myCourses
+    @State private var favoriteIdentifiers: Set<String> = []
+    @State private var myCourses: [ParsedCourse] = []
+
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.courses.isEmpty {
-                    ProgressView("Loading courses...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if viewModel.courses.isEmpty {
-                    emptyState
-                } else {
-                    courseList
+            VStack(spacing: 0) {
+                segmentedPicker
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                Group {
+                    if viewModel.isLoading && viewModel.courses.isEmpty {
+                        ProgressView("Loading courses...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        courseContent
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
-            .searchable(text: $viewModel.searchQuery, prompt: "Search courses")
+            .searchable(text: $viewModel.searchQuery, prompt: searchPrompt)
             .task {
+                loadFavorites()
                 let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
                 await viewModel.loadIfNeeded(nostrService: nostrService, cacheRepo: cacheRepo)
+                await syncFavoritesFromRelay()
             }
             .refreshable {
                 let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
                 await viewModel.refresh(nostrService: nostrService, cacheRepo: cacheRepo)
+                loadFavorites()
             }
             .sheet(isPresented: $showRequestSheet) {
                 CourseRequestSheet(
@@ -74,54 +92,174 @@ struct CoursesView: View {
         }
     }
 
-    // MARK: - Course List
+    // MARK: - Segmented Picker
+
+    private var segmentedPicker: some View {
+        Picker("", selection: $selectedSegment) {
+            ForEach(CourseSegment.allCases, id: \.self) { segment in
+                Text(segment.rawValue).tag(segment)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var searchPrompt: String {
+        selectedSegment == .myCourses ? "Search My Courses" : "Search All Courses"
+    }
+
+    // MARK: - Content
 
     @ViewBuilder
-    private var courseList: some View {
-        List {
-            if viewModel.isBackgroundRefreshing {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Updating...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .listRowBackground(Color.clear)
-            }
-
-            ForEach(viewModel.filteredCourses) { course in
-                NavigationLink {
-                    CourseDetailView(
-                        course: course,
-                        dbQueue: dbQueue,
-                        onRoundCreated: onRoundCreated
-                    )
-                } label: {
-                    courseRow(course)
-                }
-            }
-
-            courseRequestListSection
+    private var courseContent: some View {
+        switch selectedSegment {
+        case .allCourses:
+            allCoursesList
+        case .myCourses:
+            myCoursesList
         }
     }
 
+    // MARK: - All Courses List
+
+    @ViewBuilder
+    private var allCoursesList: some View {
+        if viewModel.courses.isEmpty {
+            emptyState
+        } else {
+            List {
+                if viewModel.isBackgroundRefreshing {
+                    backgroundRefreshRow
+                }
+
+                ForEach(viewModel.filteredCourses) { course in
+                    NavigationLink {
+                        CourseDetailView(
+                            course: course,
+                            dbQueue: dbQueue,
+                            onRoundCreated: onRoundCreated,
+                            isFavorited: isFavorited(course),
+                            onFavoriteToggle: { toggleFavorite(course) }
+                        )
+                    } label: {
+                        courseRow(course)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            toggleFavorite(course)
+                        } label: {
+                            Label(
+                                isFavorited(course) ? "Remove" : "Add",
+                                systemImage: isFavorited(course) ? "star.slash" : "star"
+                            )
+                        }
+                        .tint(.orange)
+                    }
+                }
+
+                courseRequestListSection
+            }
+        }
+    }
+
+    // MARK: - My Courses List
+
+    @ViewBuilder
+    private var myCoursesList: some View {
+        if myCourses.isEmpty && !viewModel.isLoading {
+            myCoursesEmptyState
+        } else {
+            List {
+                ForEach(filteredMyCourses) { course in
+                    NavigationLink {
+                        CourseDetailView(
+                            course: course,
+                            dbQueue: dbQueue,
+                            onRoundCreated: onRoundCreated,
+                            isFavorited: true,
+                            onFavoriteToggle: { toggleFavorite(course) }
+                        )
+                    } label: {
+                        courseRow(course)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            toggleFavorite(course)
+                        } label: {
+                            Label("Remove", systemImage: "star.slash")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var filteredMyCourses: [ParsedCourse] {
+        let q = viewModel.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return myCourses }
+        return myCourses.filter {
+            $0.title.lowercased().contains(q) || $0.location.lowercased().contains(q)
+        }
+    }
+
+    // MARK: - My Courses Empty State
+
+    @ViewBuilder
+    private var myCoursesEmptyState: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "star")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+
+            Text("No Saved Courses")
+                .font(.title3.bold())
+
+            Text("Browse All Courses to find your home course, then swipe to add it here.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Button {
+                selectedSegment = .allCourses
+            } label: {
+                Label("Browse All Courses", systemImage: "list.bullet")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Course Row
+
     @ViewBuilder
     private func courseRow(_ course: ParsedCourse) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(course.title)
-                .font(.body.weight(.medium))
-            Text(course.location)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Text("\(course.holes.count) holes")
-                Text("\(course.tees.count) tee\(course.tees.count == 1 ? "" : "s")")
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(course.title)
+                    .font(.body.weight(.medium))
+                Text(course.location)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text("\(course.holes.count) holes")
+                    Text("\(course.tees.count) tee\(course.tees.count == 1 ? "" : "s")")
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .padding(.vertical, 2)
+
+            Spacer()
+
+            if selectedSegment == .allCourses && isFavorited(course) {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
-        .padding(.vertical, 2)
     }
 
     // MARK: - Empty State
@@ -192,6 +330,89 @@ struct CoursesView: View {
             Text("Set up a Nostr identity to request courses.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Background Refresh Row
+
+    private var backgroundRefreshRow: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Updating...")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .listRowBackground(Color.clear)
+    }
+
+    // MARK: - Favorites Logic
+
+    private func favoriteKey(_ course: ParsedCourse) -> String {
+        "\(course.dTag):\(course.authorHex)"
+    }
+
+    private func isFavorited(_ course: ParsedCourse) -> Bool {
+        favoriteIdentifiers.contains(favoriteKey(course))
+    }
+
+    private func toggleFavorite(_ course: ParsedCourse) {
+        let repo = CourseFavoritesRepository(dbQueue: dbQueue)
+        let key = favoriteKey(course)
+
+        if favoriteIdentifiers.contains(key) {
+            try? repo.remove(dTag: course.dTag, authorHex: course.authorHex)
+            favoriteIdentifiers.remove(key)
+        } else {
+            try? repo.add(dTag: course.dTag, authorHex: course.authorHex)
+            favoriteIdentifiers.insert(key)
+        }
+
+        // Reload my courses list
+        loadMyCourses()
+
+        // Publish to relay (fire-and-forget)
+        if nostrActivated && !nostrReadOnly {
+            Task {
+                guard let keys = try? KeyManager.loadOrCreate().signingKeys() else { return }
+                let allFavs = (try? repo.allIdentifiers()) ?? []
+                try? await nostrService.publishCourseFavorites(keys: keys, favorites: allFavs)
+            }
+        }
+    }
+
+    private func loadFavorites() {
+        let repo = CourseFavoritesRepository(dbQueue: dbQueue)
+        if let all = try? repo.fetchAll() {
+            favoriteIdentifiers = Set(all.map { "\($0.dTag):\($0.authorHex)" })
+        }
+        loadMyCourses()
+    }
+
+    private func loadMyCourses() {
+        let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
+        myCourses = (try? cacheRepo.fetchMyCourses()) ?? []
+    }
+
+    private func syncFavoritesFromRelay() async {
+        guard nostrActivated else { return }
+        guard let pubkeyHex = KeyManager.publicKeyHex() else { return }
+
+        do {
+            let remote = try await nostrService.fetchCourseFavorites(pubkeyHex: pubkeyHex)
+            guard !remote.isEmpty else { return }
+
+            let repo = CourseFavoritesRepository(dbQueue: dbQueue)
+            let localIds = (try? repo.allIdentifiers()) ?? []
+            let localSet = Set(localIds.map { "\($0.dTag):\($0.authorHex)" })
+            let remoteSet = Set(remote.map { "\($0.dTag):\($0.authorHex)" })
+
+            if localSet != remoteSet {
+                try repo.replaceAll(identifiers: remote)
+                loadFavorites()
+            }
+        } catch {
+            print("[RAID] Course favorites sync failed: \(error)")
         }
     }
 }

@@ -1,7 +1,7 @@
 // RoundsView.swift
 // RAID Golf
 //
-// Rounds list view.
+// Rounds list view with My Courses horizontal card scroll.
 // Owns ActiveRoundStore so scoring state survives view recreation.
 
 import SwiftUI
@@ -32,6 +32,10 @@ struct RoundsView: View {
     @State private var showSetupSheet = false
     @State private var setupRoundId: Int64?
     @State private var setupCourseHash: String?
+
+    // My Courses
+    @State private var favoriteCourses: [ParsedCourse] = []
+    @State private var courseForSetup: ParsedCourse?
 
     var body: some View {
         NavigationStack {
@@ -67,16 +71,39 @@ struct RoundsView: View {
                 }
             }
             .sheet(isPresented: $showingCreateRound) {
-                CreateRoundView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys, isMultiDevice in
+                RoundSetupView(
+                    dbQueue: dbQueue,
+                    course: nil,
+                    preselectedTee: nil
+                ) { roundId, courseHash, playerPubkeys, isMultiDevice in
                     showingCreateRound = false
                     loadRounds()
 
                     if isMultiDevice {
-                        // Show setup sheet — navigation happens after dismiss
                         setupRoundId = roundId
                         setupCourseHash = courseHash
                         Task { await publishInitiation(roundId: roundId, courseHash: courseHash) }
-                        // Small delay to let CreateRound sheet dismiss before presenting setup sheet
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showSetupSheet = true
+                        }
+                    } else {
+                        navigateToScoreEntry(roundId: roundId, courseHash: courseHash, isMultiDevice: false)
+                    }
+                }
+            }
+            .sheet(item: $courseForSetup) { course in
+                RoundSetupView(
+                    dbQueue: dbQueue,
+                    course: course,
+                    preselectedTee: nil
+                ) { roundId, courseHash, playerPubkeys, isMultiDevice in
+                    courseForSetup = nil
+                    loadRounds()
+
+                    if isMultiDevice {
+                        setupRoundId = roundId
+                        setupCourseHash = courseHash
+                        Task { await publishInitiation(roundId: roundId, courseHash: courseHash) }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             showSetupSheet = true
                         }
@@ -114,6 +141,7 @@ struct RoundsView: View {
             }
             .task {
                 loadRounds()
+                loadFavoriteCourses()
                 await checkPendingInvites()
             }
             .onReceive(NotificationCenter.default.publisher(for: .roundCreatedFromCourses)) { notification in
@@ -155,6 +183,33 @@ struct RoundsView: View {
 
     private var completedRoundCount: Int {
         rounds.filter { $0.isCompleted }.count
+    }
+
+    // MARK: - My Courses Card Scroll
+
+    @ViewBuilder
+    private var myCoursesSection: some View {
+        if !favoriteCourses.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("My Courses")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(favoriteCourses) { course in
+                            Button { courseForSetup = course } label: {
+                                CourseCard(course: course)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 
     @ViewBuilder
@@ -199,6 +254,7 @@ struct RoundsView: View {
     private var emptyState: some View {
         VStack(spacing: 0) {
             inviteBanner
+            myCoursesSection
 
             ContentUnavailableView {
                 Label("No Rounds", systemImage: "tray")
@@ -214,6 +270,7 @@ struct RoundsView: View {
         .frame(maxHeight: .infinity)
         .refreshable {
             loadRounds()
+            loadFavoriteCourses()
             await checkPendingInvites()
         }
     }
@@ -221,6 +278,7 @@ struct RoundsView: View {
     private var roundsList: some View {
         VStack(spacing: 0) {
             inviteBanner
+            myCoursesSection
             playWithFriendsPrompt
             List(rounds, id: \.roundId) { round in
             Button {
@@ -267,6 +325,7 @@ struct RoundsView: View {
         }
         .refreshable {
             loadRounds()
+            loadFavoriteCourses()
             await checkPendingInvites()
         }
         }
@@ -443,6 +502,11 @@ struct RoundsView: View {
         }
     }
 
+    private func loadFavoriteCourses() {
+        let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
+        favoriteCourses = (try? cacheRepo.fetchMyCourses()) ?? []
+    }
+
     private func formatDate(_ isoDate: String) -> String {
         let formatter = ISO8601DateFormatter()
         guard let date = formatter.date(from: isoDate) else { return isoDate }
@@ -464,6 +528,84 @@ struct RoundsView: View {
             print("[RAID] Failed to fetch courseHash: \(error)")
             errorMessage = "Could not load round data."
             return nil
+        }
+    }
+}
+
+// MARK: - Course Card (Play Tab)
+
+private struct CourseCard: View {
+    let course: ParsedCourse
+
+    @State private var loadedImage: UIImage?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            courseImageView
+                .frame(width: 120, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            Text(course.title)
+                .font(.caption.weight(.medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+
+            Text(course.location)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(width: 120)
+        .padding(8)
+        .scorecardCardStyle()
+        .task(id: course.imageURL) {
+            guard resolvedImage == nil else { return }
+            await downloadImage()
+        }
+    }
+
+    @ViewBuilder
+    private var courseImageView: some View {
+        if let image = resolvedImage {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else {
+            LinearGradient(
+                colors: [Color.green.opacity(0.3), Color.green.opacity(0.1)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.title2)
+                    .foregroundStyle(.green.opacity(0.5))
+            }
+        }
+    }
+
+    private var resolvedImage: UIImage? {
+        if let img = loadedImage { return img }
+        guard let key = course.imageURL else { return nil }
+        return CourseImageCache.shared.image(for: key)
+    }
+
+    private func downloadImage() async {
+        guard let urlString = course.imageURL,
+              let url = URL(string: urlString) else { return }
+
+        if let cached = CourseImageCache.shared.image(for: urlString) {
+            loadedImage = cached
+            return
+        }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let image = UIImage(data: data) else { return }
+            CourseImageCache.shared.setImage(image, for: urlString)
+            loadedImage = image
+        } catch {
+            // Keep placeholder on failure
         }
     }
 }

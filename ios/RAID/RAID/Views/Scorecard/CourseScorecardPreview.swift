@@ -62,7 +62,7 @@ struct CourseScorecardPreview: View {
 
                 if nine.contains(where: { $0.handicap > 0 }) {
                     gridDivider
-                    rowLabel("SI", style: .sub)
+                    rowLabel("SI", style: .si)
                 }
 
                 semanticDivider
@@ -286,12 +286,13 @@ struct CourseScorecardPreview: View {
     }
 
     private enum LabelStyle {
-        case header, sub, yardage, player
+        case header, sub, si, yardage, player
 
         var font: Font {
             switch self {
             case .header: return .caption2.weight(.semibold)
             case .sub: return .caption2.weight(.medium)
+            case .si: return .caption2.weight(.medium)
             case .yardage: return .caption2.weight(.bold)
             case .player: return .caption.weight(.medium)
             }
@@ -301,6 +302,7 @@ struct CourseScorecardPreview: View {
             switch self {
             case .header: return .primary
             case .sub: return .secondary
+            case .si: return .secondary
             case .yardage: return .primary
             case .player: return .primary
             }
@@ -310,6 +312,7 @@ struct CourseScorecardPreview: View {
             switch self {
             case .header: return ScorecardLayout.headerRowHeight
             case .sub: return ScorecardLayout.parRowHeight
+            case .si: return ScorecardLayout.siRowHeight
             case .yardage: return ScorecardLayout.scoreRowHeight
             case .player: return ScorecardLayout.scoreRowHeight
             }

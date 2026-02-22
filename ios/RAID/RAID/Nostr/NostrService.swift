@@ -130,11 +130,14 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        // Extract events BEFORE disconnect — SDK Event objects are FFI wrappers
+        // around Rust memory that can be invalidated after disconnect.
+        let allContactEvents = verifiedEvents(try events.toVec())
+
         await client.disconnect()
 
         // Kind 3 is replaceable — different relays may return different versions.
         // Pick newest created_at (authoritative per protocol).
-        let allContactEvents = verifiedEvents(try events.toVec())
         guard let contactEvent = allContactEvents
             .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
             .first else {
@@ -319,8 +322,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
     }
 
     /// Fetch feed events using NIP-65 outbox routing.
@@ -396,8 +400,8 @@ class NostrService {
             }
 
             let events = try await client.fetchEvents(filter: filter, timeout: timeout)
-            await client.disconnect()
             let verified = verifiedEvents(try events.toVec())
+            await client.disconnect()
             print("[RAID][Outbox] \(relayURL): \(verified.count) events from \(authorHexes.count) authors")
             return verified
         } catch {
@@ -510,8 +514,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
     }
 
     /// Fetch kind 1502 final record events for a round (by initiation event ID).
@@ -536,8 +541,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
     }
 
     // MARK: - Event Fetch by ID
@@ -564,8 +570,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let firstEvent = events.first()
         await client.disconnect()
-        guard let event = events.first() else { return nil }
+        guard let event = firstEvent else { return nil }
         return verifiedEvents([event]).first
     }
 
@@ -593,8 +600,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
     }
 
     // MARK: - Kind 33501 Courses
@@ -623,27 +631,28 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        await client.disconnect()
-
         let verified = verifiedEvents(try events.toVec())
 
-        // Addressable replaceable: keep newest per d-tag
-        var bestByDTag: [String: Event] = [:]
+        // Addressable replaceable: keep newest per d-tag.
+        // Extract d-tag and dedup in a single pass while events are live.
+        var bestByDTag: [String: (timestamp: UInt64, event: Event)] = [:]
         for event in verified {
             let tags = event.tags().toVec()
             guard let dTag = tags.first(where: { $0.asVec().first == "d" })?.asVec(),
                   dTag.count >= 2 else { continue }
             let key = dTag[1]
+            let ts = event.createdAt().asSecs()
             if let existing = bestByDTag[key] {
-                if event.createdAt().asSecs() > existing.createdAt().asSecs() {
-                    bestByDTag[key] = event
+                if ts > existing.timestamp {
+                    bestByDTag[key] = (ts, event)
                 }
             } else {
-                bestByDTag[key] = event
+                bestByDTag[key] = (ts, event)
             }
         }
 
-        return Array(bestByDTag.values)
+        await client.disconnect()
+        return bestByDTag.values.map { $0.event }
     }
 
     // MARK: - NIP-25 Reactions
@@ -685,12 +694,13 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = try events.toVec()
         await client.disconnect()
 
         var counts: [String: Int] = [:]
         var ownReacted: Set<String> = []
 
-        for event in try events.toVec() {
+        for event in eventVec {
             // Find which event this reaction references via e-tag
             let tags = event.tags().toVec()
             for tag in tags {
@@ -744,8 +754,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
             .sorted { $0.createdAt().asSecs() < $1.createdAt().asSecs() }
     }
 
@@ -769,10 +780,11 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = try events.toVec()
         await client.disconnect()
 
         var counts: [String: Int] = [:]
-        for event in try events.toVec() {
+        for event in eventVec {
             let tags = event.tags().toVec()
             for tag in tags {
                 let vec = tag.asVec()
@@ -828,8 +840,9 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = verifiedEvents(try events.toVec())
         await client.disconnect()
-        return verifiedEvents(try events.toVec())
+        return eventVec
             .sorted { $0.createdAt().asSecs() < $1.createdAt().asSecs() }
     }
 
@@ -853,10 +866,11 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
+        let eventVec = try events.toVec()
         await client.disconnect()
 
         var counts: [String: Int] = [:]
-        for event in try events.toVec() {
+        for event in eventVec {
             let tags = event.tags().toVec()
             for tag in tags {
                 let vec = tag.asVec()
@@ -897,25 +911,26 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        await client.disconnect()
-
-        // Kind 30000 is addressable replaceable — pick newest created_at.
+        // Single-pass: dedup by newest created_at AND extract p-tags in one iteration.
+        // Never store Event FFI objects beyond the loop — ARC can invalidate them.
         let allClubhouseEvents = verifiedEvents(try events.toVec())
-        guard let event = allClubhouseEvents
-            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
-            .first else {
-            return []
-        }
-
-        // Extract p-tags (member pubkeys)
-        let tags = event.tags().toVec()
+        var newestTimestamp: UInt64 = 0
         var members: [String] = []
-        for tag in tags {
-            let vec = tag.asVec()
-            if vec.count >= 2 && vec[0] == "p" {
-                members.append(vec[1])
+        for event in allClubhouseEvents {
+            let ts = event.createdAt().asSecs()
+            guard ts >= newestTimestamp else { continue }
+            newestTimestamp = ts
+            members = []
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "p" {
+                    members.append(vec[1])
+                }
             }
         }
+
+        await client.disconnect()
         return members
     }
 
@@ -932,6 +947,83 @@ class NostrService {
         }
         let pubkeys = try memberPubkeyHexes.map { try PublicKey.parse(publicKey: $0) }
         let builder = EventBuilder.followSet(identifier: "clubhouse", publicKeys: pubkeys)
+        _ = try await publishEvent(keys: keys, builder: builder)
+    }
+
+    /// Fetch the user's course favorites list (kind 30000, d="raid-golf-courses").
+    /// Returns array of (dTag, authorHex) tuples from ["a", "33501:author:dTag"] tags.
+    func fetchCourseFavorites(pubkeyHex: String) async throws -> [(dTag: String, authorHex: String)] {
+        guard isActivated else {
+            print("[RAID][Guest] fetchCourseFavorites blocked — Nostr not activated")
+            return []
+        }
+        let pubkey = try PublicKey.parse(publicKey: pubkeyHex)
+        let client = try await connectReadClient()
+
+        let filter = Filter()
+            .author(author: pubkey)
+            .kind(kind: Kind(kind: 30000))
+            .identifier(identifier: "raid-golf-courses")
+            .limit(limit: 1)
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        // Kind 30000 is addressable replaceable — pick newest created_at.
+        let allEvents = verifiedEvents(try events.toVec())
+
+        // Extract ["a", "33501:<authorHex>:<dTag>"] tags BEFORE disconnect (FFI lifetime)
+        var result: [(dTag: String, authorHex: String)] = []
+        if let event = allEvents
+            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
+            .first {
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "a" {
+                    let parts = vec[1].split(separator: ":")
+                    // Validate: kind=33501, 64-char hex author, non-empty dTag
+                    guard parts.count == 3,
+                          parts[0] == "33501",
+                          parts[1].count == 64,
+                          !parts[2].isEmpty else { continue }
+                    result.append((dTag: String(parts[2]), authorHex: String(parts[1])))
+                }
+            }
+        }
+
+        await client.disconnect()
+        return result
+    }
+
+    /// Publish the user's course favorites list (kind 30000, d="raid-golf-courses").
+    /// Uses ["a", "33501:<authorHex>:<dTag>", relayHint] tags.
+    /// Empty list still publishes to clear stale entries on relays.
+    func publishCourseFavorites(keys: Keys, favorites: [(dTag: String, authorHex: String)]) async throws {
+        guard isActivated else {
+            print("[RAID][Guest] publishCourseFavorites blocked — Nostr not activated")
+            return
+        }
+        guard !isReadOnly else {
+            print("[RAID][ReadOnly] publishCourseFavorites blocked — read-only mode")
+            return
+        }
+        var tags: [Tag] = [
+            try Tag.parse(data: ["d", "raid-golf-courses"])
+        ]
+        let relayHint = Self.courseRelays.first ?? ""
+        for fav in favorites {
+            tags.append(try Tag.parse(data: ["a", "33501:\(fav.authorHex):\(fav.dTag)", relayHint]))
+        }
+
+        let builder = EventBuilder(kind: Kind(kind: 30000), content: "")
+            .tags(tags: tags)
+
         _ = try await publishEvent(keys: keys, builder: builder)
     }
 
@@ -983,25 +1075,26 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        await client.disconnect()
-
-        // Kind 10050 is replaceable — pick newest created_at.
+        // Single-pass: dedup by newest created_at AND extract relay tags in one iteration.
+        // Never store Event FFI objects beyond the loop — ARC can invalidate them.
         let allInboxEvents = verifiedEvents(try events.toVec())
-        guard let event = allInboxEvents
-            .sorted(by: { $0.createdAt().asSecs() > $1.createdAt().asSecs() })
-            .first else {
-            return []
-        }
-
-        // Parse "relay" tags from kind 10050
-        let tags = event.tags().toVec()
+        var newestTimestamp: UInt64 = 0
         var relays: [String] = []
-        for tag in tags {
-            let vec = tag.asVec()
-            if vec.count >= 2 && vec[0] == "relay" {
-                relays.append(vec[1])
+        for event in allInboxEvents {
+            let ts = event.createdAt().asSecs()
+            guard ts >= newestTimestamp else { continue }
+            newestTimestamp = ts
+            relays = []
+            let tags = event.tags().toVec()
+            for tag in tags {
+                let vec = tag.asVec()
+                if vec.count >= 2 && vec[0] == "relay" {
+                    relays.append(vec[1])
+                }
             }
         }
+
+        await client.disconnect()
         return relays
     }
 
@@ -1091,10 +1184,11 @@ class NostrService {
             throw NostrReadError.networkFailure(error)
         }
 
-        await client.disconnect()
         // Note: gift wraps are signed by ephemeral keys, so we don't verify signatures here.
         // The UnwrappedGift.fromGiftWrap method handles cryptographic verification of the seal.
-        return try events.toVec()
+        let wraps = try events.toVec()
+        await client.disconnect()
+        return wraps
     }
 
     /// Unwrap a single gift wrap event. Returns nil if unwrap fails.
@@ -1145,22 +1239,17 @@ class NostrService {
         let eventVec = try events.toVec()
         let verified = verifiedEvents(eventVec)
 
-        // Kind 10002 is replaceable — keep newest per author
-        var newest: [String: Event] = [:]
+        // Kind 10002 is replaceable — single-pass: dedup by author AND extract
+        // tag data in the same iteration. Never store Event FFI objects in a dict —
+        // ARC can release the backing [Event] array, invalidating stored references.
+        var newestTimestamp: [String: UInt64] = [:]
+        var result: [String: [CachedRelayEntry]] = [:]
         for event in verified {
             let authorHex = event.author().toHex()
-            if let existing = newest[authorHex] {
-                if event.createdAt().asSecs() > existing.createdAt().asSecs() {
-                    newest[authorHex] = event
-                }
-            } else {
-                newest[authorHex] = event
-            }
-        }
+            let ts = event.createdAt().asSecs()
+            if let existing = newestTimestamp[authorHex], ts <= existing { continue }
+            newestTimestamp[authorHex] = ts
 
-        // Parse r-tags into CachedRelayEntry (extract all data before disconnect)
-        var result: [String: [CachedRelayEntry]] = [:]
-        for (authorHex, event) in newest {
             var entries: [CachedRelayEntry] = []
             let tags = event.tags().toVec()
             for tag in tags {
@@ -1308,23 +1397,16 @@ class NostrService {
     }
 
     private func parseProfileEvents(_ eventList: [Event]) -> [String: NostrProfile] {
-        // Kind 0 is replaceable — keep newest per author
-        var newest: [String: Event] = [:]
+        // Kind 0 is replaceable — single-pass: dedup by author AND extract content
+        // in one iteration. Never store Event FFI objects in a dict.
+        var newestTimestamp: [String: UInt64] = [:]
+        var result: [String: NostrProfile] = [:]
         for event in eventList {
             let authorHex = event.author().toHex()
-            if let existing = newest[authorHex] {
-                if event.createdAt().asSecs() > existing.createdAt().asSecs() {
-                    newest[authorHex] = event
-                }
-            } else {
-                newest[authorHex] = event
-            }
-        }
-
-        var result: [String: NostrProfile] = [:]
-        for (authorHex, event) in newest {
-            let profile = NostrProfile.parse(from: event.content(), pubkeyHex: authorHex)
-            result[authorHex] = profile
+            let ts = event.createdAt().asSecs()
+            if let existing = newestTimestamp[authorHex], ts <= existing { continue }
+            newestTimestamp[authorHex] = ts
+            result[authorHex] = NostrProfile.parse(from: event.content(), pubkeyHex: authorHex)
         }
         return result
     }

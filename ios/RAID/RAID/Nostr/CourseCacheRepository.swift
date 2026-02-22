@@ -126,6 +126,20 @@ class CourseCacheRepository {
         }
     }
 
+    /// Fetch courses that are in the user's favorites, ordered by title.
+    /// Only returns favorites that exist in the local course cache.
+    func fetchMyCourses() throws -> [ParsedCourse] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT c.* FROM nostr_courses c
+                INNER JOIN course_favorites f
+                    ON c.d_tag = f.d_tag AND c.author_hex = f.author_hex
+                ORDER BY c.title COLLATE NOCASE
+                """)
+            return rows.compactMap { decodeRow($0) }
+        }
+    }
+
     /// Delete all cached courses.
     func deleteAll() throws {
         try dbQueue.write { db in

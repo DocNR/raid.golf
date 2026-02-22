@@ -29,6 +29,16 @@ This project versions **behavior and rules**, not files.
 
 > Entries include both iOS port phases and feature sprints; ordered chronologically, grouped by theme.
 
+### Fixed
+
+- **NostrSDK FFI Event lifetime crash fix (`NostrService.swift`)**
+  - Feed loading crashed intermittently with `'-[__NSTaggedDate count]: unrecognized selector sent to instance 0x8000000000000000'` — a NostrSDK Swift/Rust FFI lifetime violation
+  - Root cause: `Event` objects returned by `events.toVec()` are Rust-memory-backed FFI wrappers that become invalid after `client.disconnect()`. Some methods stored raw `Event` objects in intermediate `[String: Event]` dicts and accessed them in a second pass after disconnect, reading freed memory
+  - `fetchRelayLists` was the primary crash site: it built a `newest: [String: Event]` dict in a first loop, then accessed `newest.values` in a second loop after `disconnect()`. Fixed with a single-pass refactor that extracts all needed Swift data (URL strings, direction flags, `created_at` timestamps) immediately and never stores `Event` FFI objects across loop boundaries
+  - Audited all 18 affected methods and applied the same single-pass pattern: `fetchFollowList`, `fetchFeedEvents`, `fetchFeedFromRelay`, `fetchLiveScorecards`, `fetchFinalRecords`, `fetchEvent`, `fetchEventsByIds`, `fetchReactions`, `fetchReplies`, `fetchReplyCounts`, `fetchComments`, `fetchCommentCounts`, `fetchGiftWraps`, `fetchCourses`, `fetchClubhouse`, `fetchInboxRelays`, `parseProfileEvents`
+  - Rule established: extract all Swift values from `Event` FFI objects in a single pass while events are live; never store `Event` objects in collections for deferred access
+  - No schema changes, no API changes, no kernel changes; 366 tests passing
+
 ### Changed
 
 - **Revert "Gambit Golf" rebrand → "RAID Golf"**

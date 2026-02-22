@@ -799,6 +799,20 @@ struct Schema {
                 """)
         }
 
+        // ============================================================
+        // v17: Course favorites (mutable cache, no triggers)
+        // ============================================================
+        migrator.registerMigration("v17_create_course_favorites") { db in
+            try db.execute(sql: """
+                CREATE TABLE course_favorites (
+                    d_tag      TEXT NOT NULL,
+                    author_hex TEXT NOT NULL CHECK(length(author_hex) = 64),
+                    added_at   TEXT NOT NULL,
+                    PRIMARY KEY (d_tag, author_hex)
+                )
+                """)
+        }
+
         return migrator
     }
 
