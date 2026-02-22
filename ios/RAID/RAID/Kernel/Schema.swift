@@ -758,6 +758,40 @@ struct Schema {
                 """)
         }
 
+        // v15_create_nostr_courses: Course cache for kind 33501 events
+        // Mutable table (no immutability triggers) — upserted on each relay fetch.
+        // Parsed columns for SQL search + raw_json for replay.
+        migrator.registerMigration("v15_create_nostr_courses") { db in
+            try db.execute(sql: """
+                CREATE TABLE nostr_courses (
+                    d_tag            TEXT NOT NULL,
+                    author_hex       TEXT NOT NULL CHECK(length(author_hex) = 64),
+                    title            TEXT NOT NULL,
+                    location         TEXT NOT NULL,
+                    country          TEXT,
+                    hole_count       INTEGER NOT NULL,
+                    holes_json       TEXT NOT NULL,
+                    tees_json        TEXT NOT NULL,
+                    yardages_json    TEXT,
+                    content          TEXT,
+                    website          TEXT,
+                    architect        TEXT,
+                    established      TEXT,
+                    operator_pubkey  TEXT,
+                    event_id_hex     TEXT NOT NULL CHECK(length(event_id_hex) = 64),
+                    event_created_at INTEGER NOT NULL,
+                    raw_json         TEXT NOT NULL,
+                    cached_at        TEXT NOT NULL,
+                    PRIMARY KEY (d_tag, author_hex)
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE INDEX idx_nostr_courses_title
+                ON nostr_courses(title COLLATE NOCASE)
+                """)
+        }
+
         return migrator
     }
 

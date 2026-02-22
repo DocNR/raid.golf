@@ -46,7 +46,11 @@ struct ContentView: View {
                     .tabItem { Image(systemName: "flag.fill") }
                     .tag(Tab.play)
 
-                CoursesView()
+                CoursesView(dbQueue: dbQueue) { roundId, courseHash, playerPubkeys, isMultiDevice in
+                    selectedTab = .play
+                    let info = CourseRoundInfo(roundId: roundId, courseHash: courseHash, playerPubkeys: playerPubkeys, isMultiDevice: isMultiDevice)
+                    NotificationCenter.default.post(name: .roundCreatedFromCourses, object: info)
+                }
                     .tabItem { Image(systemName: "mappin.and.ellipse") }
                     .tag(Tab.courses)
             }

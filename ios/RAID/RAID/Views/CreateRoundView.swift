@@ -253,7 +253,7 @@ struct CreateRoundView: View {
 
 // MARK: - Player Picker Sheet
 
-private struct PlayerPickerSheet: View {
+struct PlayerPickerSheet: View {
     let dbQueue: DatabaseQueue
     let creatorPubkeyHex: String?
     @Binding var selectedPlayers: [String: NostrProfile]

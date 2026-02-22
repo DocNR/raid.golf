@@ -116,6 +116,20 @@ struct RoundsView: View {
                 loadRounds()
                 await checkPendingInvites()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .roundCreatedFromCourses)) { notification in
+                loadRounds()
+                guard let info = notification.object as? CourseRoundInfo else { return }
+                if info.isMultiDevice {
+                    setupRoundId = info.roundId
+                    setupCourseHash = info.courseHash
+                    Task { await publishInitiation(roundId: info.roundId, courseHash: info.courseHash) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showSetupSheet = true
+                    }
+                } else {
+                    navigateToScoreEntry(roundId: info.roundId, courseHash: info.courseHash, isMultiDevice: false)
+                }
+            }
             .alert("Error", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }

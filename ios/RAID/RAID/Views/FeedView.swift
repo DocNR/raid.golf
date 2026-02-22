@@ -541,4 +541,12 @@ private struct FeedLoadingView: View {
 extension Notification.Name {
     static let feedScrollToTop = Notification.Name("feedScrollToTop")
     static let nostrSignedOut = Notification.Name("nostrSignedOut")
+    static let roundCreatedFromCourses = Notification.Name("roundCreatedFromCourses")
+}
+
+struct CourseRoundInfo {
+    let roundId: Int64
+    let courseHash: String
+    let playerPubkeys: [String]
+    let isMultiDevice: Bool
 }

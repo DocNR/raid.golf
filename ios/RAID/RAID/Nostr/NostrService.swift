@@ -592,6 +592,50 @@ class NostrService {
         return verifiedEvents(try events.toVec())
     }
 
+    // MARK: - Kind 33501 Courses
+
+    /// Fetch kind 33501 course events from relays.
+    /// No activation gate — course data is public.
+    /// Deduplicates by d-tag, keeping the newest created_at (addressable replaceable).
+    func fetchCourses(authorHex: String = RAIDBot.pubkeyHex) async throws -> [Event] {
+        let authorPubkey = try PublicKey.parse(publicKey: authorHex)
+        let filter = Filter()
+            .author(author: authorPubkey)
+            .kind(kind: Kind(kind: 33501))
+
+        let client = try await connectReadClient()
+
+        let events: Events
+        do {
+            events = try await client.fetchEvents(filter: filter, timeout: readTimeout)
+        } catch {
+            await client.disconnect()
+            throw NostrReadError.networkFailure(error)
+        }
+
+        await client.disconnect()
+
+        let verified = verifiedEvents(try events.toVec())
+
+        // Addressable replaceable: keep newest per d-tag
+        var bestByDTag: [String: Event] = [:]
+        for event in verified {
+            let tags = event.tags().toVec()
+            guard let dTag = tags.first(where: { $0.asVec().first == "d" })?.asVec(),
+                  dTag.count >= 2 else { continue }
+            let key = dTag[1]
+            if let existing = bestByDTag[key] {
+                if event.createdAt().asSecs() > existing.createdAt().asSecs() {
+                    bestByDTag[key] = event
+                }
+            } else {
+                bestByDTag[key] = event
+            }
+        }
+
+        return Array(bestByDTag.values)
+    }
+
     // MARK: - NIP-25 Reactions
 
     /// Publish a reaction to an event (NIP-25, kind 7).

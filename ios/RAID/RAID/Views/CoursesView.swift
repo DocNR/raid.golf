@@ -1,32 +1,50 @@
 // CoursesView.swift
 // RAID Golf
 //
-// Course discovery and browsing.
-// Currently supports requesting courses via NIP-17 DM to the RAID bot.
-// Future: kind 33501 course discovery, geo-clustering, and verified badges.
+// Course discovery and browsing via kind 33501 events.
+// Two-phase load: cache paint → relay sync.
+// Includes course request via NIP-17 DM to the RAID bot.
 
 import SwiftUI
+import GRDB
 import NostrSDK
 
 struct CoursesView: View {
+    let dbQueue: DatabaseQueue
+    let onRoundCreated: (Int64, String, [String], Bool) -> Void
+
     @Environment(\.nostrService) private var nostrService
     @AppStorage("nostrActivated") private var nostrActivated = false
     @AppStorage("nostrReadOnly") private var nostrReadOnly = false
 
+    @State private var viewModel = CoursesViewModel()
     @State private var showRequestSheet = false
     @State private var requestSent = false
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    courseRequestSection
+            Group {
+                if viewModel.isLoading && viewModel.courses.isEmpty {
+                    ProgressView("Loading courses...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if viewModel.courses.isEmpty {
+                    emptyState
+                } else {
+                    courseList
                 }
-                .padding()
             }
             .navigationBarTitleDisplayMode(.inline)
             .avatarToolbar()
+            .searchable(text: $viewModel.searchQuery, prompt: "Search courses")
+            .task {
+                let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
+                await viewModel.loadIfNeeded(nostrService: nostrService, cacheRepo: cacheRepo)
+            }
+            .refreshable {
+                let cacheRepo = CourseCacheRepository(dbQueue: dbQueue)
+                await viewModel.refresh(nostrService: nostrService, cacheRepo: cacheRepo)
+            }
             .sheet(isPresented: $showRequestSheet) {
                 CourseRequestSheet(
                     nostrService: nostrService,
@@ -56,6 +74,70 @@ struct CoursesView: View {
         }
     }
 
+    // MARK: - Course List
+
+    @ViewBuilder
+    private var courseList: some View {
+        List {
+            if viewModel.isBackgroundRefreshing {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Updating...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.clear)
+            }
+
+            ForEach(viewModel.filteredCourses) { course in
+                NavigationLink {
+                    CourseDetailView(
+                        course: course,
+                        dbQueue: dbQueue,
+                        onRoundCreated: onRoundCreated
+                    )
+                } label: {
+                    courseRow(course)
+                }
+            }
+
+            courseRequestListSection
+        }
+    }
+
+    @ViewBuilder
+    private func courseRow(_ course: ParsedCourse) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(course.title)
+                .font(.body.weight(.medium))
+            Text(course.location)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("\(course.holes.count) holes")
+                Text("\(course.tees.count) tee\(course.tees.count == 1 ? "" : "s")")
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Empty State
+
+    @ViewBuilder
+    private var emptyState: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                courseRequestSection
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Course Request (empty state)
+
     @ViewBuilder
     private var courseRequestSection: some View {
         VStack(spacing: 16) {
@@ -66,30 +148,51 @@ struct CoursesView: View {
             Text("Courses")
                 .font(.title2.bold())
 
-            Text("Course discovery is coming soon. In the meantime, request a course and we'll add it to the database.")
+            Text("No courses available yet. Request a course and we'll add it to the database.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            if nostrActivated && !nostrReadOnly {
-                Button {
-                    showRequestSheet = true
-                } label: {
-                    Label("Request a Course", systemImage: "plus.circle")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-            } else if nostrReadOnly {
-                Text("Sign in with your secret key to request courses.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Set up a Nostr identity to request courses.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            requestButton
         }
         .padding(.top, 40)
+    }
+
+    // MARK: - Course Request (list footer)
+
+    @ViewBuilder
+    private var courseRequestListSection: some View {
+        Section {
+            VStack(spacing: 8) {
+                Text("Don't see your course?")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                requestButton
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var requestButton: some View {
+        if nostrActivated && !nostrReadOnly {
+            Button {
+                showRequestSheet = true
+            } label: {
+                Label("Request a Course", systemImage: "plus.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+        } else if nostrReadOnly {
+            Text("Sign in with your secret key to request courses.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Set up a Nostr identity to request courses.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
